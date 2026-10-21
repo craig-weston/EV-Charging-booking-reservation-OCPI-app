@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { BookingRow, Vehicle } from "../../shared/model";
 import type { BookingLocation } from "../../shared/ocpi/types";
 import { ACCESS_LABEL, START_METHOD_LABEL, VEHICLE_TYPE_LABEL, connectorLabel } from "../../shared/booking/labels";
-import { availableWindows, checkSlot, durationLimits, suggestSlots } from "../../shared/booking/slots";
+import { MIN_BOOKING_DAYS, bookableDays, availableWindows, checkSlot, durationLimits, suggestSlots } from "../../shared/booking/slots";
 import { deadlines } from "../../shared/booking/terms";
 import { estimateCost } from "../../shared/booking/tariffs";
-import { MINUTE, addLocalDays, ceilToStep, localDateKey, localToUtc, startOfLocalDay } from "../../shared/util";
+import { MINUTE, ceilToStep, localDateKey, localToUtc, startOfLocalDay } from "../../shared/util";
 import { CITIES } from "../map/ukmap";
 import { useApp } from "../app/state";
 import { DEFAULT_TZ, fmtDateTime, fmtDay, fmtDuration, fmtKw, fmtMiles, fmtMoney, fmtRange, fmtTime, initials } from "../app/format";
@@ -85,12 +85,15 @@ export function BookPage() {
   const bl = option?.bl ?? null;
   const lim = bl ? durationLimits(bl) : null;
 
-  const days = useMemo(() => {
-    const out: Date[] = [];
-    let d = startOfLocalDay(now, TZ);
-    for (let i = 0; i < 7; i++) { out.push(d); d = addLocalDays(d, 1, TZ); }
-    return out;
-  }, [now]);
+  // Today up to the last day any operator publishes availability for (a week minimum, four weeks maximum).
+  const todayKey = localDateKey(now, TZ);
+  const days = useMemo(() => bookableDays((network?.booking_locations ?? []).map((b) => b.data), now, TZ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [network, todayKey]);
+  const soonDays = days.slice(0, MIN_BOOKING_DAYS);
+  const laterDays = days.slice(MIN_BOOKING_DAYS);
+  const dayKey = localDateKey(day, TZ);
+  const pickDay = (d: Date) => { setDay(d); setSelectedKey(null); setResultId(null); };
 
   const selectSite = (s: Site) => {
     setSelectedKey(s.key);
@@ -195,12 +198,19 @@ export function BookPage() {
             <div className="field">
               <span className="label">Day</span>
               <div className="chips" role="group" aria-label="Day">
-                {days.map((d) => (
-                  <button key={d.toISOString()} type="button" className="chip" aria-pressed={localDateKey(d, TZ) === localDateKey(day, TZ)} onClick={() => { setDay(d); setSelectedKey(null); setResultId(null); }}>
+                {soonDays.map((d) => (
+                  <button key={d.toISOString()} type="button" className="chip" aria-pressed={localDateKey(d, TZ) === dayKey} onClick={() => pickDay(d)}>
                     {fmtDay(d, now)}
                   </button>
                 ))}
               </div>
+              {laterDays.length > 0 && (
+                <select className="select later-day" aria-label="A later day" value={laterDays.some((d) => localDateKey(d, TZ) === dayKey) ? dayKey : ""}
+                  onChange={(e) => { const d = laterDays.find((x) => localDateKey(x, TZ) === e.target.value); if (d) pickDay(d); }}>
+                  <option value="">Later, up to {fmtDay(laterDays[laterDays.length - 1], now)}</option>
+                  {laterDays.map((d) => <option key={d.toISOString()} value={localDateKey(d, TZ)}>{fmtDay(d, now)}</option>)}
+                </select>
+              )}
             </div>
             <div className="two">
               <div className="field">
