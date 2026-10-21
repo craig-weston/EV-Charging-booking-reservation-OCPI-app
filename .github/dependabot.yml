@@ -9,8 +9,14 @@ updates:
       day: monday
     open-pull-requests-limit: 10
     groups:
+      # react and react-dom must always move together.
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+      # Minor and patch updates to build tools in one pull request; major versions
+      # (for example TypeScript 7) still arrive on their own for a separate review.
       build-tools:
         dependency-type: development
+        update-types: ["minor", "patch"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
