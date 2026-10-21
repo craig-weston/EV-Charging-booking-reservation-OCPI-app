@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import type { Booking, BookingLocation, Tariff } from "../shared/ocpi/types";
 import type { BookingRow } from "../shared/model";
 import { isStale, reconcileBooking } from "../shared/booking/request";
-import { availableWindows, checkSlot, suggestSlots } from "../shared/booking/slots";
+import { availableWindows, bookableDays, checkSlot, suggestSlots } from "../shared/booking/slots";
 import { cancelTerms, canChange, deadlines } from "../shared/booking/terms";
 import { estimateCost, summarizeTariffs } from "../shared/booking/tariffs";
 
@@ -133,4 +133,21 @@ test("charging story timeline: the truck only plugs in while parked, and every f
     assert.ok(s.settle >= s.start && s.settle < s.end);
     assert.equal(stepAt(s.settle), i);
   }
+});
+
+test("bookable days follow the operators' calendars: at least a week, at most four", () => {
+  const now = new Date("2026-10-21T09:00:00Z");
+  const cal = (end: string, slots = 1): BookingLocation => ({
+    calendars: [{ id: "c", begin_from: "2026-10-21T00:00:00Z", end_before: end, timeslot_increment: 15,
+      available_timeslots: Array.from({ length: slots }, () => ({ start_date_time: "2026-10-21T10:00:00Z", end_date_time: "2026-10-21T11:00:00Z" })) }],
+  } as unknown as BookingLocation);
+  assert.equal(bookableDays([], now, "Europe/London").length, 7);
+  assert.equal(bookableDays([cal("2026-10-24T00:00:00Z")], now, "Europe/London").length, 7);
+  // 14 days published (21 Oct to 3 Nov local; the clocks go back on 25 Oct) -> 14 days offered
+  const two = bookableDays([cal("2026-11-04T00:00:00Z")], now, "Europe/London");
+  assert.equal(two.length, 14);
+  assert.equal(two[13].toISOString(), "2026-11-03T00:00:00.000Z");
+  assert.equal(bookableDays([cal("2027-03-01T00:00:00Z")], now, "Europe/London").length, 28);
+  // a calendar with no free slots doesn't extend the horizon
+  assert.equal(bookableDays([cal("2027-03-01T00:00:00Z", 0)], now, "Europe/London").length, 7);
 });
