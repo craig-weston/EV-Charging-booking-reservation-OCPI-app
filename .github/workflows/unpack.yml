@@ -1,0 +1,32 @@
+# One-off helper: unpacks project.zip (uploaded through the web UI) into the repository.
+# Delete this workflow once the code is in place.
+name: Unpack project
+on:
+  push:
+    branches: [main]
+    paths: ["project.zip"]
+permissions:
+  contents: write
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Unpack and commit
+        run: |
+          test -f project.zip || { echo "nothing to unpack"; exit 0; }
+          unzip -o -q project.zip -d .
+          git rm -q --cached project.zip
+          rm project.zip
+          git add -A
+          git -c user.name="Craig Weston" -c user.email="7502387+craig-weston@users.noreply.github.com" commit -q -F - <<'MSG'
+          Depotcharge: open-source EV charging booking and reservation for HGV fleets
+
+          OCPI 2.3.0 eMSP with Bookings 1.1, Plug & Charge and Autocharge only (no RFID,
+          no payment terminals). Cloudflare Workers + Supabase, white label, Cyber
+          Essentials readiness pack, README with promotional graphics and setup guide.
+
+          Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01Lrbrs6tooDSDmNvk5mJB1R
+          MSG
+          git push
