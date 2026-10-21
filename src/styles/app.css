@@ -1118,3 +1118,6 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
 /* Long URLs and identifiers in legal text wrap instead of widening the page on phones. */
 .legal-doc { overflow-wrap: break-word; }
 .legal-table th, .legal-table td { overflow-wrap: anywhere; }
+
+/* Book: days beyond the first week */
+.later-day { margin-top: 8px; max-width: 260px; }

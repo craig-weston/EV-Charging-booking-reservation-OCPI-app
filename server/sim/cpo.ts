@@ -21,7 +21,7 @@ import { SIM_PARTIES, buildLocation, buildOptions, buildTariffs, SITES, type Sim
 
 const TZ = "Europe/London";
 const STEP = 15; // minutes
-const DAYS = 7;
+const DAYS = 14; // calendars published ahead; more days means more CPU per request
 const KEY = "cpo";
 
 interface SimRegistration {

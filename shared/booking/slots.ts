@@ -1,7 +1,7 @@
 // Availability maths on BookingLocation.calendars (Calendar.available_timeslots, timeslot_increment)
 // and BookingTerms.min_booking_duration / max_booking_duration.
 import type { BookingLocation, Timeslot } from "../ocpi/types";
-import { MINUTE, ceilToStep } from "../util";
+import { MINUTE, addLocalDays, ceilToStep, startOfLocalDay } from "../util";
 
 export interface Window {
   start: Date;
@@ -142,4 +142,32 @@ export function timeslotOf(w: Window, start: Date, end: Date): Timeslot {
     ...(w.maxPowerW != null ? { max_power: w.maxPowerW } : {}),
     green_energy_support: w.green,
   };
+}
+
+export const MIN_BOOKING_DAYS = 7;
+export const MAX_BOOKING_DAYS = 28;
+
+/**
+ * The local days a planner can pick from: today up to the last day any operator publishes
+ * availability for (Calendar.end_before), at least a week so the picker never looks empty and at
+ * most four weeks.
+ */
+export function bookableDays(bls: BookingLocation[], now: Date, timeZone: string, opts: { min?: number; max?: number } = {}): Date[] {
+  const min = opts.min ?? MIN_BOOKING_DAYS;
+  const max = Math.max(min, opts.max ?? MAX_BOOKING_DAYS);
+  let latest = 0;
+  for (const bl of bls) {
+    for (const cal of bl.calendars ?? []) {
+      if (!cal.available_timeslots?.length) continue;
+      const end = new Date(cal.end_before).getTime();
+      if (Number.isFinite(end) && end > latest) latest = end;
+    }
+  }
+  const out: Date[] = [];
+  let d = startOfLocalDay(now, timeZone);
+  while (out.length < max && (out.length < min || d.getTime() < latest)) {
+    out.push(d);
+    d = addLocalDays(d, 1, timeZone);
+  }
+  return out;
 }
