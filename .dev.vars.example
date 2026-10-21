@@ -1,0 +1,13 @@
+# Copy to .dev.vars for `npm run pages:dev` (wrangler reads it as the Functions' environment).
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_ANON_KEY=sb_publishable_xxx
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_xxx
+OCPI_COUNTRY_CODE=GB
+OCPI_PARTY_ID=DPC
+OCPI_BUSINESS_NAME=Depotcharge
+ENABLE_CPO_SIMULATOR=true
+# PUBLIC_BASE_URL=http://localhost:8788
+# 32 random bytes, base64 (openssl rand -base64 32): encrypts operators' credentials at rest
+DATA_ENCRYPTION_KEY=
+# Where vulnerability reports go (email or https:// URL); used by security.txt and the Security page
+SECURITY_CONTACT=

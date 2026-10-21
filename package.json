@@ -1,0 +1,41 @@
+{
+  "name": "depotcharge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open-source HGV charging slot booking for fleets over OCPI 2.3.0 Bookings. Plug & Charge and Autocharge: no RFID cards, no payment terminals. Runs on Cloudflare and Supabase.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/craig-weston/EV-Charging-booking-reservation-OCPI-app.git"
+  },
+  "homepage": "https://github.com/craig-weston/EV-Charging-booking-reservation-OCPI-app#readme",
+  "bugs": "https://github.com/craig-weston/EV-Charging-booking-reservation-OCPI-app/issues",
+  "keywords": ["ocpi", "ev-charging", "hgv", "fleet", "plug-and-charge", "iso15118", "autocharge", "cloudflare-workers", "supabase"],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/build.mjs --serve",
+    "build": "node scripts/build.mjs",
+    "build:preview": "node scripts/build.mjs --single-file",
+    "build:upload": "node scripts/build.mjs --upload",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "pages:dev": "npx wrangler@4 pages dev dist --compatibility-date=2026-10-01",
+    "audit": "npm audit --audit-level=high"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.12",
+    "typescript": "6.0.3",
+    "wrangler": "^4.0.0"
+  }
+}

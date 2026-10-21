@@ -1,0 +1,3 @@
+# The app is for signed-in fleet teams; nothing here is meant for search engines.
+User-agent: *
+Disallow: /

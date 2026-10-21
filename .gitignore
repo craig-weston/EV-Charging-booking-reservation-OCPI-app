@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-preview/
+dist-upload/
+.dev/
+.wrangler/
+.dev.vars
+.DS_Store
+*.log
