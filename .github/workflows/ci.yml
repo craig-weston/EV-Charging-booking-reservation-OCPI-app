@@ -1,0 +1,73 @@
+# Checks every change, and once a week even without changes, so newly published vulnerabilities in
+# dependencies are caught well inside the 14-day window Cyber Essentials allows for high and
+# critical fixes. Actions are pinned to full commit SHAs (Dependabot keeps them current).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 6 * * 1" # Mondays 06:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            echo "::warning::No package-lock.json yet. Run 'npm install' once and commit the lockfile so every build installs exactly the reviewed versions."
+            npm install --no-fund
+          fi
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Dependency vulnerabilities (fails on high or critical)
+        run: npm audit --audit-level=high
+
+  database:
+    # Row level security check against a real Postgres: one fleet can never read another's rows.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Apply migrations and run the RLS checks
+        working-directory: tests/sql
+        run: |
+          createdb depotcharge_test
+          psql -v ON_ERROR_STOP=1 -d depotcharge_test -f supabase_stub.sql \
+            -f ../../supabase/migrations/20261020000000_init.sql \
+            -f ../../supabase/migrations/20261021000000_security.sql \
+            -f rls_check.sql
