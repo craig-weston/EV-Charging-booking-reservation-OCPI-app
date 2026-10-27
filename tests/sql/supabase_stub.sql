@@ -10,5 +10,5 @@ create function auth.uid() returns uuid language sql stable as $$
 $$;
 grant usage on schema auth, public to anon, authenticated, service_role;
 grant execute on function auth.uid() to anon, authenticated, service_role;
-alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
-alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
+-- Like newer Supabase projects: tables in public get no automatic grants for the API roles, so the
+-- migrations must grant what the app needs (20261031000000_grants.sql).

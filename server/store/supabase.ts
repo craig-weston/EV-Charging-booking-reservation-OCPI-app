@@ -9,6 +9,8 @@ import { openSecret, sealSecret, sha256Hex } from "../security";
 import type { Page, Store } from "./types";
 
 class RestError extends Error {
+  /** Database detail: logged on the server, never shown to users (see the API router). */
+  readonly internal = true;
   constructor(public status: number, public pgCode: string | undefined, message: string) {
     super(message);
   }
