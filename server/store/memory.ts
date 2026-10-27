@@ -1,6 +1,6 @@
 // In-memory Store — used by the browser demo (persisted to localStorage) and by the tests.
 import type {
-  Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
+  ApiKey, ApiKeyRow, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
   Partner, StoredObject, Vehicle, AuditEntry,
 } from "../../shared/model";
 import { iso, upper, uuid } from "../../shared/util";
@@ -22,10 +22,11 @@ export interface MemoryData {
   sim: Record<string, unknown>;
   settings: Record<string, unknown>;
   audit: AuditEntry[];
+  apiKeys: ApiKeyRow[];
 }
 
 export function emptyData(): MemoryData {
-  return { fleets: [], members: [], invites: [], admins: [], brand: null, vehicles: [], drivers: [], partners: [], objects: [], bookings: [], events: [], logs: [], sim: {}, settings: {}, audit: [] };
+  return { fleets: [], members: [], invites: [], admins: [], brand: null, vehicles: [], drivers: [], partners: [], objects: [], bookings: [], events: [], logs: [], sim: {}, settings: {}, audit: [], apiKeys: [] };
 }
 
 const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
@@ -94,6 +95,7 @@ export class MemoryStore implements Store {
     this.data.fleets = this.data.fleets.filter((f) => f.id !== id);
     this.data.members = this.data.members.filter((m) => m.fleet_id !== id);
     this.data.invites = this.data.invites.filter((i) => i.fleet_id !== id);
+    this.data.apiKeys = this.data.apiKeys.filter((k) => k.fleet_id !== id);
     this.data.vehicles = this.data.vehicles.filter((v) => v.fleet_id !== id);
     this.data.drivers = this.data.drivers.filter((d) => d.fleet_id !== id);
     this.data.bookings = this.data.bookings.filter((b) => b.fleet_id !== id);
@@ -148,6 +150,24 @@ export class MemoryStore implements Store {
   async deleteInvite(id: string) {
     this.data.invites = this.data.invites.filter((i) => i.id !== id);
     this.changed();
+  }
+
+  // API keys -----------------------------------------------------------------------
+  async listApiKeys(fleetId: string): Promise<ApiKey[]> {
+    return clone(this.data.apiKeys.filter((k) => k.fleet_id === fleetId).sort((a, b) => b.created_at.localeCompare(a.created_at)).map(({ key_hash: _h, ...k }) => k));
+  }
+  async createApiKey(row: ApiKeyRow): Promise<ApiKey> {
+    this.data.apiKeys.push(clone(row));
+    this.changed();
+    const { key_hash: _h, ...k } = row;
+    return clone(k);
+  }
+  async findApiKeyByHash(hash: string) {
+    return clone(this.data.apiKeys.find((k) => k.key_hash === hash) ?? null);
+  }
+  async updateApiKey(id: string, patch: Partial<Pick<ApiKey, "last_used_at" | "revoked_at" | "name">>) {
+    const k = this.data.apiKeys.find((x) => x.id === id);
+    if (k) { Object.assign(k, clone(patch)); this.changed(); }
   }
 
   async getBrand() {
