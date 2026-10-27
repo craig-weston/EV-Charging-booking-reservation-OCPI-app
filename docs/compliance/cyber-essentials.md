@@ -77,7 +77,7 @@ device is in scope when it accesses organisational data or services).
 | --- | --- | --- | --- |
 | Every device protected by a correctly configured firewall | The app has no servers to manage: Cloudflare's network fronts the app and API; the database is reached over HTTPS only | Turn on each laptop's firewall; routers: change default admin passwords, keep admin interfaces off the internet (or behind MFA / an IP allow list) | Compliance → Firewalls |
 | Unauthenticated inbound connections blocked; rules approved and documented | Only `/api`, `/ocpi` and `/sim` are dynamic; everything else is static files | Supabase → Database → Network restrictions: allow only the IPs that need direct Postgres access (or none) | Screenshot of the setting |
-| Protection at the boundary | Per-IP rate limits and request size limits in the Functions (`server/live.ts`) | Cloudflare → Security: managed WAF rules on, plus a rate-limiting rule for `/api/*` and `/ocpi/*` | Compliance → "Cloudflare WAF and rate limiting on" |
+| Protection at the boundary | Per-IP rate limits (in memory, plus Workers Rate Limiting bindings shared across isolates) and request size limits (`server/live.ts`, `wrangler.jsonc`) | Cloudflare → Security: managed WAF rules on, plus a rate-limiting rule for `/api/*` and `/ocpi/*` | Compliance → "Cloudflare WAF and rate limiting on" |
 
 ### 2. Secure configuration
 
