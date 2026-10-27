@@ -46,7 +46,8 @@ jobs:
   browser:
     # The built app in real Chromium (demo mode, production CSP): main journeys, no console errors
     # or CSP violations, and axe-core accessibility checks (WCAG 2.2 A/AA, serious or critical fail).
-    runs-on: ubuntu-latest
+    # Pinned image: Playwright's --with-deps supports specific Ubuntu releases.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -59,9 +60,9 @@ jobs:
         run: if [ -f package-lock.json ]; then npm ci; else npm install --no-fund; fi
       - run: npm run build
       - name: Install Playwright and axe-core (test tools only, pinned here rather than in package.json)
-        run: |
-          npm install --no-save --no-audit --no-fund playwright@1.56.0 axe-core@4.10.3
-          npx playwright install --with-deps chromium
+        run: npm install --no-save --no-audit --no-fund playwright@1.56.0 axe-core@4.10.3
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
         env:
           CI: "true"
