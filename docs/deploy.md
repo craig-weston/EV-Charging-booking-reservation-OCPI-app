@@ -36,10 +36,11 @@ npx wrangler dev                 # builds, then serves on http://localhost:8787
 
 1. Create a project (pick a UK or EU region).
 2. **Database → Extensions**: enable **pg_cron** (schedules the daily data-retention job).
-3. **SQL Editor → New query**: run `supabase/migrations/20261020000000_init.sql`, then
-   `supabase/migrations/20261021000000_security.sql` (hashed operator tokens, audit log,
-   read-only browser access, the retention job). With the Supabase CLI instead: `supabase link`
-   then `supabase db push`.
+3. **SQL Editor → New query**: run every file in `supabase/migrations`, oldest first:
+   `20261020000000_init.sql` (schema and row level security), `20261021000000_security.sql`
+   (hashed operator tokens, audit log, read-only browser access, the retention job), then the later
+   ones (for example `20261027000000_api_keys.sql`). With the Supabase CLI instead:
+   `supabase link` then `supabase db push`. When you update, run any new migration the same way.
 4. **Authentication → Sign In / Providers → Email**: keep "Confirm email" on (invite links survive
    the confirmation step), turn on **Secure password change**, set **Minimum password length to
    12**, and turn on **leaked password protection** if your plan has it.

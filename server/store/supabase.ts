@@ -1,7 +1,7 @@
 // Store backed by Supabase Postgres through PostgREST (plain fetch, no SDK — runs on Workers).
 // Uses the service-role / secret key, so it bypasses RLS: the API layer enforces fleet access.
 import type {
-  AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
+  ApiKey, ApiKeyRow, AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
   Partner, StoredObject, Vehicle,
 } from "../../shared/model";
 import { iso, upper } from "../../shared/util";
@@ -14,7 +14,7 @@ class RestError extends Error {
   }
 }
 
-const TS_KEYS = new Set(["at", "created_at", "updated_at", "start_at", "end_at", "last_sync_at", "last_updated", "received_at", "expires_at", "accepted_at"]);
+const TS_KEYS = new Set(["at", "created_at", "updated_at", "start_at", "end_at", "last_sync_at", "last_updated", "received_at", "expires_at", "accepted_at", "last_used_at", "revoked_at"]);
 
 /** PostgREST returns "2026-10-20T12:00:00+00:00"; the app uses OCPI-style "…Z". */
 function normalize<T>(row: T): T {
@@ -167,6 +167,22 @@ export class SupabaseStore implements Store {
   }
   async deleteInvite(id: string) {
     await this.rest.remove("fleet_invites", `id=eq.${enc(id)}`);
+  }
+
+  // API keys -----------------------------------------------------------------------
+  listApiKeys(fleetId: string) {
+    return this.rest.select<ApiKey>("fleet_api_keys", `select=id,fleet_id,name,role,key_hint,created_by,created_at,last_used_at,expires_at,revoked_at&fleet_id=eq.${enc(fleetId)}&order=created_at.desc`);
+  }
+  async createApiKey(row: ApiKeyRow) {
+    await this.rest.insert("fleet_api_keys", row, { returning: false });
+    const { key_hash: _h, ...k } = row;
+    return k;
+  }
+  findApiKeyByHash(hash: string) {
+    return this.rest.one<ApiKeyRow>("fleet_api_keys", `select=*&key_hash=eq.${enc(hash)}`);
+  }
+  async updateApiKey(id: string, patch: Partial<Pick<ApiKey, "last_used_at" | "revoked_at" | "name">>) {
+    await this.rest.update("fleet_api_keys", `id=eq.${enc(id)}`, patch);
   }
 
   async getBrand() {

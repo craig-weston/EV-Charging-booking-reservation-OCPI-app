@@ -1,5 +1,7 @@
 -- RLS smoke test: two fleets, two users; each user only sees their own fleet's rows.
 \set ON_ERROR_STOP on
+-- Migrations after the first two (CI applies those two on the command line).
+\ir ../../supabase/migrations/20261027000000_api_keys.sql
 insert into auth.users values ('00000000-0000-0000-0000-00000000000a', 'a@example.com'), ('00000000-0000-0000-0000-00000000000b', 'b@example.com');
 insert into public.fleets (id, name) values ('10000000-0000-0000-0000-00000000000a', 'Fleet A'), ('10000000-0000-0000-0000-00000000000b', 'Fleet B');
 insert into public.fleet_members (fleet_id, user_id, role) values ('10000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000a', 'owner'),
@@ -13,6 +15,7 @@ insert into public.fleet_invites (fleet_id, email, role, token, expires_at) valu
   ('10000000-0000-0000-0000-00000000000a', 'c@example.com', 'planner', 'secret-invite-token', now() + interval '7 days');
 insert into public.audit_log (fleet_id, action, actor_email) values ('10000000-0000-0000-0000-00000000000a', 'member.role', 'a@example.com');
 insert into public.platform_settings (key, value) values ('brand', '{"name":"Depotcharge"}'), ('legal', '{"company_name":"Depotcharge Ltd"}'), ('compliance', '{"mfa-cloud":{}}');
+insert into public.fleet_api_keys (fleet_id, name, role, key_hash) values ('10000000-0000-0000-0000-00000000000a', 'TMS', 'planner', encode(extensions.digest('fck_x', 'sha256'), 'hex'));
 insert into public.ocpi_partners (name, our_token_hash) values ('Op', encode(extensions.digest('t', 'sha256'), 'hex'));
 do $$ begin
   if exists (select 1 from information_schema.columns where table_name = 'ocpi_partners' and column_name in ('our_token', 'registration_token')) then
@@ -37,6 +40,7 @@ end $$;
 -- server-only tables: no access at all from a browser session
 do $$ begin perform 1 from public.ocpi_partners; raise exception 'partners readable'; exception when insufficient_privilege then null; end $$;
 do $$ begin perform 1 from public.fleet_invites; raise exception 'invite tokens readable'; exception when insufficient_privilege then null; end $$;
+do $$ begin perform 1 from public.fleet_api_keys; raise exception 'API key hashes readable'; exception when insufficient_privilege then null; end $$;
 do $$ begin perform 1 from public.ocpi_log; raise exception 'OCPI message log readable'; exception when insufficient_privilege then null; end $$;
 -- browser sessions are read-only: even an owner writes through the API (service role), never directly
 do $$ begin

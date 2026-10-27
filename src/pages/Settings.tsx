@@ -7,6 +7,7 @@ import { BRAND_SWATCHES, applyBrand } from "../app/brand";
 import { BrandMark, Field, Icon, Plate, Seg, Spinner, Switch } from "../ui/ui";
 import { TeamSettings } from "./Team";
 import { SecuritySettings } from "./Security";
+import { ApiKeySettings } from "./ApiKeys";
 import { ChargingMini } from "../components/art/Mini";
 import { href } from "../app/router";
 import { LEGAL_DOCS } from "../legal/documents";
@@ -22,6 +23,7 @@ export function SettingsPage() {
           <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-fleet")?.scrollIntoView({ behavior: "smooth" }); }}>Fleet</a>
           <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-team")?.scrollIntoView({ behavior: "smooth" }); }}>Team</a>
           <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-security")?.scrollIntoView({ behavior: "smooth" }); }}>Security</a>
+          {role === "owner" && <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-api")?.scrollIntoView({ behavior: "smooth" }); }}>API keys</a>}
           {me?.is_admin && <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-brand")?.scrollIntoView({ behavior: "smooth" }); }}>Branding</a>}
           <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-look")?.scrollIntoView({ behavior: "smooth" }); }}>Appearance</a>
           <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-account")?.scrollIntoView({ behavior: "smooth" }); }}>Account</a>
@@ -31,6 +33,7 @@ export function SettingsPage() {
           {fleet && <FleetSettings fleet={fleet} canEdit={role === "owner"} />}
           {fleet && <TeamSettings canManage={role === "owner"} />}
           <SecuritySettings />
+          {fleet && role === "owner" && <ApiKeySettings />}
           {me?.is_admin && <BrandSettings />}
           <section className="panel" id="s-look">
             <div className="panel-head"><h2>Appearance</h2></div>

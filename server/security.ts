@@ -24,6 +24,13 @@ export async function sha256Hex(value: string): Promise<string> {
   return Array.from(d, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Fleet API keys: "fck_" + 32 random bytes (base64url, 43 characters). The prefix makes a leaked
+ * key easy to recognise (and to search for in logs and repositories); only its SHA-256 is stored.
+ */
+export const API_KEY_PREFIX = "fck_";
+export const isApiKey = (v: string) => /^fck_[A-Za-z0-9_-]{40,64}$/.test(v);
+
 /** Constant-time string comparison (length is not secret here). */
 export function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;

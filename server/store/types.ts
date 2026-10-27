@@ -2,7 +2,7 @@
 //  - SupabaseStore (Postgres via PostgREST) for production on Cloudflare Pages
 //  - MemoryStore for the in-browser demo and the test-suite
 import type {
-  AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
+  ApiKey, ApiKeyRow, AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
   Partner, StoredObject, Vehicle,
 } from "../../shared/model";
 
@@ -37,6 +37,13 @@ export interface Store {
   /** Claims the invite; false when someone else already used it. */
   markInviteAccepted(id: string, userId: string, at: string): Promise<boolean>;
   deleteInvite(id: string): Promise<void>;
+
+  // API keys --------------------------------------------------------------------
+  /** The fleet's keys, newest first, revoked ones included (no hashes). */
+  listApiKeys(fleetId: string): Promise<ApiKey[]>;
+  createApiKey(row: ApiKeyRow): Promise<ApiKey>;
+  findApiKeyByHash(hash: string): Promise<ApiKeyRow | null>;
+  updateApiKey(id: string, patch: Partial<Pick<ApiKey, "last_used_at" | "revoked_at" | "name">>): Promise<void>;
 
   // platform settings -----------------------------------------------------------
   getBrand(): Promise<Brand | null>;

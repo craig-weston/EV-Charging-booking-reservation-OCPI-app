@@ -150,6 +150,8 @@ export interface BookingRow {
   vehicle_id: string | null;
   driver_id: string | null;
   created_by: string | null;
+  /** Set instead of created_by when a fleet API key made the booking. */
+  created_by_key?: string | null;
   partner_id: string | null;
   cpo_country_code: string;
   cpo_party_id: string;
@@ -316,6 +318,29 @@ export interface Certification {
   expires_on: string; // YYYY-MM-DD
   certification_body: string;
   verify_url: string;
+}
+
+/**
+ * A fleet's API key, for its own systems (TMS, telematics, dispatch or autonomy platforms) to use
+ * the API without a person signing in. Only a SHA-256 hash of the key is stored; the key itself
+ * is shown once, when it's created.
+ */
+export interface ApiKey {
+  id: string;
+  fleet_id: string;
+  name: string;
+  /** What the key may do: "planner" reads and books, "viewer" only reads. Never "owner". */
+  role: "planner" | "viewer";
+  key_hint: string;
+  created_by: string | null;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface ApiKeyRow extends ApiKey {
+  key_hash: string;
 }
 
 /** Security-relevant actions, kept for 12 months (see the retention schedule). */

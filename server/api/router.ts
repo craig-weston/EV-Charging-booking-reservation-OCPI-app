@@ -2,7 +2,7 @@
 // The service-role store is used server-side, so every fleet route checks membership explicitly.
 import type { BookingLocation, CanceledReason, ConnectorType, Location, VehicleType } from "../../shared/ocpi/types";
 import type {
-  AppConfig, AuditEntry, Brand, BookingRow, Certification, Driver, Fleet, FleetInvite, InvitePreview, LegalInfo, MemberRole, NetworkSnapshot, PassView, Partner, TeamView, Vehicle,
+  ApiKey, AppConfig, AuditEntry, Brand, BookingRow, Certification, Driver, Fleet, FleetInvite, InvitePreview, LegalInfo, MemberRole, NetworkSnapshot, PassView, Partner, TeamView, Vehicle,
 } from "../../shared/model";
 import { DEFAULT_BRAND, EMPTY_LEGAL } from "../../shared/model";
 import { FLEET_CANCEL_REASONS } from "../../shared/booking/labels";
@@ -11,7 +11,7 @@ import { PASSWORD_MIN_LENGTH, TERMS_VERSION, adminMfaRequired, brandFromEnv, leg
 import { ApiError, cancelBooking, changeBooking, createBooking, operatorName } from "../emsp/service";
 import { invitePartner, newRegistrationToken, registerWithPartner, syncPartner, unregisterPartner } from "../ocpi/registration";
 import { simControl, simPrepareRegistration, simStatus, tick, type SimAction } from "../sim/cpo";
-import { BODY_LIMITS, BodyTooLarge, checkLogo, clientIp, readLimited } from "../security";
+import { API_KEY_PREFIX, BODY_LIMITS, BodyTooLarge, checkLogo, clientIp, hint, isApiKey, readLimited, sha256Hex } from "../security";
 import { complianceReport, saveTick } from "./compliance";
 import { sampleDrivers, sampleVehicles } from "./samples";
 
@@ -40,13 +40,42 @@ async function body<T>(req: Request): Promise<T> {
 /** Security-relevant actions go to the audit log. Logging must never break the request. */
 async function audit(ctx: Ctx, req: Request, user: AuthUser | null, e: { fleet_id?: string | null; action: string; target?: string | null; data?: Record<string, unknown> | null }) {
   const entry: AuditEntry = {
-    id: uuid(), at: iso(ctx.now()), actor_id: user?.id ?? null, actor_email: user?.email ?? null, fleet_id: e.fleet_id ?? null,
+    id: uuid(), at: iso(ctx.now()), actor_id: user?.id ?? null,
+    actor_email: user?.apiKey ? `API key: ${user.apiKey.name}` : user?.email ?? null, fleet_id: e.fleet_id ?? null,
     action: e.action, target: e.target ?? null, data: e.data ?? null, ip: ctx.mode === "live" ? clientIp(req) : null,
   };
   try { await ctx.store.addAudit(entry); } catch (err) { console.error("audit log write failed", err); }
 }
 
 const MFA_HELP = "Set up two-step verification in Settings → Security, then sign in again.";
+
+/**
+ * A request carrying a fleet API key (`Authorization: Bearer fck_…` or `X-API-Key: fck_…`) acts as
+ * that key: a planner or viewer of one fleet, with no person signed in. Returns null when the
+ * request has no API key, and "invalid" for an unknown, revoked or expired one.
+ */
+async function apiKeyUser(ctx: Ctx, req: Request): Promise<AuthUser | "invalid" | null> {
+  const bearer = /^Bearer\s+(\S+)$/i.exec(req.headers.get("Authorization") ?? "")?.[1] ?? "";
+  const raw = (bearer.startsWith(API_KEY_PREFIX) ? bearer : req.headers.get("X-API-Key") ?? "").trim();
+  if (!raw) return null;
+  if (!isApiKey(raw)) return "invalid";
+  const row = await ctx.store.findApiKeyByHash(await sha256Hex(raw));
+  const now = ctx.now();
+  if (!row || row.revoked_at || (row.expires_at && new Date(row.expires_at) <= now)) return "invalid";
+  // "Last used" is for spotting forgotten keys, so it only needs to be roughly right.
+  if (!row.last_used_at || now.getTime() - new Date(row.last_used_at).getTime() > 10 * 60_000) {
+    ctx.waitUntil(ctx.store.updateApiKey(row.id, { last_used_at: iso(now) }).catch((e) => console.warn("api key last_used_at", e)));
+  }
+  return { id: row.id, email: null, aal: "aal1", mfa: false, apiKey: { id: row.id, fleet_id: row.fleet_id, name: row.name, role: row.role } };
+}
+
+/** What an API key may reach: the network, and its own fleet's vehicles, drivers and bookings. */
+function apiKeyAllows(key: NonNullable<AuthUser["apiKey"]>, method: string, seg: string[]): boolean {
+  if (seg[0] === "network" && seg.length === 1 && method === "GET") return true;
+  if (seg[0] !== "fleets" || seg[1] !== key.fleet_id) return false;
+  if (seg.length === 2) return method === "GET";
+  return ["vehicles", "drivers", "bookings"].includes(seg[2]);
+}
 
 export async function handleApi(req: Request, ctx: Ctx): Promise<Response> {
   const url = new URL(req.url);
@@ -61,8 +90,13 @@ export async function handleApi(req: Request, ctx: Ctx): Promise<Response> {
       return json(await invitePreview(ctx, seg[1], await ctx.verifyUser(req).catch(() => null)));
     }
 
-    // ---- authenticated
-    const user = await ctx.verifyUser(req);
+    // ---- authenticated (a person's session, or a fleet API key)
+    const keyUser = await apiKeyUser(ctx, req);
+    if (keyUser === "invalid") return err(401, "This API key isn't valid. It may have been revoked or expired.", "INVALID_API_KEY");
+    if (keyUser?.apiKey && !apiKeyAllows(keyUser.apiKey, req.method, seg)) {
+      return err(403, "API keys can read the network and work with their own fleet's vehicles, drivers and bookings only", "API_KEY_SCOPE");
+    }
+    const user = keyUser ?? (await ctx.verifyUser(req));
     if (!user) return err(401, "Please sign in again", "UNAUTHENTICATED");
     // An account with a second factor must use it: a password alone is not enough.
     if (user.mfa && user.aal !== "aal2" && !(seg[0] === "me" && req.method === "GET")) {
@@ -194,6 +228,11 @@ async function passView(ctx: Ctx, token: string): Promise<PassView> {
 
 // ------------------------------------------------------------------ fleets
 async function requireMember(ctx: Ctx, user: AuthUser, fleetId: string, write: boolean): Promise<MemberRole> {
+  if (user.apiKey) {
+    if (user.apiKey.fleet_id !== fleetId) throw new ApiError(404, "Fleet not found");
+    if (write && user.apiKey.role === "viewer") throw new ApiError(403, "This API key is read-only");
+    return user.apiKey.role;
+  }
   const m = (await ctx.store.getMemberships(user.id)).find((x) => x.fleet_id === fleetId);
   if (!m) throw new ApiError(404, "Fleet not found");
   if (write && m.role === "viewer") throw new ApiError(403, "Your role is view-only");
@@ -257,11 +296,13 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
   const fleet = await ctx.store.getFleet(fleetId);
   if (!fleet) throw new ApiError(404, "Fleet not found");
   // The fleet's own policy: everyone on the team signs in with a second factor.
-  if (fleet.require_mfa && user.aal !== "aal2") throw new ApiError(403, `${fleet.name} requires two-step verification. ${MFA_HELP}`, "MFA_REQUIRED");
+  // (An API key was created by an owner who met that policy; keys are revoked in Settings.)
+  if (fleet.require_mfa && !user.apiKey && user.aal !== "aal2") throw new ApiError(403, `${fleet.name} requires two-step verification. ${MFA_HELP}`, "MFA_REQUIRED");
   const [res, id, action] = seg;
   // Team routes check roles themselves (anyone may leave; only owners manage the team).
   if (res === "team" || res === "members" || res === "invites") return teamRoutes(req, ctx, user, fleetId, role, res, id);
-  if (write && role === "viewer") throw new ApiError(403, "Your role is view-only");
+  if (res === "api-keys") return apiKeyRoutes(req, ctx, user, fleetId, role, id);
+  if (write && role === "viewer") throw new ApiError(403, user.apiKey ? "This API key is read-only" : "Your role is view-only");
 
   if (!res) {
     if (m === "GET") return json(fleet);
@@ -375,7 +416,7 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
         if (!d || d.fleet_id !== fleetId) throw new ApiError(404, "Driver not found");
       }
       const row = await createBooking(ctx, {
-        fleet_id: fleetId, user_id: user.id, vehicle, driver_id: b.driver_id ?? null, cpo_country_code: b.cpo_country_code,
+        fleet_id: fleetId, user_id: user.apiKey ? null : user.id, api_key_id: user.apiKey?.id ?? null, vehicle, driver_id: b.driver_id ?? null, cpo_country_code: b.cpo_country_code,
         cpo_party_id: b.cpo_party_id, booking_location_id: b.booking_location_id, start_at: b.start_at, end_at: b.end_at,
         power_required_kw: b.power_required_kw ?? null, notes: b.notes ?? null,
       });
@@ -416,6 +457,45 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
       const v = vehicle ?? ({ ...({} as Vehicle), plate: row.plate, token_uid: row.token_uid, start_method: row.token_type === "EMAID" ? "PLUG_AND_CHARGE" : "AUTOCHARGE", connector_types: [], vehicle_type: "TRUCK_WITH_TRAILER", contract_id: row.last_request.tokens?.[0]?.contract_id ?? "" } as Vehicle);
       return json(await cancelBooking(ctx, row, v, reason));
     }
+  }
+  return err(404, "Not found");
+}
+
+// ------------------------------------------------------------------ API keys
+const MAX_ACTIVE_KEYS = 20;
+
+async function apiKeyRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: string, role: MemberRole, id: string | undefined): Promise<Response> {
+  const m = req.method;
+  if (user.apiKey || role !== "owner") throw new ApiError(403, "Only fleet owners can manage API keys");
+  if (!id && m === "GET") return json(await ctx.store.listApiKeys(fleetId));
+  if (!id && m === "POST") {
+    const b = await body<{ name?: string; role?: string; expires_in_days?: number | null }>(req);
+    const name = (b.name ?? "").toString().replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 60);
+    if (!name) throw new ApiError(400, "Name the key after the system that will use it, e.g. \"Dispatch TMS\"");
+    const keyRole = b.role === "viewer" ? "viewer" : "planner";
+    const days = b.expires_in_days == null ? null : Math.round(Number(b.expires_in_days));
+    if (days !== null && !(days >= 1 && days <= 730)) throw new ApiError(400, "Expiry must be between 1 and 730 days, or never");
+    const now = ctx.now();
+    const active = (await ctx.store.listApiKeys(fleetId)).filter((k) => !k.revoked_at && (!k.expires_at || new Date(k.expires_at) > now));
+    if (active.length >= MAX_ACTIVE_KEYS) throw new ApiError(409, `A fleet can have ${MAX_ACTIVE_KEYS} active keys. Revoke one you no longer use first.`);
+    const key = `${API_KEY_PREFIX}${randomToken(32)}`;
+    const saved = await ctx.store.createApiKey({
+      id: uuid(), fleet_id: fleetId, name, role: keyRole, key_hash: await sha256Hex(key), key_hint: hint(key) ?? "",
+      created_by: user.id, created_at: iso(now), last_used_at: null, revoked_at: null,
+      expires_at: days === null ? null : iso(new Date(now.getTime() + days * 86_400_000)),
+    });
+    await audit(ctx, req, user, { fleet_id: fleetId, action: "api_key.create", target: name, data: { key_id: saved.id, role: keyRole, expires_at: saved.expires_at } });
+    // The key is shown this once; only its hash is kept.
+    return json({ ...saved, key } satisfies ApiKey & { key: string }, 201);
+  }
+  if (id && m === "DELETE") {
+    const k = (await ctx.store.listApiKeys(fleetId)).find((x) => x.id === id);
+    if (!k) throw new ApiError(404, "API key not found");
+    if (!k.revoked_at) {
+      await ctx.store.updateApiKey(id, { revoked_at: iso(ctx.now()) });
+      await audit(ctx, req, user, { fleet_id: fleetId, action: "api_key.revoke", target: k.name, data: { key_id: id } });
+    }
+    return json({ ok: true });
   }
   return err(404, "Not found");
 }
