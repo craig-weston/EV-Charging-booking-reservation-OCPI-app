@@ -8,6 +8,7 @@ import { canChange } from "../../shared/booking/terms";
 import { iso, normalizePlate, randomToken, shortId, upper, uuid, displayPlate } from "../../shared/util";
 import type { Ctx } from "../context";
 import { findEndpoint, ocpiCall } from "../ocpi/client";
+import { notifyDriver } from "../notify";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public code?: string) {
@@ -47,6 +48,8 @@ export async function applyBookingUpdate(ctx: Ctx, row: BookingRow, incoming: Bo
   const { patch, events } = reconcileBooking(row, incoming, op, (uid) => bayLabel(loc, uid));
   const updated = await ctx.store.updateBooking(row.id, patch);
   await addEvents(ctx, row, events);
+  // Confirmed, moved or cancelled: tell the driver (no-op unless the fleet has messages on).
+  ctx.waitUntil(notifyDriver(ctx, row.id));
   return updated;
 }
 
@@ -65,6 +68,8 @@ async function cpoBookingsEndpoint(ctx: Ctx, cc: string, pid: string): Promise<{
 export interface CreateBookingInput {
   fleet_id: string;
   user_id: string | null;
+  /** The fleet API key that made the request, when no person did. */
+  api_key_id?: string | null;
   vehicle: Vehicle;
   driver_id: string | null;
   cpo_country_code: string;
@@ -97,7 +102,7 @@ export async function createBooking(ctx: Ctx, i: CreateBookingInput): Promise<Bo
   });
   const now = iso(ctx.now());
   let row: BookingRow = {
-    id: uuid(), fleet_id: i.fleet_id, vehicle_id: i.vehicle.id, driver_id: i.driver_id, created_by: i.user_id,
+    id: uuid(), fleet_id: i.fleet_id, vehicle_id: i.vehicle.id, driver_id: i.driver_id, created_by: i.user_id, ...(i.api_key_id ? { created_by_key: i.api_key_id } : {}),
     partner_id: partner.id, cpo_country_code: upper(i.cpo_country_code), cpo_party_id: upper(i.cpo_party_id),
     location_id: bl.location_id, booking_location_id: bl.id, request_id: requestId, authorization_reference: authRef,
     ocpi_id: null, reservation_status: "PENDING", start_at: iso(start), end_at: iso(end),

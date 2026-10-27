@@ -125,9 +125,14 @@ final charge record with energy and cost, all from the operator's OCPI data.
 - **Planning:** a lane board of the day for every truck; drag a gap to book it.
 - **Bookings:** confirmations, changes, cancellations with reasons, no-shows, and the operator's
   terms in plain English.
+- **Driver messages:** the pass link by text or WhatsApp, sent automatically when a booking is
+  confirmed, changed or cancelled (via Twilio, per fleet), or shared by the planner.
 - **Fleet:** trucks with their charging capabilities and IDs, drivers, and sample trucks to start
   with.
 - **Team:** owners, planners and viewers, single-use invites, and an activity log.
+- **API keys:** your TMS, telematics, dispatch or autonomous vehicle platform can find bays and book
+  them without anyone signing in. Keys are per fleet, read-only or booking, revocable and audited
+  ([API guide](docs/api.md)).
 - **Animated guides:** a step-by-step simulation of each visit, shown to planners and on every
   driver pass.
 
@@ -156,6 +161,8 @@ Depotcharge is a complete **eMSP** (e-mobility service provider) over **OCPI 2.3
 
 A built-in **operator simulator** (three fictional operators, 12 UK sites) answers over real OCPI,
 so you can test end to end before connecting a real network. Every message in and out is logged.
+For real operators, `npm run ocpi:probe` checks their test system read-only, and
+[docs/operator-testing.md](docs/operator-testing.md) lists the test cases to run with them.
 
 ## Secure by design
 
@@ -164,7 +171,8 @@ so you can test end to end before connecting a real network. Every message in an
 - **Two-step verification** with an authenticator app: required for admins, optional for whole fleets.
 - **Strict Content-Security-Policy**, no third-party scripts or fonts, rate limits and input
   validation on every request.
-- **Operator credentials encrypted** at rest or stored only as hashes, never in logs.
+- **Operator credentials encrypted** at rest or stored only as hashes, never in logs. Driver
+  pass and invite links are encrypted too, and looked up by hash.
 - **Fleets isolated** in the API and again by database row level security.
 - **UK GDPR tools built in:** data export, deletion, automatic retention, an audit log, and legal
   page templates.
@@ -190,9 +198,7 @@ interface and the simulated operators), with a fleet and two weeks of charging h
 Depotcharge runs on **Cloudflare Workers** and **Supabase**; both free tiers are enough to start.
 
 1. **Supabase:** create a project (UK or EU region), enable the **pg_cron** extension, then run
-   [`20261020000000_init.sql`](supabase/migrations/20261020000000_init.sql) and
-   [`20261021000000_security.sql`](supabase/migrations/20261021000000_security.sql) in the SQL
-   editor. Under Authentication, set a 12-character minimum password and keep TOTP enabled.
+   each file in [`supabase/migrations`](supabase/migrations), oldest first, in the SQL editor. Under Authentication, set a 12-character minimum password and keep TOTP enabled.
 2. **Cloudflare:** fork this repository, then in Workers & Pages choose **Create → Import a
    repository** (or open an existing Worker → Settings → Builds → Connect). Build command
    `npm install`, deploy command `npx wrangler deploy`. Every push to `main` deploys.

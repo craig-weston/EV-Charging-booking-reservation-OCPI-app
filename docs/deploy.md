@@ -36,10 +36,11 @@ npx wrangler dev                 # builds, then serves on http://localhost:8787
 
 1. Create a project (pick a UK or EU region).
 2. **Database → Extensions**: enable **pg_cron** (schedules the daily data-retention job).
-3. **SQL Editor → New query**: run `supabase/migrations/20261020000000_init.sql`, then
-   `supabase/migrations/20261021000000_security.sql` (hashed operator tokens, audit log,
-   read-only browser access, the retention job). With the Supabase CLI instead: `supabase link`
-   then `supabase db push`.
+3. **SQL Editor → New query**: run every file in `supabase/migrations`, oldest first:
+   `20261020000000_init.sql` (schema and row level security), `20261021000000_security.sql`
+   (hashed operator tokens, audit log, read-only browser access, the retention job), then the later
+   ones (for example `20261027000000_api_keys.sql`). With the Supabase CLI instead:
+   `supabase link` then `supabase db push`. When you update, run any new migration the same way.
 4. **Authentication → Sign In / Providers → Email**: keep "Confirm email" on (invite links survive
    the confirmation step), turn on **Secure password change**, set **Minimum password length to
    12**, and turn on **leaked password protection** if your plan has it.
@@ -83,6 +84,10 @@ Then **Settings → Variables and Secrets**:
 | `PUBLIC_BASE_URL` | Text | `https://book.example.com` | Optional: set once you use a custom domain. |
 | `SECURITY_CONTACT` | Text | `security@example.com` | Shown on the Security page. |
 | `DATA_ENCRYPTION_KEY_PREVIOUS` | Secret | | Only while rotating the key (see the security policy). |
+| `TWILIO_ACCOUNT_SID` | Text | `AC…` | Optional: automatic driver texts / WhatsApp (see below). |
+| `TWILIO_AUTH_TOKEN` | Secret | | Server only. |
+| `TWILIO_FROM` | Text | `+447700900000` or a sender ID | SMS sender. Set it to offer text messages. |
+| `TWILIO_WHATSAPP_FROM` | Text | `+447700900000` | WhatsApp-enabled sender. Set it to offer WhatsApp. |
 | `REQUIRE_ADMIN_MFA` | Text | | Leave unset: platform admins must use two-step verification. |
 | `LEGAL_*`, `BRAND_*` | Text | | Optional defaults for Compliance → Company & legal and Settings → Branding. |
 
@@ -93,6 +98,20 @@ a charge record arrives, through Supabase Realtime (run
 `supabase/migrations/20261030000000_realtime.sql` once; Realtime is on by default in Supabase).
 Row level security decides which changes each person is told about, and the browser then reloads
 through the API. If the connection drops, the app falls back to polling.
+
+**Automatic driver messages.** With the Twilio values set, fleet owners can choose **Settings →
+Fleet → Message drivers automatically** (text or WhatsApp). The assigned driver then gets their
+pass link when a booking is confirmed, a new one if the time, driver or link changes, and a
+"don't go" message if it is cancelled. Each result (sent, or why it failed) appears on the
+booking's timeline, with the number masked. Notes:
+
+- Use a UK number or a registered alphanumeric sender ID for SMS; drivers' numbers are
+  normalised to +44 when they start with 0.
+- WhatsApp only delivers free-form messages inside a 24-hour window after the driver last wrote
+  to you. For messages that start the conversation, Meta requires an approved template; until
+  you have one, offer SMS.
+- Twilio becomes a sub-processor: it is already listed in the data processing terms (Annex C)
+  and `docs/compliance/data-protection.md`. Tell fleet owners before you switch it on.
 
 Also recommended in Cloudflare: SSL/TLS **Full (strict)**, minimum TLS 1.2, Always Use HTTPS, WAF
 managed rules, and a rate-limiting rule for `/api/*` and `/ocpi/*` (on a custom domain).
@@ -132,6 +151,9 @@ Your OCPI details**).
 - **You register with them:** Network → **Connect an operator** with their versions URL and the
   token A they gave you. Depotcharge runs the credentials handshake, then pulls Locations, Tariffs
   and BookingLocations.
+
+Test each operator's test system first: [operator-testing.md](operator-testing.md) has a
+read-only check (`npm run ocpi:probe`) and the test cases to run with them.
 
 What the operator needs to support:
 

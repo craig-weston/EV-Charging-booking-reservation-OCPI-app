@@ -149,7 +149,7 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys }: {
       <svg
         viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
-        role="img" aria-label="Map of charging sites"
+        role="group" aria-label="Map of charging sites"
       >
         <path className="land-other" d={LAND_OTHER} />
         <path className="land" d={LAND_UK} />

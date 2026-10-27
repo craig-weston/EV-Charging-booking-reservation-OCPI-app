@@ -14,6 +14,8 @@ export interface Fleet {
   allow_unbooked_charging: boolean;
   /** Everyone on the team must sign in with two-step verification (authenticator app). */
   require_mfa: boolean;
+  /** Message drivers automatically when a booking is confirmed, changed or cancelled. */
+  notify_drivers: NotifyChannel;
   /** Version of the terms of service the owner accepted for the organisation, and when / by whom. */
   terms_version: string | null;
   terms_accepted_at: string | null;
@@ -21,6 +23,8 @@ export interface Fleet {
   created_at: string;
   updated_at: string;
 }
+
+export type NotifyChannel = "off" | "sms" | "whatsapp";
 
 export interface Membership {
   fleet_id: string;
@@ -150,6 +154,8 @@ export interface BookingRow {
   vehicle_id: string | null;
   driver_id: string | null;
   created_by: string | null;
+  /** Set instead of created_by when a fleet API key made the booking. */
+  created_by_key?: string | null;
   partner_id: string | null;
   cpo_country_code: string;
   cpo_party_id: string;
@@ -172,6 +178,8 @@ export interface BookingRow {
   session: SessionSummary | null;
   cdr: CdrSummary | null;
   pass_token: string;
+  /** What the driver was last messaged about (see server/notify.ts), so nothing is sent twice. */
+  driver_notified?: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -283,6 +291,8 @@ export interface AppConfig {
   /** Current version of the terms of service and privacy notice. */
   terms_version: string;
   security: { require_admin_mfa: boolean; password_min_length: number };
+  /** Channels this deployment can message drivers on. */
+  notifications: { sms: boolean; whatsapp: boolean };
 }
 
 /** The legal entity operating the platform. Required disclosures for a UK company website. */
@@ -316,6 +326,29 @@ export interface Certification {
   expires_on: string; // YYYY-MM-DD
   certification_body: string;
   verify_url: string;
+}
+
+/**
+ * A fleet's API key, for its own systems (TMS, telematics, dispatch or autonomy platforms) to use
+ * the API without a person signing in. Only a SHA-256 hash of the key is stored; the key itself
+ * is shown once, when it's created.
+ */
+export interface ApiKey {
+  id: string;
+  fleet_id: string;
+  name: string;
+  /** What the key may do: "planner" reads and books, "viewer" only reads. Never "owner". */
+  role: "planner" | "viewer";
+  key_hint: string;
+  created_by: string | null;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface ApiKeyRow extends ApiKey {
+  key_hash: string;
 }
 
 /** Security-relevant actions, kept for 12 months (see the retention schedule). */

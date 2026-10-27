@@ -35,6 +35,11 @@ export interface Env {
   LEGAL_PRIVACY_EMAIL?: string;
   LEGAL_ICO_NUMBER?: string;
   SECURITY_CONTACT?: string;
+  /** Twilio, for automatic driver texts / WhatsApp messages (Settings → Fleet). */
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string; // secret
+  TWILIO_FROM?: string; // SMS sender: an E.164 number or an alphanumeric sender ID
+  TWILIO_WHATSAPP_FROM?: string; // WhatsApp-enabled sender number, E.164
 }
 
 export interface AuthUser {
@@ -44,6 +49,8 @@ export interface AuthUser {
   aal?: "aal1" | "aal2";
   /** The account has a verified second factor (so every session must reach aal2). */
   mfa?: boolean;
+  /** Set when the request was made with a fleet API key rather than a signed-in person. */
+  apiKey?: { id: string; fleet_id: string; name: string; role: "planner" | "viewer" };
 }
 
 export interface Party {

@@ -422,8 +422,9 @@ function KeyRotation() {
   const go = async () => {
     setBusy(true);
     try {
-      const r = await api<{ tokens: number }>("POST", "/admin/security/reencrypt");
-      toast(`${r.tokens} operator credential${r.tokens === 1 ? "" : "s"} re-encrypted with the current key`);
+      const r = await api<{ tokens: number; links?: number }>("POST", "/admin/security/reencrypt");
+      const links = r.links ?? 0;
+      toast(`Re-encrypted with the current key: ${r.tokens} operator credential${r.tokens === 1 ? "" : "s"} and ${links} driver pass and invite link${links === 1 ? "" : "s"}`);
     } catch (e) {
       toast(e instanceof ApiFailure ? e.message : "Couldn't re-encrypt", "bad");
     } finally {
@@ -435,9 +436,9 @@ function KeyRotation() {
       <div className="panel-head"><Icon name="key" /><h2>Encryption key</h2></div>
       <div className="panel-body stack gap-12">
         <p className="small muted">
-          Operators' credentials are encrypted with <code>DATA_ENCRYPTION_KEY</code>. To rotate it (yearly, or at once if it may have leaked), put the old key in
+          Operators' credentials, driver pass links and team invite links are encrypted with <code>DATA_ENCRYPTION_KEY</code>. To rotate it (yearly, or at once if it may have leaked), put the old key in
           <code> DATA_ENCRYPTION_KEY_PREVIOUS</code>, set a new key, redeploy, then re-encrypt here. Remove the previous key afterwards. Do the same once after
-          first setting a key, to encrypt credentials saved before it.
+          first setting a key, to encrypt credentials and links saved before it.
         </p>
         <div><button className="btn" disabled={busy} onClick={go}>{busy && <Spinner />}Re-encrypt stored credentials</button></div>
       </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Brand, Fleet } from "../../shared/model";
+import type { Brand, Fleet, NotifyChannel } from "../../shared/model";
 import { DEFAULT_BRAND } from "../../shared/model";
 import { useApp, type Theme } from "../app/state";
 import { ApiFailure } from "../app/backend";
@@ -7,6 +7,7 @@ import { BRAND_SWATCHES, applyBrand } from "../app/brand";
 import { BrandMark, Field, Icon, Plate, Seg, Spinner, Switch } from "../ui/ui";
 import { TeamSettings } from "./Team";
 import { SecuritySettings } from "./Security";
+import { ApiKeySettings } from "./ApiKeys";
 import { ChargingMini } from "../components/art/Mini";
 import { href } from "../app/router";
 import { LEGAL_DOCS } from "../legal/documents";
@@ -22,6 +23,7 @@ export function SettingsPage() {
           <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-fleet")?.scrollIntoView({ behavior: "smooth" }); }}>Fleet</a>
           <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-team")?.scrollIntoView({ behavior: "smooth" }); }}>Team</a>
           <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-security")?.scrollIntoView({ behavior: "smooth" }); }}>Security</a>
+          {role === "owner" && <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-api")?.scrollIntoView({ behavior: "smooth" }); }}>API keys</a>}
           {me?.is_admin && <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-brand")?.scrollIntoView({ behavior: "smooth" }); }}>Branding</a>}
           <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-look")?.scrollIntoView({ behavior: "smooth" }); }}>Appearance</a>
           <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-account")?.scrollIntoView({ behavior: "smooth" }); }}>Account</a>
@@ -31,6 +33,7 @@ export function SettingsPage() {
           {fleet && <FleetSettings fleet={fleet} canEdit={role === "owner"} />}
           {fleet && <TeamSettings canManage={role === "owner"} />}
           <SecuritySettings />
+          {fleet && role === "owner" && <ApiKeySettings />}
           {me?.is_admin && <BrandSettings />}
           <section className="panel" id="s-look">
             <div className="panel-head"><h2>Appearance</h2></div>
@@ -66,16 +69,18 @@ export function SettingsPage() {
 }
 
 function FleetSettings({ fleet, canEdit }: { fleet: Fleet; canEdit: boolean }) {
-  const { api, fleetId, refreshFleet, refreshMe, toast } = useApp();
+  const { api, fleetId, refreshFleet, refreshMe, toast, config } = useApp();
   const [name, setName] = useState(fleet.name);
+  const [notify, setNotify] = useState<NotifyChannel>(fleet.notify_drivers ?? "off");
+  const channels = config.notifications ?? { sms: false, whatsapp: false };
   const [phone, setPhone] = useState(fleet.desk_phone ?? "");
   const [unbooked, setUnbooked] = useState(fleet.allow_unbooked_charging);
   const [saving, setSaving] = useState(false);
-  const dirty = name !== fleet.name || phone !== (fleet.desk_phone ?? "") || unbooked !== fleet.allow_unbooked_charging;
+  const dirty = name !== fleet.name || phone !== (fleet.desk_phone ?? "") || unbooked !== fleet.allow_unbooked_charging || notify !== (fleet.notify_drivers ?? "off");
   const save = async () => {
     setSaving(true);
     try {
-      await api("PATCH", `/fleets/${fleetId}`, { name, desk_phone: phone, allow_unbooked_charging: unbooked });
+      await api("PATCH", `/fleets/${fleetId}`, { name, desk_phone: phone, allow_unbooked_charging: unbooked, notify_drivers: notify });
       await Promise.all([refreshFleet(), refreshMe()]);
       toast("Fleet settings saved");
     } catch (e) {
@@ -96,6 +101,17 @@ function FleetSettings({ fleet, canEdit }: { fleet: Fleet; canEdit: boolean }) {
           <span>Allow charging without a booking</span>
           <span className="hint" style={{ display: "block" }}>When an operator asks us to authorise one of your trucks and there's no booking, answer "allowed". Turn off to only pay for booked sessions.</span>
         </Switch>
+        <Field label="Message drivers automatically" hint={channels.sms || channels.whatsapp
+          ? "When a booking is confirmed, changed or cancelled, the assigned driver gets their pass link. Uses the phone number on the driver's profile."
+          : "Not set up on this platform yet: your platform admin needs to add the Twilio settings."}>
+          {(id) => (
+            <select id={id} className="input" value={notify} disabled={!canEdit} onChange={(e) => setNotify(e.target.value as NotifyChannel)}>
+              <option value="off">Off: we'll share the pass link ourselves</option>
+              <option value="sms" disabled={!channels.sms && notify !== "sms"}>Text message (SMS)</option>
+              <option value="whatsapp" disabled={!channels.whatsapp && notify !== "whatsapp"}>WhatsApp</option>
+            </select>
+          )}
+        </Field>
         {canEdit && <div><button className="btn primary" disabled={!dirty || saving} onClick={save}>{saving && <Spinner />}Save fleet settings</button></div>}
       </div>
     </section>
@@ -175,7 +191,7 @@ function BrandSettings() {
           </div>
           <div className="row gap-12 wrap" style={{ padding: 14 }}>
             <Plate plate="PN74 EVH" />
-            <span className="chip" aria-pressed="true">Tomorrow</span>
+            <span className="chip on">Tomorrow</span>
             <span className="status ok">Reserved</span>
             <a href="#/settings" onClick={(e) => e.preventDefault()}>Operator booking terms</a>
           </div>

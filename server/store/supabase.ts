@@ -1,11 +1,11 @@
 // Store backed by Supabase Postgres through PostgREST (plain fetch, no SDK — runs on Workers).
 // Uses the service-role / secret key, so it bypasses RLS: the API layer enforces fleet access.
 import type {
-  AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
+  ApiKey, ApiKeyRow, AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
   Partner, StoredObject, Vehicle,
 } from "../../shared/model";
 import { iso, upper } from "../../shared/util";
-import { openSecret, sealSecret } from "../security";
+import { openSecret, sealSecret, sha256Hex } from "../security";
 import type { Page, Store } from "./types";
 
 class RestError extends Error {
@@ -14,7 +14,7 @@ class RestError extends Error {
   }
 }
 
-const TS_KEYS = new Set(["at", "created_at", "updated_at", "start_at", "end_at", "last_sync_at", "last_updated", "received_at", "expires_at", "accepted_at"]);
+const TS_KEYS = new Set(["at", "created_at", "updated_at", "start_at", "end_at", "last_sync_at", "last_updated", "received_at", "expires_at", "accepted_at", "last_used_at", "revoked_at"]);
 
 /** PostgREST returns "2026-10-20T12:00:00+00:00"; the app uses OCPI-style "…Z". */
 function normalize<T>(row: T): T {
@@ -103,6 +103,43 @@ export class SupabaseStore implements Store {
     this.rest = new Rest(url, serviceKey);
   }
 
+  // Link tokens (driver passes, team invites) are bearer secrets. At rest they're sealed with
+  // DATA_ENCRYPTION_KEY (planners can still copy the link again) and found by their SHA-256, so a
+  // copy of the database or a backup doesn't hand out working links.
+  private async sealLink<T extends object>(row: T, field: "pass_token" | "token", hashField: "pass_token_hash" | "token_hash"): Promise<T> {
+    const v = (row as Record<string, unknown>)[field];
+    if (typeof v !== "string") return row;
+    return { ...row, [field]: await sealSecret(v, this.encryptionKey), [hashField]: await sha256Hex(v) };
+  }
+  private async openLink<T extends object>(row: T | null, field: "pass_token" | "token", hashField: "pass_token_hash" | "token_hash"): Promise<T | null> {
+    if (!row) return row;
+    const { [hashField]: _h, ...rest } = row as Record<string, unknown>;
+    const v = rest[field];
+    return { ...rest, [field]: typeof v === "string" ? await openSecret(v, this.encryptionKey, this.previousKey) : v } as T;
+  }
+  private openBooking = (b: BookingRow | null) => this.openLink(b, "pass_token", "pass_token_hash");
+  private openBookings = (rows: BookingRow[]) => Promise.all(rows.map((b) => this.openLink(b, "pass_token", "pass_token_hash") as Promise<BookingRow>));
+  private openInvite = (i: FleetInvite | null) => this.openLink(i, "token", "token_hash");
+
+  /** Re-seal every pass and invite token with the current key (Security → Re-encrypt). */
+  async resealLinkTokens(): Promise<number> {
+    let count = 0;
+    for (const [table, field, hashField] of [["bookings", "pass_token", "pass_token_hash"], ["fleet_invites", "token", "token_hash"]] as const) {
+      for (let offset = 0; ; offset += 500) {
+        const rows = await this.rest.select<Record<string, string>>(table, `select=id,${field}&order=id.asc&limit=500&offset=${offset}`);
+        for (const r of rows) {
+          const plain = await openSecret(r[field], this.encryptionKey, this.previousKey);
+          if (plain == null) continue;
+          const sealed = await this.sealLink({ [field]: plain } as Record<string, string>, field, hashField);
+          await this.rest.update(table, `id=eq.${enc(r.id)}`, sealed);
+          count++;
+        }
+        if (rows.length < 500) break;
+      }
+    }
+    return count;
+  }
+
   // tenancy -------------------------------------------------------------------
   async getMemberships(userId: string): Promise<Membership[]> {
     const rows = await this.rest.select<{ fleet_id: string; user_id: string; role: MemberRole; fleets: { name: string; require_mfa: boolean } | null }>(
@@ -149,17 +186,18 @@ export class SupabaseStore implements Store {
     await this.rest.remove("fleet_members", `fleet_id=eq.${enc(fleetId)}&user_id=eq.${enc(userId)}`);
   }
   async createInvite(invite: FleetInvite) {
-    const [row] = await this.rest.insert<FleetInvite>("fleet_invites", invite);
-    return row;
+    const [row] = await this.rest.insert<FleetInvite>("fleet_invites", await this.sealLink(invite, "token", "token_hash"));
+    return (await this.openInvite(row))!;
   }
-  listInvites(fleetId: string) {
-    return this.rest.select<FleetInvite>("fleet_invites", `select=*&fleet_id=eq.${enc(fleetId)}&accepted_at=is.null&order=created_at.asc`);
+  async listInvites(fleetId: string) {
+    const rows = await this.rest.select<FleetInvite>("fleet_invites", `select=*&fleet_id=eq.${enc(fleetId)}&accepted_at=is.null&order=created_at.asc`);
+    return Promise.all(rows.map((i) => this.openInvite(i) as Promise<FleetInvite>));
   }
-  getInvite(id: string) {
-    return this.rest.one<FleetInvite>("fleet_invites", `select=*&id=eq.${enc(id)}`);
+  async getInvite(id: string) {
+    return this.openInvite(await this.rest.one<FleetInvite>("fleet_invites", `select=*&id=eq.${enc(id)}`));
   }
-  getInviteByToken(token: string) {
-    return this.rest.one<FleetInvite>("fleet_invites", `select=*&token=eq.${enc(token)}`);
+  async getInviteByToken(token: string) {
+    return this.openInvite(await this.rest.one<FleetInvite>("fleet_invites", `select=*&token_hash=eq.${await sha256Hex(token)}`));
   }
   async markInviteAccepted(id: string, userId: string, at: string) {
     const rows = await this.rest.update("fleet_invites", `id=eq.${enc(id)}&accepted_at=is.null`, { accepted_by: userId, accepted_at: at });
@@ -167,6 +205,22 @@ export class SupabaseStore implements Store {
   }
   async deleteInvite(id: string) {
     await this.rest.remove("fleet_invites", `id=eq.${enc(id)}`);
+  }
+
+  // API keys -----------------------------------------------------------------------
+  listApiKeys(fleetId: string) {
+    return this.rest.select<ApiKey>("fleet_api_keys", `select=id,fleet_id,name,role,key_hint,created_by,created_at,last_used_at,expires_at,revoked_at&fleet_id=eq.${enc(fleetId)}&order=created_at.desc`);
+  }
+  async createApiKey(row: ApiKeyRow) {
+    await this.rest.insert("fleet_api_keys", row, { returning: false });
+    const { key_hash: _h, ...k } = row;
+    return k;
+  }
+  findApiKeyByHash(hash: string) {
+    return this.rest.one<ApiKeyRow>("fleet_api_keys", `select=*&key_hash=eq.${enc(hash)}`);
+  }
+  async updateApiKey(id: string, patch: Partial<Pick<ApiKey, "last_used_at" | "revoked_at" | "name">>) {
+    await this.rest.update("fleet_api_keys", `id=eq.${enc(id)}`, patch);
   }
 
   async getBrand() {
@@ -291,39 +345,39 @@ export class SupabaseStore implements Store {
 
   // bookings ---------------------------------------------------------------------------------
   async insertBooking(b: BookingRow) {
-    const [row] = await this.rest.insert<BookingRow>("bookings", b);
-    return row;
+    const [row] = await this.rest.insert<BookingRow>("bookings", await this.sealLink(b, "pass_token", "pass_token_hash"));
+    return (await this.openBooking(row))!;
   }
   async updateBooking(id: string, patch: Partial<BookingRow>) {
-    const [row] = await this.rest.update<BookingRow>("bookings", `id=eq.${enc(id)}`, { ...patch, updated_at: iso(new Date()) });
+    const [row] = await this.rest.update<BookingRow>("bookings", `id=eq.${enc(id)}`, { ...(await this.sealLink(patch, "pass_token", "pass_token_hash")), updated_at: iso(new Date()) });
     if (!row) throw new Error("booking not found");
-    return row;
+    return (await this.openBooking(row))!;
   }
-  getBooking(id: string) {
-    return this.rest.one<BookingRow>("bookings", `select=*&id=eq.${enc(id)}`);
+  async getBooking(id: string) {
+    return this.openBooking(await this.rest.one<BookingRow>("bookings", `select=*&id=eq.${enc(id)}`));
   }
-  findBookingByRequestId(requestId: string) {
-    return this.rest.one<BookingRow>("bookings", `select=*&request_id=eq.${enc(requestId)}`);
+  async findBookingByRequestId(requestId: string) {
+    return this.openBooking(await this.rest.one<BookingRow>("bookings", `select=*&request_id=eq.${enc(requestId)}`));
   }
   async findBookingByCpoRef(cc: string, pid: string, ref: string) {
     const quoted = `"${ref.replace(/["\\]/g, "")}"`;
     const rows = await this.rest.select<BookingRow>("bookings", `select=*&cpo_country_code=eq.${enc(upper(cc))}&cpo_party_id=eq.${enc(upper(pid))}&or=${enc(`(ocpi_id.eq.${quoted},request_id.eq.${quoted})`)}&limit=2`);
-    return rows.find((r) => r.ocpi_id === ref) ?? rows[0] ?? null;
+    return this.openBooking(rows.find((r) => r.ocpi_id === ref) ?? rows[0] ?? null);
   }
-  findBookingByAuthRef(authRef: string) {
-    return this.rest.one<BookingRow>("bookings", `select=*&authorization_reference=eq.${enc(authRef)}`);
+  async findBookingByAuthRef(authRef: string) {
+    return this.openBooking(await this.rest.one<BookingRow>("bookings", `select=*&authorization_reference=eq.${enc(authRef)}`));
   }
-  findBookingByPassToken(token: string) {
-    return this.rest.one<BookingRow>("bookings", `select=*&pass_token=eq.${enc(token)}`);
+  async findBookingByPassToken(token: string) {
+    return this.openBooking(await this.rest.one<BookingRow>("bookings", `select=*&pass_token_hash=eq.${await sha256Hex(token)}`));
   }
-  listBookings(fleetId: string, o: { from?: string; to?: string; limit?: number } = {}) {
+  async listBookings(fleetId: string, o: { from?: string; to?: string; limit?: number } = {}) {
     let q = `select=*&fleet_id=eq.${enc(fleetId)}&order=start_at.asc&limit=${o.limit ?? 500}`;
     if (o.from) q += `&end_at=gte.${enc(o.from)}`;
     if (o.to) q += `&start_at=lt.${enc(o.to)}`;
-    return this.rest.select<BookingRow>("bookings", q);
+    return this.openBookings(await this.rest.select<BookingRow>("bookings", q));
   }
-  listVehicleBookings(vehicleId: string, locationId: string) {
-    return this.rest.select<BookingRow>("bookings", `select=*&vehicle_id=eq.${enc(vehicleId)}&location_id=eq.${enc(locationId)}&order=start_at.desc&limit=50`);
+  async listVehicleBookings(vehicleId: string, locationId: string) {
+    return this.openBookings(await this.rest.select<BookingRow>("bookings", `select=*&vehicle_id=eq.${enc(vehicleId)}&location_id=eq.${enc(locationId)}&order=start_at.desc&limit=50`));
   }
   async addEvents(events: BookingEvent[]) {
     if (events.length) await this.rest.insert("booking_events", events, { returning: false });
