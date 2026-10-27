@@ -1,4 +1,6 @@
 // Production context for Cloudflare Pages Functions.
+import type { AppConfig } from "../shared/model";
+import { notifyChannels } from "./notify";
 import { reportError, shortRef } from "./alerts";
 import { brandFromEnv, legalFromEnv, partyFromEnv, PASSWORD_MIN_LENGTH, TERMS_VERSION, type AuthUser, type Ctx, type Env } from "./context";
 import { dispatch } from "./dispatch";
@@ -81,14 +83,15 @@ export function unconfigured(pc: PagesContext): Response {
   const path = new URL(pc.request.url).pathname;
   if (path === "/api/config") {
     const party = partyFromEnv(pc.env);
-    return Response.json({
-      data: {
-        mode: "demo", supabase_url: null, supabase_anon_key: null, simulator: true, party,
-        brand: brandFromEnv(pc.env), ocpi_versions_url: `${new URL(pc.request.url).origin}/ocpi/versions`,
-        legal: legalFromEnv(pc.env), certifications: [], terms_version: TERMS_VERSION,
-        security: { require_admin_mfa: false, password_min_length: PASSWORD_MIN_LENGTH },
-      },
-    });
+    // Typed as AppConfig so a new config field can't be forgotten here (the demo runs in the browser).
+    const data: AppConfig = {
+      mode: "demo", supabase_url: null, supabase_anon_key: null, simulator: true, party,
+      brand: brandFromEnv(pc.env), ocpi_versions_url: `${new URL(pc.request.url).origin}/ocpi/versions`,
+      legal: legalFromEnv(pc.env), certifications: [], terms_version: TERMS_VERSION,
+      security: { require_admin_mfa: false, password_min_length: PASSWORD_MIN_LENGTH },
+      notifications: notifyChannels(pc.env, "demo"),
+    };
+    return Response.json({ data });
   }
   return Response.json(
     { error: { message: "Server not configured: set SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY", code: "NOT_CONFIGURED" } },

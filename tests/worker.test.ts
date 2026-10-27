@@ -12,7 +12,9 @@ test("worker: /api, /ocpi and /sim go to the handler, everything else to the sta
   // Without Supabase keys the API answers with the demo configuration, with security headers.
   const cfg = await call("/api/config");
   assert.equal(cfg.status, 200);
-  assert.equal(((await cfg.json()) as { data: { mode: string } }).data.mode, "demo");
+  const body = (await cfg.json()) as { data: { mode: string; notifications: { sms: boolean; whatsapp: boolean } } };
+  assert.equal(body.data.mode, "demo");
+  assert.deepEqual(body.data.notifications, { sms: true, whatsapp: true }, "same shape as a configured server's config");
   assert.equal(cfg.headers.get("X-Frame-Options"), "DENY");
   assert.match(cfg.headers.get("Content-Security-Policy") ?? "", /default-src 'none'/);
   // OCPI isn't available until the server is configured.
