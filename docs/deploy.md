@@ -94,6 +94,12 @@ Then **Settings → Variables and Secrets**:
 
 Until the `SUPABASE_*` values are set, the site runs in demo mode.
 
+**Live updates.** Planners' screens update the moment an operator confirms, a session starts or
+a charge record arrives, through Supabase Realtime (run
+`supabase/migrations/20261030000000_realtime.sql` once; Realtime is on by default in Supabase).
+Row level security decides which changes each person is told about, and the browser then reloads
+through the API. If the connection drops, the app falls back to polling.
+
 **Automatic driver messages.** With the Twilio values set, fleet owners can choose **Settings →
 Fleet → Message drivers automatically** (text or WhatsApp). The assigned driver then gets their
 pass link when a booking is confirmed, a new one if the time, driver or link changes, and a

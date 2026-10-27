@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { subscribeFleet } from "./realtime";
 import type { AppConfig, BookingEvent, BookingRow, Brand, Driver, Fleet, Membership, NetworkSnapshot, Vehicle } from "../../shared/model";
 import type { Backend } from "./backend";
 import { applyBrand } from "./brand";
@@ -193,8 +194,24 @@ export function AppProvider({ backend, children }: { backend: Backend; children:
     void refreshNetwork().catch((e) => toast(e.message, "bad"));
   }, [fleetId, mfaGate, refreshFleet, refreshBookings, refreshNetwork, toast]);
 
-  // Live updates: push in demo mode; polling in live mode (faster while a CPO is still deciding).
+  // Live updates: push in demo mode; in live mode Supabase Realtime pushes, with polling as a
+  // safety net (and as the fallback, faster while a CPO is still deciding, if the socket is down).
   const busy = bookings.some((b) => b.reservation_status === "PENDING" || b.pending_action || b.session?.status === "ACTIVE");
+  const [pushed, setPushed] = useState(false);
+  useEffect(() => {
+    const auth = backend.auth;
+    if (!fleetId || mfaGate || backend.onChange || !auth || !config.supabase_url || !config.supabase_anon_key) return;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const stop = subscribeFleet({
+      supabaseUrl: config.supabase_url, anonKey: config.supabase_anon_key, fleetId, token: () => auth.token(),
+      onStatus: setPushed,
+      onChange: () => {
+        if (t) clearTimeout(t);
+        t = setTimeout(() => void refreshBookings().catch(() => undefined), 300);
+      },
+    });
+    return () => { stop(); if (t) clearTimeout(t); setPushed(false); };
+  }, [backend, config.supabase_url, config.supabase_anon_key, fleetId, mfaGate, refreshBookings]);
   useEffect(() => {
     if (!fleetId || mfaGate) return;
     if (backend.onChange) {
@@ -210,14 +227,14 @@ export function AppProvider({ backend, children }: { backend: Backend; children:
     }
     const iv = setInterval(() => {
       if (document.visibilityState === "visible") void refreshBookings().catch(() => undefined);
-    }, busy ? 4000 : 20000);
+    }, pushed ? (busy ? 30_000 : 120_000) : busy ? 4000 : 20000);
     const nv = setInterval(() => {
       if (document.visibilityState === "visible") void refreshNetwork().catch(() => undefined);
     }, 120_000);
     const vis = () => { if (document.visibilityState === "visible") void refreshBookings().catch(() => undefined); };
     document.addEventListener("visibilitychange", vis);
     return () => { clearInterval(iv); clearInterval(nv); document.removeEventListener("visibilitychange", vis); };
-  }, [backend, fleetId, mfaGate, busy, refreshBookings, refreshNetwork]);
+  }, [backend, fleetId, mfaGate, busy, pushed, refreshBookings, refreshNetwork]);
 
   const setTheme = useCallback((t: Theme) => {
     setThemeState(t);
