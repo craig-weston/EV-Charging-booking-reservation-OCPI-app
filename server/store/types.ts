@@ -37,6 +37,8 @@ export interface Store {
   /** Claims the invite; false when someone else already used it. */
   markInviteAccepted(id: string, userId: string, at: string): Promise<boolean>;
   deleteInvite(id: string): Promise<void>;
+  /** Re-seal stored pass and invite tokens with the current encryption key (stores that seal them). */
+  resealLinkTokens?(): Promise<number>;
 
   // API keys --------------------------------------------------------------------
   /** The fleet's keys, newest first, revoked ones included (no hashes). */

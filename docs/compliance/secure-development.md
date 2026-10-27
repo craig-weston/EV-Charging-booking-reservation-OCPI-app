@@ -65,7 +65,7 @@ Essentials' scope.
 | Fleet data (plates, drivers, bookings) | Another tenant reading it; insider misuse | Membership checks on every route, RLS, roles, audit log, export only by owners |
 | Operator credentials | Database leak; log leak; token sent to the wrong host | Hashing and encryption at rest, log redaction, URL checks, no redirects |
 | OCPI receiver | Forged pushes; one operator changing another's data | Token authentication, party ownership checks, rate limits and auth-failure lockout, body limits |
-| Driver pass links | Link forwarded or guessed | 24-byte random tokens, rate limits on lookups, expiry, revocation, minimal data on the pass |
+| Driver pass links and team invites | Link forwarded or guessed; links taken from a database copy or backup | 24-byte random tokens, rate limits on lookups, expiry, revocation, minimal data on the pass; stored encrypted (AES-256-GCM) and looked up by SHA-256 |
 | The web app | XSS, clickjacking, malicious dependencies | Strict CSP, React escaping, frame-ancestors none, pinned and audited dependencies |
 | Admin functions | Stolen admin session | MFA required, separate role, audit log, recovery needs a recorded identity check |
 
