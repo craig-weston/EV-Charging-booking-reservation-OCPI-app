@@ -28,6 +28,16 @@
     { "name": "RL_PUBLIC", "namespace_id": "41003", "simple": { "limit": 30, "period": 60 } },
     { "name": "RL_OCPI_AUTH", "namespace_id": "41004", "simple": { "limit": 20, "period": 60 } }
   ],
+  // Preview builds (one per branch / pull request, `npx wrangler preview`): their own rate-limit
+  // counters, so testing a preview never uses up or resets production's limits.
+  "previews": {
+    "ratelimits": [
+      { "name": "RL_API", "namespace_id": "42001", "simple": { "limit": 300, "period": 60 } },
+      { "name": "RL_OCPI", "namespace_id": "42002", "simple": { "limit": 1200, "period": 60 } },
+      { "name": "RL_PUBLIC", "namespace_id": "42003", "simple": { "limit": 30, "period": 60 } },
+      { "name": "RL_OCPI_AUTH", "namespace_id": "42004", "simple": { "limit": 20, "period": 60 } }
+    ]
+  },
   "observability": {
     "enabled": true
   }

@@ -61,12 +61,21 @@ everything else is the static app from `dist/`, with the security headers in `pu
 **Deploy from GitHub (recommended).** Workers & Pages → your Worker (or Create → Import a
 repository) → **Settings → Builds → Connect** and pick this repository:
 
-- Build command: `npm install` (or `npm ci` once `package-lock.json` is committed)
+- Build command: `npm ci` (installs exactly the versions in `package-lock.json`)
 - Deploy command: `npx wrangler deploy` (it runs `npm run build` first)
+- Preview command (Builds → Previews Base): `npx wrangler preview`. The older
+  `npx wrangler versions upload` fails on Cloudflare's current Previews with "The name in your
+  wrangler.jsonc file must match the name of your Worker". The Worker's name in Cloudflare must
+  also match `"name"` in `wrangler.jsonc` (`depotcharge`).
 - Build variables (optional): `SUPABASE_URL` (puts your exact Supabase origin into the
   Content-Security-Policy) and `SECURITY_CONTACT` (generates `/.well-known/security.txt`)
 
-Every push to `main` then deploys. **Or deploy from your computer:** `npx wrangler login`, then
+Every push to `main` then deploys. With **Builds for preview branches** on, every other branch
+(each pull request) gets its own preview URL without touching production. Previews use the
+Worker's variables, secrets and bindings, so they talk to the **same Supabase project** as
+production: keep `ENABLE_CPO_SIMULATOR` off and don't merge branches you haven't reviewed. For
+full isolation, deploy a second Worker (for example `depotcharge-staging`) with its own Supabase
+project, as described in [operator-testing.md](operator-testing.md). **Or deploy from your computer:** `npx wrangler login`, then
 `npx wrangler deploy`.
 
 Then **Settings → Variables and Secrets**:
