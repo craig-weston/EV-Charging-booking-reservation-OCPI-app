@@ -63,9 +63,17 @@ jobs:
         run: npm install --no-save --no-audit --no-fund playwright@1.56.0 axe-core@4.10.3
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - name: Browser and accessibility tests
         env:
           CI: "true"
+        # On failure, the failing checks are also raised as an annotation on the pull request.
+        run: |
+          set -o pipefail
+          npm run test:e2e 2>&1 | tee e2e.log || {
+            msg=$(grep -E "^not ok|accessibility problems|^ +[a-z-]+ \((serious|critical)\)|^ +(\+|-) |pageerror|console:|a11y \(|Error:" e2e.log | head -80 | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Browser tests failed::${msg}"
+            exit 1
+          }
 
   database:
     # Row level security check against a real Postgres: one fleet can never read another's rows.
