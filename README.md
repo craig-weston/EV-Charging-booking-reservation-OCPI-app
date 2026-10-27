@@ -156,6 +156,8 @@ Depotcharge is a complete **eMSP** (e-mobility service provider) over **OCPI 2.3
 
 A built-in **operator simulator** (three fictional operators, 12 UK sites) answers over real OCPI,
 so you can test end to end before connecting a real network. Every message in and out is logged.
+For real operators, `npm run ocpi:probe` checks their test system read-only, and
+[docs/operator-testing.md](docs/operator-testing.md) lists the test cases to run with them.
 
 ## Secure by design
 

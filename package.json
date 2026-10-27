@@ -24,7 +24,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --import tsx --test tests/*.test.ts",
     "pages:dev": "npx wrangler@4 pages dev dist --compatibility-date=2026-10-01",
-    "audit": "npm audit --audit-level=high"
+    "audit": "npm audit --audit-level=high",
+    "ocpi:probe": "node --import tsx scripts/ocpi-probe.ts"
   },
   "dependencies": {
     "react": "19.3.1",

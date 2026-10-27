@@ -127,6 +127,9 @@ Your OCPI details**).
   token A they gave you. Depotcharge runs the credentials handshake, then pulls Locations, Tariffs
   and BookingLocations.
 
+Test each operator's test system first: [operator-testing.md](operator-testing.md) has a
+read-only check (`npm run ocpi:probe`) and the test cases to run with them.
+
 What the operator needs to support:
 
 | Module | Their role | Used for |
