@@ -1,4 +1,5 @@
 // Production context for Cloudflare Pages Functions.
+import { reportError, shortRef } from "./alerts";
 import { brandFromEnv, legalFromEnv, partyFromEnv, PASSWORD_MIN_LENGTH, TERMS_VERSION, type AuthUser, type Ctx, type Env } from "./context";
 import { dispatch } from "./dispatch";
 import { BODY_LIMITS, BodyTooLarge, LIMITS, RateLimiter, clientIp, jwtClaims, overShared, sharedLimits, withSecurityHeaders, type SharedLimits } from "./security";
@@ -61,7 +62,12 @@ export function liveCtx(pc: PagesContext): Ctx {
     simDelayMs: 1500,
     now: () => new Date(),
     cache: new Map(),
-    waitUntil: (p) => pc.waitUntil(p),
+    // Background work (operator pushes, driver messages…) has no response to fail: log and alert.
+    waitUntil: (p) => pc.waitUntil(p.catch((e) => {
+      const ref = shortRef();
+      console.error(`background task failed [${ref}]`, e);
+      reportError({ env, waitUntil: (q) => pc.waitUntil(q) }, { where: "background", ref, error: e });
+    })),
     // Calls to our own origin (e.g. eMSP ⇄ simulator) are dispatched in-process: no extra hop,
     // and no Worker-calls-itself restrictions.
     transport: (req) => (local.has(new URL(req.url).origin) ? dispatch(req, ctx) : fetch(req)),
@@ -109,6 +115,11 @@ export async function guard(req: Request, rl = limiter, now = Date.now(), shared
   let r = rl.hit(`${ocpi ? "ocpi" : "api"}:${ip}`, general.max, general.windowMs, now);
   if (!r.ok) return tooMany(r.retryAfter, ocpi);
   if (ocpi && (rl.count(`ocpi401:${ip}`, LIMITS.ocpiAuthFail.windowMs, now) >= LIMITS.ocpiAuthFail.max || rl.count(`ocpiblock:${ip}`, LIMITS.ocpiAuthFail.windowMs, now) > 0)) return tooMany(60, true);
+  if (url.pathname === "/api/client-errors") {
+    r = rl.hit(`clienterr:${ip}`, LIMITS.clientErrors.max, LIMITS.clientErrors.windowMs, now);
+    if (!r.ok) return tooMany(r.retryAfter, false);
+    if (Number(req.headers.get("Content-Length") ?? "0") > 8 * 1024) return Response.json({ error: { message: "Too large", code: "TOO_LARGE" } }, { status: 413 });
+  }
   const isPublic = /^\/api\/(pass|invites)\//.test(url.pathname);
   if (isPublic) {
     r = rl.hit(`public:${ip}`, LIMITS.publicToken.max, LIMITS.publicToken.windowMs, now);
@@ -153,8 +164,9 @@ export async function handle(pc: PagesContext): Promise<Response> {
     pc.waitUntil(noteOutcome(pc.request, res, limiter, Date.now(), shared));
     return withSecurityHeaders(res);
   } catch (e) {
-    const ref = crypto.randomUUID().slice(0, 8);
+    const ref = shortRef();
     console.error(`[${ref}]`, e);
+    reportError({ env: pc.env, waitUntil: (q) => pc.waitUntil(q) }, { where: "worker", ref, error: e, method: pc.request.method, path: new URL(pc.request.url).pathname });
     return withSecurityHeaders(Response.json({ error: { message: `Something went wrong on our side (reference ${ref})`, code: "INTERNAL" } }, { status: 500 }));
   }
 }

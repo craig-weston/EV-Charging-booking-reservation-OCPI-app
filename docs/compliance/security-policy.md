@@ -140,6 +140,9 @@ credentials and pass and invite links); then remove
   deletions, policy changes, admin actions) in its audit log for 12 months, and OCPI messages for 30
   days, with credentials redacted.
 - Cloudflare and Supabase keep their own access and authentication logs.
+- Unexpected errors (server, background tasks and people's browsers) are logged with a short
+  reference shown to the user, and alert the team through `ALERT_WEBHOOK_URL` (Slack, Teams or
+  Discord), at most once per error per 10 minutes. Alerts contain no personal data or link tokens.
 - The security lead looks over the platform activity log and failed-authentication alerts every
   month, and after any alert.
 

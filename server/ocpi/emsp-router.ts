@@ -6,6 +6,7 @@
 //   /ocpi/emsp/2.3.0/locations|tariffs|sessions/{cc}/{pid}/{id}…    receivers
 //   /ocpi/emsp/2.3.0/cdrs                                           CDR receiver (POST) + GET by URL
 //   /ocpi/emsp/2.3.0/tokens[/{uid}/authorize]                       Tokens sender + real-time authorization
+import { reportError } from "../alerts";
 import type {
   AuthorizationInfo, Booking, BookingLocation, CDR, Calendar, Connector, Credentials, EVSE, Location,
   LocationReferences, Session, Tariff, Token, TokenType,
@@ -76,7 +77,9 @@ export async function handleOcpi(req: Request, ctx: Ctx): Promise<Response> {
   } catch (e) {
     if (e instanceof OcpiHttpError) res = ocpiError(req, e.http, e.statusCode, e.message);
     else {
-      console.error("OCPI handler error", e);
+      const ref = crypto.randomUUID().slice(0, 8);
+      console.error(`OCPI handler error [${ref}]`, e);
+      reportError({ env: ctx.env, waitUntil: (p) => ctx.waitUntil(p), fetch: (r) => ctx.transport(r) }, { where: "ocpi", ref, error: e, method: req.method, path: url.pathname });
       res = ocpiError(req, 500, OCPI_STATUS.SERVER_ERROR, "Internal error");
     }
   }
