@@ -8,6 +8,7 @@ import { canChange } from "../../shared/booking/terms";
 import { iso, normalizePlate, randomToken, shortId, upper, uuid, displayPlate } from "../../shared/util";
 import type { Ctx } from "../context";
 import { findEndpoint, ocpiCall } from "../ocpi/client";
+import { notifyDriver } from "../notify";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public code?: string) {
@@ -47,6 +48,8 @@ export async function applyBookingUpdate(ctx: Ctx, row: BookingRow, incoming: Bo
   const { patch, events } = reconcileBooking(row, incoming, op, (uid) => bayLabel(loc, uid));
   const updated = await ctx.store.updateBooking(row.id, patch);
   await addEvents(ctx, row, events);
+  // Confirmed, moved or cancelled: tell the driver (no-op unless the fleet has messages on).
+  ctx.waitUntil(notifyDriver(ctx, row.id));
   return updated;
 }
 

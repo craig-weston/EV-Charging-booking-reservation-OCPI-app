@@ -125,6 +125,8 @@ final charge record with energy and cost, all from the operator's OCPI data.
 - **Planning:** a lane board of the day for every truck; drag a gap to book it.
 - **Bookings:** confirmations, changes, cancellations with reasons, no-shows, and the operator's
   terms in plain English.
+- **Driver messages:** the pass link by text or WhatsApp, sent automatically when a booking is
+  confirmed, changed or cancelled (via Twilio, per fleet), or shared by the planner.
 - **Fleet:** trucks with their charging capabilities and IDs, drivers, and sample trucks to start
   with.
 - **Team:** owners, planners and viewers, single-use invites, and an activity log.

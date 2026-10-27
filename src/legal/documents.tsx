@@ -263,6 +263,7 @@ function Dpa({ c }: { c: Ctx }) {
           <tr><td>Cloudflare, Inc.</td><td>Hosting of the web application and API, content delivery, network security</td><td>Global network; UK/EU and USA</td></tr>
           <tr><td>Supabase, Inc.</td><td>Database and sign-in (authentication)</td><td><V v={i.hosting_region} ph="Hosting region, e.g. London, UK" /> (on Amazon Web Services); support from the USA</td></tr>
           <tr><td><V v={i.email_provider} ph="Email delivery provider" /></td><td>Delivery of sign-in and invitation emails</td><td>As stated by the provider</td></tr>
+          <tr><td>Twilio Inc.</td><td>Text and WhatsApp messages to drivers, only for fleets that turn on automatic driver messages (driver phone number, site, booking time, plate, pass link)</td><td>USA and other Twilio regions</td></tr>
         </tbody>
       </table>
       <p className="small muted">Version {c.version}, last updated {LEGAL_UPDATED}.</p>

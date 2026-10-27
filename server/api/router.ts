@@ -14,6 +14,7 @@ import { simControl, simPrepareRegistration, simStatus, tick, type SimAction } f
 import { API_KEY_PREFIX, BODY_LIMITS, BodyTooLarge, checkLogo, clientIp, hint, isApiKey, readLimited, sha256Hex } from "../security";
 import { complianceReport, saveTick } from "./compliance";
 import { sampleDrivers, sampleVehicles } from "./samples";
+import { notifyChannels, notifyDriver } from "../notify";
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify({ data }), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
@@ -167,6 +168,7 @@ async function config(ctx: Ctx): Promise<AppConfig> {
     certifications: (certs ?? []).filter((c) => c.issued_on <= today && c.expires_on >= today),
     terms_version: TERMS_VERSION,
     security: { require_admin_mfa: adminMfaRequired(ctx), password_min_length: PASSWORD_MIN_LENGTH },
+    notifications: notifyChannels(ctx.env, ctx.mode),
   };
 }
 
@@ -313,6 +315,11 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
       if (typeof b.name === "string" && b.name.trim()) patch.name = b.name.trim().slice(0, 120);
       if (b.desk_phone !== undefined) patch.desk_phone = (b.desk_phone ?? "").toString().slice(0, 30) || null;
       if (typeof b.allow_unbooked_charging === "boolean") patch.allow_unbooked_charging = b.allow_unbooked_charging;
+      if (b.notify_drivers !== undefined && b.notify_drivers !== fleet.notify_drivers) {
+        if (!["off", "sms", "whatsapp"].includes(b.notify_drivers)) throw new ApiError(400, "Choose off, sms or whatsapp");
+        if (b.notify_drivers !== "off" && !notifyChannels(ctx.env, ctx.mode)[b.notify_drivers]) throw new ApiError(400, "Messaging isn't set up on this platform yet. Ask your platform admin to add the Twilio settings.", "NOTIFY_UNAVAILABLE");
+        patch.notify_drivers = b.notify_drivers;
+      }
       if (typeof b.require_mfa === "boolean" && b.require_mfa !== fleet.require_mfa) {
         // Turning it on from a session without a second factor would lock the owner out.
         if (b.require_mfa && user.aal !== "aal2") throw new ApiError(400, "Set up two-step verification for your own account first (Settings → Security)", "MFA_REQUIRED");
@@ -436,11 +443,14 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
         patch.driver_id = b.driver_id || null;
       }
       if (b.notes !== undefined) patch.notes = (b.notes ?? "").toString().slice(0, 500) || null;
-      return json(await ctx.store.updateBooking(row.id, patch));
+      const saved = await ctx.store.updateBooking(row.id, patch);
+      if (patch.driver_id !== undefined) ctx.waitUntil(notifyDriver(ctx, row.id));
+      return json(saved);
     }
     // A driver pass link is a bearer link: issuing a new one revokes the old straight away.
     if (m === "POST" && action === "pass") {
       const saved = await ctx.store.updateBooking(row.id, { pass_token: randomToken(24) });
+      ctx.waitUntil(notifyDriver(ctx, row.id)); // the driver gets the new link (if messages are on)
       await audit(ctx, req, user, { fleet_id: fleetId, action: "booking.pass_reset", target: row.plate, data: { booking_id: row.id } });
       return json(saved);
     }

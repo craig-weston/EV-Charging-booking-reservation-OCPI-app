@@ -14,6 +14,8 @@ export interface Fleet {
   allow_unbooked_charging: boolean;
   /** Everyone on the team must sign in with two-step verification (authenticator app). */
   require_mfa: boolean;
+  /** Message drivers automatically when a booking is confirmed, changed or cancelled. */
+  notify_drivers: NotifyChannel;
   /** Version of the terms of service the owner accepted for the organisation, and when / by whom. */
   terms_version: string | null;
   terms_accepted_at: string | null;
@@ -21,6 +23,8 @@ export interface Fleet {
   created_at: string;
   updated_at: string;
 }
+
+export type NotifyChannel = "off" | "sms" | "whatsapp";
 
 export interface Membership {
   fleet_id: string;
@@ -174,6 +178,8 @@ export interface BookingRow {
   session: SessionSummary | null;
   cdr: CdrSummary | null;
   pass_token: string;
+  /** What the driver was last messaged about (see server/notify.ts), so nothing is sent twice. */
+  driver_notified?: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -285,6 +291,8 @@ export interface AppConfig {
   /** Current version of the terms of service and privacy notice. */
   terms_version: string;
   security: { require_admin_mfa: boolean; password_min_length: number };
+  /** Channels this deployment can message drivers on. */
+  notifications: { sms: boolean; whatsapp: boolean };
 }
 
 /** The legal entity operating the platform. Required disclosures for a UK company website. */
