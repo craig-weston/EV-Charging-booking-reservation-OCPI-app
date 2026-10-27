@@ -97,10 +97,9 @@ async function axe(page: Page, label: string) {
     if (process.env.CI) assert.fail("axe-core is required in CI");
     return;
   }
-  await page.addScriptTag({ path: axePath }).catch(async () => {
-    // CSP blocks injected scripts; evaluate the source instead (runs in the page's main world).
-    await page.evaluate(readFileSync(axePath, "utf8"));
-  });
+  // Evaluated through the DevTools protocol, which the page's CSP doesn't apply to (an injected
+  // <script> tag would be refused, and show up as a CSP violation).
+  if (!(await page.evaluate(() => "axe" in window))) await page.evaluate(readFileSync(axePath, "utf8"));
   const result = await page.evaluate(async () => {
     const w = window as unknown as { axe: { run(ctx: Document, opts: object): Promise<{ violations: { id: string; impact: string; help: string; nodes: { target: string[] }[] }[] }> } };
     const r = await w.axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] }, resultTypes: ["violations"] });
