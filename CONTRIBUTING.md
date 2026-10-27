@@ -22,6 +22,10 @@ npm install          # Node 22+
 npm run dev          # demo mode at http://localhost:5173: API, OCPI and a simulated operator network in your browser
 npm test             # OCPI flows, booking logic, security controls
 npm run typecheck
+
+# Browser tests (real Chromium, production CSP, axe-core accessibility checks):
+npm install --no-save playwright axe-core && npx playwright install chromium
+npm run build && npm run test:e2e
 ```
 
 No Supabase or Cloudflare account is needed for development: demo mode runs the whole stack
@@ -31,8 +35,8 @@ in the browser.
 
 1. Fork the repo and create a branch from `main`.
 2. Keep changes focused, with tests for new behaviour (`tests/*.test.ts`).
-3. Run `npm test` and `npm run typecheck` before pushing; CI also builds, audits dependencies and
-   checks row level security against Postgres.
+3. Run `npm test` and `npm run typecheck` before pushing; CI also builds, audits dependencies,
+   checks row level security against Postgres, and runs the browser and accessibility tests.
 4. Database changes go in a **new** file in `supabase/migrations/`; never edit one that has run.
 5. Follow the rules in [docs/compliance/secure-development.md](docs/compliance/secure-development.md):
    authorisation on every API route, input validation, no secrets in the browser, no inline

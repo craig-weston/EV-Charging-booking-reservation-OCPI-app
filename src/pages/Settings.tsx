@@ -191,7 +191,7 @@ function BrandSettings() {
           </div>
           <div className="row gap-12 wrap" style={{ padding: 14 }}>
             <Plate plate="PN74 EVH" />
-            <span className="chip" aria-pressed="true">Tomorrow</span>
+            <span className="chip on">Tomorrow</span>
             <span className="status ok">Reserved</span>
             <a href="#/settings" onClick={(e) => e.preventDefault()}>Operator booking terms</a>
           </div>
