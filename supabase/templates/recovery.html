@@ -10,15 +10,15 @@
   body { margin:0; padding:0; }
   a { color:#2F5BEA; }
   @media (max-width:600px) {
-    .card { padding:28px 22px !important; }
-    .h1 { font-size:24px !important; }
+    .pad { padding-left:22px !important; padding-right:22px !important; }
+    .h1 { font-size:26px !important; }
   }
   @media (prefers-color-scheme: dark) {
     .bg { background:#0F131A !important; }
     .card { background:#181D25 !important; border-color:#2B3139 !important; }
     .ink { color:#EEF1F5 !important; }
     .muted { color:#A3ACB8 !important; }
-    .panel { background:#20252C !important; border-color:#2B3139 !important; }
+    .panel { background:#20252C !important; }
     .cell-off { background:#2B3139 !important; }
     .brand { color:#EEF1F5 !important; }
     .link { color:#8EA8FF !important; }
@@ -28,37 +28,52 @@
 <body class="bg" style="margin:0;padding:0;background:#EEF0F2;">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">Choose a new password for your Depotcharge account.&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;</div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg" style="background:#EEF0F2;">
-    <tr><td align="center" style="padding:32px 16px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
-        <tr><td style="padding:0 4px 18px;">
+    <tr><td align="center" style="padding:28px 14px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;">
+        <tr><td style="padding:0 6px 16px;">
           <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-            <td width="30" height="30" align="center" bgcolor="#2F5BEA" style="width:30px;height:30px;border-radius:8px;background:#2F5BEA;font:800 15px/30px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#FFFFFF;">D</td>
-            <td class="brand" style="padding-left:10px;font:700 17px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#1C2128;">Depotcharge</td>
+            <td width="32" height="32" align="center" bgcolor="#2F5BEA" style="width:32px;height:32px;border-radius:9px;background-color:#2F5BEA;background-image:linear-gradient(135deg, #2F5BEA 0%, #7C3AED 100%);font:800 16px/32px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#FFFFFF;">D</td>
+            <td class="brand" style="padding-left:10px;font:800 18px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;letter-spacing:-.01em;color:#1C2128;">Depotcharge</td>
           </tr></table>
         </td></tr>
-        <tr><td class="card" style="background:#FFFFFF;border:1px solid #DDE1E6;border-radius:16px;padding:36px 36px 28px;">
-          <h1 class="h1 ink" style="margin:0 0 18px;font:700 28px/1.25 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;letter-spacing:-.01em;color:#1C2128;">Reset your password</h1>
+        <tr><td class="card" style="background:#FFFFFF;border:1px solid #DDE1E6;border-radius:20px;overflow:hidden;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr><td class="pad" bgcolor="#F97316" style="background-color:#F97316;background-image:linear-gradient(135deg, #F97316 0%, #E11D74 100%);padding:34px 36px 30px;border-radius:19px 19px 0 0;">
+              <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+                <td width="56" height="56" align="center" style="width:56px;height:56px;border-radius:16px;background:rgba(255,255,255,.22);font:400 30px/56px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">🔋</td>
+              </tr></table>
+              <p style="margin:18px 0 6px;font:700 12px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.85);">Password reset</p>
+              <h1 class="h1" style="margin:0;font:800 30px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;letter-spacing:-.02em;color:#FFFFFF;">Reset your password</h1>
+            </td></tr>
+            <tr><td class="pad" style="padding:30px 36px 26px;">
 
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px;">
-            <tr><td style="padding:0 0 8px;font:600 12px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#5D6673;" class="muted">⚡ Password charge: 10%</td></tr>
-            <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td width="10%" style="padding:0 2px;"><div class="cell-on" style="height:10px;border-radius:3px;background:#2F5BEA;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:10px;border-radius:3px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:10px;border-radius:3px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:10px;border-radius:3px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:10px;border-radius:3px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:10px;border-radius:3px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:10px;border-radius:3px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:10px;border-radius:3px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:10px;border-radius:3px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:10px;border-radius:3px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td></tr></table></td></tr>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+            <tr><td style="padding:0 0 8px;font:700 12px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;letter-spacing:.07em;text-transform:uppercase;color:#F97316;">Password charge: 10%</td></tr>
+            <tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td width="10%" style="padding:0 2px;"><div class="cell-on" style="height:12px;border-radius:4px;background:#EF4444;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:12px;border-radius:4px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:12px;border-radius:4px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:12px;border-radius:4px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:12px;border-radius:4px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:12px;border-radius:4px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:12px;border-radius:4px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:12px;border-radius:4px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:12px;border-radius:4px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td><td width="10%" style="padding:0 2px;"><div class="cell-off" style="height:12px;border-radius:4px;background:#DDE1E6;font-size:0;line-height:0;">&nbsp;</div></td></tr></table></td></tr>
           </table><p class="ink" style="margin:0 0 16px;font:400 16px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#1C2128;">It happens to the best of us, usually right after a long weekend. Tap below to choose a new one.</p>
-          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px;">
-            <tr><td style="border-radius:10px;background:#2F5BEA;" bgcolor="#2F5BEA">
-              <a href="{{ .ConfirmationURL }}" target="_blank" style="display:inline-block;padding:15px 28px;border-radius:10px;border:1px solid #2F5BEA;font:700 16px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#FFFFFF;text-decoration:none;">Choose a new password &rarr;</a>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 26px;">
+            <tr><td bgcolor="#F97316" style="border-radius:999px;background-color:#F97316;background-image:linear-gradient(135deg, #F97316 0%, #E11D74 100%);box-shadow:0 6px 16px -6px #F97316;">
+              <a href="{{ .ConfirmationURL }}" target="_blank" style="display:inline-block;padding:16px 30px;border-radius:999px;font:700 16px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#FFFFFF;text-decoration:none;">Choose a new password &rarr;</a>
             </td></tr>
           </table>
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 20px;">
-            <tr><td class="panel" style="background:#F6F7F9;border-radius:12px;padding:14px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 22px;">
+            <tr><td class="panel" bgcolor="#FFF1E8" style="background:#FFF1E8;border-left:4px solid #F97316;border-radius:12px;padding:16px 18px;">
               <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-                <td valign="top" style="padding:0 12px 0 0;font:400 20px/1.3 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">💡</td>
-                <td class="ink" style="font:400 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#1C2128;"><strong>Tip:</strong> use at least 12 characters. A short sentence is easy to remember and hard to guess: <em>my truck charges at 400 kilowatts</em> beats <em>P@ssw0rd1</em> every time.</td>
+                <td valign="top" style="padding:0 12px 0 0;font:400 22px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">💡</td>
+                <td class="ink" style="font:400 15px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#1C2128;"><strong>Tip:</strong> use at least 12 characters. A short sentence is easy to remember and hard to guess: <em>my truck charges at 400 kilowatts</em> beats <em>P@ssw0rd1</em> every time.</td>
               </tr></table>
             </td></tr>
           </table><p class="muted" style="margin:0 0 12px;font:400 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#5D6673;">Button not working? Copy this link into your browser:<br><a class="link" href="{{ .ConfirmationURL }}" style="color:#2F5BEA;word-break:break-all;">{{ .ConfirmationURL }}</a></p><p class="muted" style="margin:0 0 12px;font:400 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#5D6673;">Didn't ask for a reset? Ignore this and your password stays as it is. If these keep arriving, let your fleet administrator know.</p>
+            </td></tr>
+          </table>
         </td></tr>
-        <tr><td style="padding:22px 8px 0;">
-          <p class="muted" style="margin:0 0 6px;font:600 13px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#5D6673;">Depotcharge · HGV charging, booked ahead. No cards, no terminals, no queue.</p>
+        <tr><td align="center" style="padding:22px 10px 0;">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td style="padding:0 4px;"><span style="display:inline-block;padding:6px 11px;border-radius:999px;background:#E8F7EE;color:#047857;font:700 12px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">No cards</span></td>
+            <td style="padding:0 4px;"><span style="display:inline-block;padding:6px 11px;border-radius:999px;background:#EEF1FE;color:#2F5BEA;font:700 12px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">No terminals</span></td>
+            <td style="padding:0 4px;"><span style="display:inline-block;padding:6px 11px;border-radius:999px;background:#FFF1E8;color:#C2410C;font:700 12px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">No queue</span></td>
+          </tr></table>
+          <p class="muted" style="margin:14px 0 4px;font:600 13px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#5D6673;">Depotcharge · HGV charging, booked ahead</p>
           <p class="muted" style="margin:0;font:400 12px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#5D6673;">You're getting this because {{ .Email }} was used on Depotcharge. <a href="{{ .SiteURL }}" style="color:#5D6673;">Open Depotcharge</a></p>
         </td></tr>
       </table>
