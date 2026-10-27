@@ -4,6 +4,7 @@
 import type { Store } from "./store/types";
 import type { Brand, LegalInfo } from "../shared/model";
 import { DEFAULT_BRAND, EMPTY_LEGAL } from "../shared/model";
+import type { RateLimitBinding } from "./security";
 
 export interface Env {
   SUPABASE_URL?: string;
@@ -42,6 +43,11 @@ export interface Env {
   TWILIO_WHATSAPP_FROM?: string; // WhatsApp-enabled sender number, E.164
   /** Optional: Slack / Teams / Discord (or any JSON) webhook for error alerts (server/alerts.ts). */
   ALERT_WEBHOOK_URL?: string;
+  /** Workers Rate Limiting bindings (wrangler.jsonc → "ratelimits"); optional. */
+  RL_API?: RateLimitBinding;
+  RL_OCPI?: RateLimitBinding;
+  RL_PUBLIC?: RateLimitBinding;
+  RL_OCPI_AUTH?: RateLimitBinding;
 }
 
 export interface AuthUser {

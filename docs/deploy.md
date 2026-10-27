@@ -126,6 +126,23 @@ reference, and no personal data. For outages rather than errors, add an uptime c
 Also recommended in Cloudflare: SSL/TLS **Full (strict)**, minimum TLS 1.2, Always Use HTTPS, WAF
 managed rules, and a rate-limiting rule for `/api/*` and `/ocpi/*` (on a custom domain).
 
+**Rate limits.** Each request is checked against two layers, per client IP:
+
+| Limit | In memory (per isolate) | Shared (per Cloudflare location) |
+| --- | --- | --- |
+| App API `/api/*` | 300 a minute | `RL_API`: 300 a minute |
+| OCPI `/ocpi/*` | 1,200 a minute | `RL_OCPI`: 1,200 a minute |
+| Driver pass and invite links | 30 a minute | `RL_PUBLIC`: 30 a minute |
+| OCPI requests with unknown credentials | 20 in 5 minutes, then blocked | `RL_OCPI_AUTH`: 20 a minute, then blocked for 5 minutes |
+| Data exports and deletions | 10 an hour | (memory only) |
+
+The shared limits are [Workers Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/)
+bindings declared in `wrangler.jsonc` (wrangler 4.36 or later; nothing to set up in the
+dashboard). Their counts are approximate and per location; if a binding errors, requests are let
+through rather than refused. The `namespace_id` values must be unique in your Cloudflare account:
+change them if another Worker already uses them. On Cloudflare Pages, add the same bindings under
+the project's settings, or rely on the in-memory limits and a WAF rule.
+
 **Cloudflare Pages instead?** It works too: connect the repo to a Pages project with build command
 `npm run build` and output directory `dist` (the `functions/` folder serves the API). For a
 dashboard drag-and-drop upload, run `npm run build:upload` and upload `dist-upload/`.

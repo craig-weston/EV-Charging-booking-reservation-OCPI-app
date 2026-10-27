@@ -2,7 +2,7 @@
 import { reportError, shortRef } from "./alerts";
 import { brandFromEnv, legalFromEnv, partyFromEnv, PASSWORD_MIN_LENGTH, TERMS_VERSION, type AuthUser, type Ctx, type Env } from "./context";
 import { dispatch } from "./dispatch";
-import { BODY_LIMITS, BodyTooLarge, LIMITS, RateLimiter, clientIp, jwtClaims, withSecurityHeaders } from "./security";
+import { BODY_LIMITS, BodyTooLarge, LIMITS, RateLimiter, clientIp, jwtClaims, overShared, sharedLimits, withSecurityHeaders, type SharedLimits } from "./security";
 import { SupabaseStore } from "./store/supabase";
 
 export interface PagesContext {
@@ -107,23 +107,27 @@ const tooMany = (retryAfter: number, ocpi: boolean) =>
  * Cheap checks before any work: per-IP rate limits (tighter for public token links and repeated
  * OCPI credential failures) and request body size. Returns a response to send, or null to go on.
  */
-export async function guard(req: Request, rl = limiter, now = Date.now()): Promise<Response | null> {
+export async function guard(req: Request, rl = limiter, now = Date.now(), shared: SharedLimits = {}): Promise<Response | null> {
   const url = new URL(req.url);
   const ip = clientIp(req);
   const ocpi = url.pathname.startsWith("/ocpi/") || url.pathname.startsWith("/sim/");
   const general = ocpi ? LIMITS.ocpi : LIMITS.api;
   let r = rl.hit(`${ocpi ? "ocpi" : "api"}:${ip}`, general.max, general.windowMs, now);
   if (!r.ok) return tooMany(r.retryAfter, ocpi);
-  if (ocpi && rl.count(`ocpi401:${ip}`, LIMITS.ocpiAuthFail.windowMs, now) >= LIMITS.ocpiAuthFail.max) return tooMany(60, true);
+  if (ocpi && (rl.count(`ocpi401:${ip}`, LIMITS.ocpiAuthFail.windowMs, now) >= LIMITS.ocpiAuthFail.max || rl.count(`ocpiblock:${ip}`, LIMITS.ocpiAuthFail.windowMs, now) > 0)) return tooMany(60, true);
   if (url.pathname === "/api/client-errors") {
     r = rl.hit(`clienterr:${ip}`, LIMITS.clientErrors.max, LIMITS.clientErrors.windowMs, now);
     if (!r.ok) return tooMany(r.retryAfter, false);
     if (Number(req.headers.get("Content-Length") ?? "0") > 8 * 1024) return Response.json({ error: { message: "Too large", code: "TOO_LARGE" } }, { status: 413 });
   }
-  if (/^\/api\/(pass|invites)\//.test(url.pathname)) {
+  const isPublic = /^\/api\/(pass|invites)\//.test(url.pathname);
+  if (isPublic) {
     r = rl.hit(`public:${ip}`, LIMITS.publicToken.max, LIMITS.publicToken.windowMs, now);
     if (!r.ok) return tooMany(r.retryAfter, false);
   }
+  // Shared across isolates (Workers Rate Limiting bindings, when configured).
+  if (await overShared(ocpi ? shared.ocpi : shared.api, `${ocpi ? "ocpi" : "api"}:${ip}`)) return tooMany(60, ocpi);
+  if (isPublic && await overShared(shared.publicToken, `public:${ip}`)) return tooMany(60, false);
   if (/\/export$/.test(url.pathname) || req.method === "DELETE" && /^\/api\/(me|fleets\/[^/]+)$/.test(url.pathname)) {
     r = rl.hit(`account:${ip}`, LIMITS.account.max, LIMITS.account.windowMs, now);
     if (!r.ok) return tooMany(r.retryAfter, false);
@@ -137,19 +141,27 @@ export async function guard(req: Request, rl = limiter, now = Date.now()): Promi
   return null;
 }
 
-/** After the response: count OCPI requests that failed authentication (for the limit above). */
-export function noteOutcome(req: Request, res: Response, rl = limiter, now = Date.now()) {
+/**
+ * After the response: count OCPI requests that failed authentication (for the limit above). With
+ * the shared binding, failures seen by other isolates count too: once it trips, this isolate
+ * blocks the client for the rest of the window.
+ */
+export async function noteOutcome(req: Request, res: Response, rl = limiter, now = Date.now(), shared: SharedLimits = {}) {
   const path = new URL(req.url).pathname;
-  if ((path.startsWith("/ocpi/") || path.startsWith("/sim/")) && res.status === 401) rl.hit(`ocpi401:${clientIp(req)}`, Number.MAX_SAFE_INTEGER, LIMITS.ocpiAuthFail.windowMs, now);
+  if (!((path.startsWith("/ocpi/") || path.startsWith("/sim/")) && res.status === 401)) return;
+  const ip = clientIp(req);
+  rl.hit(`ocpi401:${ip}`, Number.MAX_SAFE_INTEGER, LIMITS.ocpiAuthFail.windowMs, now);
+  if (await overShared(shared.ocpiAuthFail, `ocpi401:${ip}`)) rl.hit(`ocpiblock:${ip}`, Number.MAX_SAFE_INTEGER, LIMITS.ocpiAuthFail.windowMs, now);
 }
 
 export async function handle(pc: PagesContext): Promise<Response> {
   if (!isConfigured(pc.env)) return withSecurityHeaders(unconfigured(pc));
   try {
-    const blocked = await guard(pc.request);
+    const shared = sharedLimits(pc.env);
+    const blocked = await guard(pc.request, limiter, Date.now(), shared);
     if (blocked) return withSecurityHeaders(blocked);
     const res = await dispatch(pc.request, liveCtx(pc));
-    noteOutcome(pc.request, res);
+    pc.waitUntil(noteOutcome(pc.request, res, limiter, Date.now(), shared));
     return withSecurityHeaders(res);
   } catch (e) {
     const ref = shortRef();
