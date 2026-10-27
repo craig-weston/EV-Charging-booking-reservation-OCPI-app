@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en-GB" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>Confirm your new email address</title>
+<style>
+  body { margin:0; padding:0; }
+  a { color:#2F5BEA; }
+  @media (max-width:600px) {
+    .card { padding:28px 22px !important; }
+    .h1 { font-size:24px !important; }
+  }
+  @media (prefers-color-scheme: dark) {
+    .bg { background:#0F131A !important; }
+    .card { background:#181D25 !important; border-color:#2B3139 !important; }
+    .ink { color:#EEF1F5 !important; }
+    .muted { color:#A3ACB8 !important; }
+    .panel { background:#20252C !important; border-color:#2B3139 !important; }
+    .cell-off { background:#2B3139 !important; }
+    .brand { color:#EEF1F5 !important; }
+    .link { color:#8EA8FF !important; }
+  }
+</style>
+</head>
+<body class="bg" style="margin:0;padding:0;background:#EEF0F2;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">Confirm the new email address for your Depotcharge account.&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg" style="background:#EEF0F2;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+        <tr><td style="padding:0 4px 18px;">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td width="30" height="30" align="center" bgcolor="#2F5BEA" style="width:30px;height:30px;border-radius:8px;background:#2F5BEA;font:800 15px/30px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#FFFFFF;">D</td>
+            <td class="brand" style="padding-left:10px;font:700 17px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#1C2128;">Depotcharge</td>
+          </tr></table>
+        </td></tr>
+        <tr><td class="card" style="background:#FFFFFF;border:1px solid #DDE1E6;border-radius:16px;padding:36px 36px 28px;">
+          <h1 class="h1 ink" style="margin:0 0 18px;font:700 28px/1.25 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;letter-spacing:-.01em;color:#1C2128;">Confirm your new email address</h1>
+<p class="ink" style="margin:0 0 16px;font:400 16px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#1C2128;">You asked to move your Depotcharge account from <strong>{{ .Email }}</strong> to <strong>{{ .NewEmail }}</strong>. One tap to finish the switch-over.</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px;">
+            <tr><td style="border-radius:10px;background:#2F5BEA;" bgcolor="#2F5BEA">
+              <a href="{{ .ConfirmationURL }}" target="_blank" style="display:inline-block;padding:15px 28px;border-radius:10px;border:1px solid #2F5BEA;font:700 16px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#FFFFFF;text-decoration:none;">Confirm new email &rarr;</a>
+            </td></tr>
+          </table><p class="muted" style="margin:0 0 12px;font:400 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#5D6673;">Button not working? Copy this link into your browser:<br><a class="link" href="{{ .ConfirmationURL }}" style="color:#2F5BEA;word-break:break-all;">{{ .ConfirmationURL }}</a></p><p class="muted" style="margin:0 0 12px;font:400 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#5D6673;">Wasn't you? Don't tap anything. Sign in and change your password straight away, then tell your fleet administrator.</p>
+        </td></tr>
+        <tr><td style="padding:22px 8px 0;">
+          <p class="muted" style="margin:0 0 6px;font:600 13px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#5D6673;">Depotcharge · HGV charging, booked ahead. No cards, no terminals, no queue.</p>
+          <p class="muted" style="margin:0;font:400 12px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#5D6673;">You're getting this because {{ .Email }} was used on Depotcharge. <a href="{{ .SiteURL }}" style="color:#5D6673;">Open Depotcharge</a></p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

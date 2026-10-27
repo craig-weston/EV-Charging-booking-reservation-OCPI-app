@@ -26,6 +26,7 @@
     "test:e2e": "node --import tsx --test --test-concurrency=1 tests/e2e/*.e2e.ts",
     "pages:dev": "npx wrangler@4 pages dev dist --compatibility-date=2026-10-01",
     "audit": "npm audit --audit-level=high",
+    "emails": "node scripts/emails.mjs",
     "ocpi:probe": "node --import tsx scripts/ocpi-probe.ts"
   },
   "dependencies": {

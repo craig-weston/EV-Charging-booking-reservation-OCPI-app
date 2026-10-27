@@ -1,0 +1,15 @@
+{
+  "confirmation": "⚡ One tap to plug you in to Depotcharge",
+  "invite": "You've been invited to Depotcharge ⚡",
+  "magic_link": "🔌 Your sign-in link is fully charged",
+  "email_change": "Switching sockets? Confirm your new email",
+  "recovery": "🔋 Flat password? Let's get you recharged",
+  "reauthentication": "Your Depotcharge security code: {{ .Token }}",
+  "password_changed_notification": "Your Depotcharge password was changed",
+  "email_changed_notification": "Your Depotcharge email address was changed",
+  "phone_changed_notification": "Your Depotcharge phone number was changed",
+  "identity_linked_notification": "A new sign-in method was added to Depotcharge",
+  "identity_unlinked_notification": "A sign-in method was removed from Depotcharge",
+  "mfa_factor_enrolled_notification": "🔐 Two-step verification added to Depotcharge",
+  "mfa_factor_unenrolled_notification": "Two-step verification removed from Depotcharge"
+}

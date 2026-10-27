@@ -54,6 +54,9 @@ npx wrangler dev                 # builds, then serves on http://localhost:8787
    the **secret** key.
 8. For production: custom SMTP (Authentication → Emails) with SPF, DKIM and DMARC, and
    **Network restrictions** so nothing can connect to Postgres directly.
+9. **Emails:** once custom SMTP is on, paste the Depotcharge email templates from
+   `supabase/templates/` (see its README) into Authentication → Emails, and switch on the
+   security notifications you want.
 
 ### 2. Cloudflare Workers
 
