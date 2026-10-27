@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Brand, Fleet } from "../../shared/model";
+import type { Brand, Fleet, NotifyChannel } from "../../shared/model";
 import { DEFAULT_BRAND } from "../../shared/model";
 import { useApp, type Theme } from "../app/state";
 import { ApiFailure } from "../app/backend";
@@ -66,16 +66,18 @@ export function SettingsPage() {
 }
 
 function FleetSettings({ fleet, canEdit }: { fleet: Fleet; canEdit: boolean }) {
-  const { api, fleetId, refreshFleet, refreshMe, toast } = useApp();
+  const { api, fleetId, refreshFleet, refreshMe, toast, config } = useApp();
   const [name, setName] = useState(fleet.name);
+  const [notify, setNotify] = useState<NotifyChannel>(fleet.notify_drivers ?? "off");
+  const channels = config.notifications ?? { sms: false, whatsapp: false };
   const [phone, setPhone] = useState(fleet.desk_phone ?? "");
   const [unbooked, setUnbooked] = useState(fleet.allow_unbooked_charging);
   const [saving, setSaving] = useState(false);
-  const dirty = name !== fleet.name || phone !== (fleet.desk_phone ?? "") || unbooked !== fleet.allow_unbooked_charging;
+  const dirty = name !== fleet.name || phone !== (fleet.desk_phone ?? "") || unbooked !== fleet.allow_unbooked_charging || notify !== (fleet.notify_drivers ?? "off");
   const save = async () => {
     setSaving(true);
     try {
-      await api("PATCH", `/fleets/${fleetId}`, { name, desk_phone: phone, allow_unbooked_charging: unbooked });
+      await api("PATCH", `/fleets/${fleetId}`, { name, desk_phone: phone, allow_unbooked_charging: unbooked, notify_drivers: notify });
       await Promise.all([refreshFleet(), refreshMe()]);
       toast("Fleet settings saved");
     } catch (e) {
@@ -96,6 +98,17 @@ function FleetSettings({ fleet, canEdit }: { fleet: Fleet; canEdit: boolean }) {
           <span>Allow charging without a booking</span>
           <span className="hint" style={{ display: "block" }}>When an operator asks us to authorise one of your trucks and there's no booking, answer "allowed". Turn off to only pay for booked sessions.</span>
         </Switch>
+        <Field label="Message drivers automatically" hint={channels.sms || channels.whatsapp
+          ? "When a booking is confirmed, changed or cancelled, the assigned driver gets their pass link. Uses the phone number on the driver's profile."
+          : "Not set up on this platform yet: your platform admin needs to add the Twilio settings."}>
+          {(id) => (
+            <select id={id} className="input" value={notify} disabled={!canEdit} onChange={(e) => setNotify(e.target.value as NotifyChannel)}>
+              <option value="off">Off: we'll share the pass link ourselves</option>
+              <option value="sms" disabled={!channels.sms && notify !== "sms"}>Text message (SMS)</option>
+              <option value="whatsapp" disabled={!channels.whatsapp && notify !== "whatsapp"}>WhatsApp</option>
+            </select>
+          )}
+        </Field>
         {canEdit && <div><button className="btn primary" disabled={!dirty || saving} onClick={save}>{saving && <Spinner />}Save fleet settings</button></div>}
       </div>
     </section>

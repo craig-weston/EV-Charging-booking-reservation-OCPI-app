@@ -74,7 +74,7 @@ export class MemoryStore implements Store {
   async createFleet(name: string, owner: { id: string; email: string | null }) {
     const now = iso(new Date());
     const f: Fleet = {
-      id: uuid(), name, desk_phone: null, allow_unbooked_charging: true, require_mfa: false,
+      id: uuid(), name, desk_phone: null, allow_unbooked_charging: true, require_mfa: false, notify_drivers: "off",
       terms_version: null, terms_accepted_at: null, terms_accepted_by: null, created_at: now, updated_at: now,
     };
     this.data.fleets.push(f);

@@ -30,7 +30,7 @@ and data processing terms in the app (`src/legal/documents.tsx`).
 
 | Categories of processing | Data subjects | Personal data | Sub-processors | Transfers | Security |
 | --- | --- | --- | --- | --- | --- |
-| Storing and organising fleet data; sending booking details to operators; receiving sessions and charge records; showing driver passes | Customers' drivers and staff | Driver name and phone; plates; charging IDs (contract or vehicle IDs); booking times and places; charging data (energy, battery level, costs); notes | Cloudflare, Supabase, [email provider] | See section 5 | See the data processing terms, Annex B |
+| Storing and organising fleet data; sending booking details to operators; receiving sessions and charge records; showing driver passes | Customers' drivers and staff | Driver name and phone; plates; charging IDs (contract or vehicle IDs); booking times and places; charging data (energy, battery level, costs); notes | Cloudflare, Supabase, [email provider], Twilio (driver messages, if turned on) | See section 5 | See the data processing terms, Annex B |
 
 ## 3. Retention schedule
 
@@ -86,6 +86,7 @@ Signed off: [Name, role, date].
 | Supabase | Database in [London, UK (AWS eu-west-2)]; support access from outside the UK | Supabase's data processing addendum with Standard Contractual Clauses; check it includes the UK Addendum or IDTA, or rely on the UK Extension to the EU–US Data Privacy Framework if Supabase is certified |
 | Cloudflare | Global network, including the USA | Cloudflare's data processing addendum (with the UK Addendum or IDTA), or the UK Extension to the EU–US Data Privacy Framework (check Cloudflare's current certification on dataprivacyframework.gov) |
 | [Email provider] | [Region] | [Safeguard] |
+| Twilio (only if automatic driver messages are configured) | USA and other Twilio regions; WhatsApp messages also pass through Meta | Twilio's data protection addendum (Standard Contractual Clauses with the UK Addendum), or the UK Extension to the EU–US Data Privacy Framework if Twilio is certified |
 
 Record a transfer risk assessment for each restricted transfer (the ICO's TRA tool is suitable).
 

@@ -35,6 +35,11 @@ export interface Env {
   LEGAL_PRIVACY_EMAIL?: string;
   LEGAL_ICO_NUMBER?: string;
   SECURITY_CONTACT?: string;
+  /** Twilio, for automatic driver texts / WhatsApp messages (Settings → Fleet). */
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string; // secret
+  TWILIO_FROM?: string; // SMS sender: an E.164 number or an alphanumeric sender ID
+  TWILIO_WHATSAPP_FROM?: string; // WhatsApp-enabled sender number, E.164
 }
 
 export interface AuthUser {
