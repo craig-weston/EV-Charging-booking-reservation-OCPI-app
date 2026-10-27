@@ -315,7 +315,7 @@ p { margin: 0; }
 .chip:hover { border-color: var(--faint); }
 .chip[aria-pressed="true"], .chip.on { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-strong); }
 .chip .sub { color: var(--faint); font-weight: 450; }
-.chip[aria-pressed="true"] .sub { color: inherit; opacity: 0.75; }
+.chip[aria-pressed="true"] .sub { color: inherit; }
 
 .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
 .switch input { position: absolute; opacity: 0; pointer-events: none; }

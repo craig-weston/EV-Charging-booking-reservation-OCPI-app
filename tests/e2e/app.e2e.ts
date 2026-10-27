@@ -1,6 +1,7 @@
 // Browser tests: the built app (dist/, demo mode) in real Chromium, served with the production
 // Content-Security-Policy from dist/_headers. Checks the main journeys work, nothing logs an
 // error or a CSP violation, and pages pass axe-core accessibility rules (WCAG 2.2 A/AA).
+// Contexts ask for reduced motion, so contrast is never measured halfway through a fade-in.
 //
 //   npm run build && npm run test:e2e
 //
@@ -118,7 +119,7 @@ function noA11yProblems() {
 }
 
 test("dashboard loads in demo mode, with no errors and no CSP violations", async () => {
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const ctx = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1280, height: 800 } });
   const { page, problems } = await open(ctx);
   await page.getByRole("heading", { level: 1 }).first().waitFor({ timeout: 15_000 });
   await page.waitForTimeout(1500);
@@ -129,7 +130,7 @@ test("dashboard loads in demo mode, with no errors and no CSP violations", async
 });
 
 test("book a slot end to end, then open the driver pass on a phone", async () => {
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const ctx = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1280, height: 800 } });
   const { page, problems } = await open(ctx, "#/book");
   const tomorrow = page.locator('[aria-label="Day"] .chip', { hasText: "Tomorrow" });
   await tomorrow.waitFor({ timeout: 15_000 });
@@ -163,7 +164,7 @@ test("book a slot end to end, then open the driver pass on a phone", async () =>
 });
 
 test("settings and team pages pass accessibility checks; keyboard reaches the main nav", async () => {
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const ctx = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1280, height: 800 } });
   const { page, problems } = await open(ctx, "#/settings");
   await page.getByRole("button", { name: "Save fleet settings" }).waitFor({ timeout: 15_000 });
   await axe(page, "settings");
@@ -183,7 +184,7 @@ test("settings and team pages pass accessibility checks; keyboard reaches the ma
 });
 
 test("dark mode and a phone-sized screen render without horizontal scrolling", async () => {
-  const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, colorScheme: "dark" });
+  const ctx = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 375, height: 812 }, colorScheme: "dark" });
   const { page, problems } = await open(ctx);
   await page.getByRole("heading", { level: 1 }).first().waitFor({ timeout: 15_000 });
   await page.waitForTimeout(1000);
