@@ -153,7 +153,8 @@ export async function handleApi(req: Request, ctx: Ctx): Promise<Response> {
   } catch (e) {
     if (e instanceof ApiError) return err(e.status, e.message, e.code);
     const status = (e as { status?: number }).status;
-    if (status && status >= 400 && status < 500) return err(status, (e as Error).message);
+    // Database errors carry an HTTP status too, but their text is for the server log, never users.
+    if (status && status >= 400 && status < 500 && !(e as { internal?: boolean }).internal) return err(status, (e as Error).message);
     // Internal details (database errors, stack traces) stay in the server log.
     const ref = uuid().slice(0, 8);
     console.error(`API error [${ref}]`, e);

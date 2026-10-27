@@ -353,3 +353,13 @@ test("driver pass links can be revoked: a reset issues a new link and the old on
   assert.equal((await h.api("GET", `/api/pass/${reset.data.pass_token}`)).status, 200);
   assert.ok(h.store.data.audit.some((a: AuditEntry) => a.action === "booking.pass_reset"));
 });
+
+test("database errors never reach users, even when they carry a 4xx status", async () => {
+  const { harness } = await import("./helpers");
+  const h = await harness();
+  h.store.listVehicles = async () => { throw Object.assign(new Error("permission denied for table vehicles"), { status: 403, internal: true }); };
+  const r = await h.api("GET", `/api/fleets/${h.fleetId}/vehicles`);
+  assert.equal(r.status, 500);
+  assert.match(r.error!.message, /^Something went wrong on our side \(reference [0-9a-f]{8}\)$/);
+  assert.doesNotMatch(r.error!.message, /permission|table/);
+});

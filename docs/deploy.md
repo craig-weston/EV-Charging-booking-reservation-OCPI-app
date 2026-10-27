@@ -39,7 +39,9 @@ npx wrangler dev                 # builds, then serves on http://localhost:8787
 3. **SQL Editor → New query**: run every file in `supabase/migrations`, oldest first:
    `20261020000000_init.sql` (schema and row level security), `20261021000000_security.sql`
    (hashed operator tokens, audit log, read-only browser access, the retention job), then the later
-   ones (for example `20261027000000_api_keys.sql`). With the Supabase CLI instead:
+   ones (for example `20261027000000_api_keys.sql`). Don't skip `20261031000000_grants.sql`: newer
+   Supabase projects give the API roles no access to new tables, and without it the app shows
+   "permission denied for table …". With the Supabase CLI instead:
    `supabase link` then `supabase db push`. When you update, run any new migration the same way.
 4. **Authentication → Sign In / Providers → Email**: keep "Confirm email" on (invite links survive
    the confirmation step), turn on **Secure password change**, set **Minimum password length to

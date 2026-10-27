@@ -2,6 +2,15 @@
 \set ON_ERROR_STOP on
 -- Migrations after the first two (CI applies those two on the command line).
 \ir ../../supabase/migrations/20261027000000_api_keys.sql
+\ir ../../supabase/migrations/20261031000000_grants.sql
+-- The app's server role must reach every table (newer Supabase projects grant nothing by default).
+do $$ declare t text; begin
+  for t in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r' loop
+    if not has_table_privilege('service_role', 'public.' || t, 'select, insert, update, delete') then
+      raise exception 'service_role cannot use table %', t;
+    end if;
+  end loop;
+end $$;
 insert into auth.users values ('00000000-0000-0000-0000-00000000000a', 'a@example.com'), ('00000000-0000-0000-0000-00000000000b', 'b@example.com');
 insert into public.fleets (id, name) values ('10000000-0000-0000-0000-00000000000a', 'Fleet A'), ('10000000-0000-0000-0000-00000000000b', 'Fleet B');
 insert into public.fleet_members (fleet_id, user_id, role) values ('10000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000a', 'owner'),
@@ -73,7 +82,10 @@ reset role;
 
 set role anon;
 do $$ begin
-  if (select count(*) from public.vehicles) <> 0 then raise exception 'anon must see nothing'; end if;
+  -- No grant at all (refused) is fine; seeing rows is not.
+  begin
+    if (select count(*) from public.vehicles) <> 0 then raise exception 'anon must see nothing'; end if;
+  exception when insufficient_privilege then null; end;
   if (select count(*) from public.platform_settings) <> 2 then raise exception 'anon sees brand and legal settings only'; end if;
 end $$;
 reset role;
