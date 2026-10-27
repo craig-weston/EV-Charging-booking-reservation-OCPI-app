@@ -1,0 +1,29 @@
+# One-off: generates package-lock.json on GitHub's runners (the npm registry isn't reachable from
+# where this change was prepared), commits it to this branch and deletes this workflow in the
+# same commit, so the branch ends with just the lockfile.
+name: Generate lockfile (one-off)
+on:
+  push:
+    branches: [chore/lockfile]
+    paths: [.github/workflows/generate-lockfile.yml]
+permissions:
+  contents: write
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: npm install --package-lock-only --no-fund --no-audit
+      - run: npm ci --no-fund --no-audit && npm run typecheck && npm test && npm run build
+      - name: Commit the lockfile and remove this workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -q .github/workflows/generate-lockfile.yml
+          git add package-lock.json
+          git commit -m "Add package-lock.json so every build installs exactly the reviewed versions"
+          git push
