@@ -15,6 +15,7 @@ import { API_KEY_PREFIX, BODY_LIMITS, BodyTooLarge, checkLogo, clientIp, hint, i
 import { complianceReport, saveTick } from "./compliance";
 import { sampleDrivers, sampleVehicles } from "./samples";
 import { notifyChannels, notifyDriver } from "../notify";
+import { redactPath, reportError, scrub } from "../alerts";
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify({ data }), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
@@ -78,6 +79,17 @@ function apiKeyAllows(key: NonNullable<AuthUser["apiKey"]>, method: string, seg:
   return ["vehicles", "drivers", "bookings"].includes(seg[2]);
 }
 
+async function clientError(ctx: Ctx, req: Request): Promise<{ ref: string }> {
+  const b = await body<{ message?: unknown; name?: unknown; source?: unknown; page?: unknown; release?: unknown }>(req).catch(() => ({} as Record<string, unknown>));
+  const ref = uuid().slice(0, 8);
+  const str = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n) : "");
+  const error = Object.assign(new Error(scrub(str(b.message, 500)) || "(no message)"), { name: str(b.name, 60) || "Error" });
+  const page = redactPath(str(b.page, 200));
+  console.warn(`Browser error [${ref}] ${error.name}: ${error.message} on ${page} (${scrub(str(b.source, 200))}, release ${str(b.release, 40)})`);
+  reportError({ env: ctx.env, waitUntil: (p) => ctx.waitUntil(p), fetch: (r) => ctx.transport(r) }, { where: "browser", ref, error, path: page });
+  return { ref };
+}
+
 export async function handleApi(req: Request, ctx: Ctx): Promise<Response> {
   const url = new URL(req.url);
   const seg = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
@@ -86,6 +98,8 @@ export async function handleApi(req: Request, ctx: Ctx): Promise<Response> {
     if (seg[0] === "config" && req.method === "GET") return json(await config(ctx));
     if (seg[0] === "pass" && seg[1] && req.method === "GET") return json(await passView(ctx, seg[1]));
     if (seg[0] === "health") return json({ ok: true, mode: ctx.mode, time: iso(ctx.now()) });
+    // Errors from the app in people's browsers (src/app/errors.ts). Rate limited in server/live.ts.
+    if (seg[0] === "client-errors" && req.method === "POST") return json(await clientError(ctx, req), 202);
     // Invite preview works signed out too, so the sign-in screen can say what you're joining.
     if (seg[0] === "invites" && seg[1] && !seg[2] && req.method === "GET") {
       return json(await invitePreview(ctx, seg[1], await ctx.verifyUser(req).catch(() => null)));
@@ -143,6 +157,7 @@ export async function handleApi(req: Request, ctx: Ctx): Promise<Response> {
     // Internal details (database errors, stack traces) stay in the server log.
     const ref = uuid().slice(0, 8);
     console.error(`API error [${ref}]`, e);
+    reportError({ env: ctx.env, waitUntil: (p) => ctx.waitUntil(p), fetch: (r) => ctx.transport(r) }, { where: "api", ref, error: e, method: req.method, path: url.pathname });
     return err(500, `Something went wrong on our side (reference ${ref})`, "INTERNAL");
   }
 }

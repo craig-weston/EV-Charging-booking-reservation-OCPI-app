@@ -3,6 +3,8 @@ import "./styles/app.css";
 import { App } from "./App";
 import { createLiveBackend, fetchConfig, type Backend } from "./app/backend";
 import { applyBrand } from "./app/brand";
+import { installErrorReporting } from "./app/errors";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 declare global {
   interface Window {
@@ -17,6 +19,7 @@ async function boot() {
   let backend: Backend;
   if (config && config.mode === "live" && config.supabase_url && config.supabase_anon_key) {
     backend = createLiveBackend(config);
+    installErrorReporting();
     try {
       backend.auth!.consumeRedirect();
     } catch (e) {
@@ -29,7 +32,7 @@ async function boot() {
   }
   applyBrand(backend.config.brand);
   document.title = backend.config.brand.name;
-  root.render(<App backend={backend} />);
+  root.render(<ErrorBoundary><App backend={backend} /></ErrorBoundary>);
 }
 
 boot().catch((e) => {

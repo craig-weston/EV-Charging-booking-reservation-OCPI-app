@@ -88,6 +88,7 @@ Then **Settings → Variables and Secrets**:
 | `TWILIO_AUTH_TOKEN` | Secret | | Server only. |
 | `TWILIO_FROM` | Text | `+447700900000` or a sender ID | SMS sender. Set it to offer text messages. |
 | `TWILIO_WHATSAPP_FROM` | Text | `+447700900000` | WhatsApp-enabled sender. Set it to offer WhatsApp. |
+| `ALERT_WEBHOOK_URL` | Secret | Slack, Teams or Discord webhook URL | Optional: alerts for unexpected errors (see below). |
 | `REQUIRE_ADMIN_MFA` | Text | | Leave unset: platform admins must use two-step verification. |
 | `LEGAL_*`, `BRAND_*` | Text | | Optional defaults for Compliance → Company & legal and Settings → Branding. |
 
@@ -106,6 +107,21 @@ booking's timeline, with the number masked. Notes:
   you have one, offer SMS.
 - Twilio becomes a sub-processor: it is already listed in the data processing terms (Annex C)
   and `docs/compliance/data-protection.md`. Tell fleet owners before you switch it on.
+
+**Error alerts.** Every unexpected error is logged with an 8-character reference, which is also
+shown to the person who hit it ("reference 3f9a1c2b"). To find it, go to Worker → **Logs**
+(Workers Logs, on via `observability` in `wrangler.jsonc`) and search for the reference. Set
+`ALERT_WEBHOOK_URL` to get a message when one happens:
+
+- **Slack:** an incoming webhook URL.
+- **Microsoft Teams:** a Workflows "post to a channel when a webhook request is received" URL.
+- **Discord:** a channel webhook URL.
+
+Alerts cover API and OCPI errors, failed background tasks and errors in people's browsers (sent
+to `/api/client-errors`, rate limited). The same error alerts at most once every 10 minutes. An
+alert holds the error's first line, the method and path (link tokens removed) and the
+reference, and no personal data. For outages rather than errors, add an uptime check on
+`/api/health` (Cloudflare Health Checks, or any uptime service).
 
 Also recommended in Cloudflare: SSL/TLS **Full (strict)**, minimum TLS 1.2, Always Use HTTPS, WAF
 managed rules, and a rate-limiting rule for `/api/*` and `/ocpi/*` (on a custom domain).

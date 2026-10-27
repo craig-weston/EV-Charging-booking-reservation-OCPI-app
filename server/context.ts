@@ -40,6 +40,8 @@ export interface Env {
   TWILIO_AUTH_TOKEN?: string; // secret
   TWILIO_FROM?: string; // SMS sender: an E.164 number or an alphanumeric sender ID
   TWILIO_WHATSAPP_FROM?: string; // WhatsApp-enabled sender number, E.164
+  /** Optional: Slack / Teams / Discord (or any JSON) webhook for error alerts (server/alerts.ts). */
+  ALERT_WEBHOOK_URL?: string;
 }
 
 export interface AuthUser {
