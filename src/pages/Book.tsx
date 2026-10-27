@@ -365,7 +365,8 @@ function ResultItem({ site, desired, now, onSelect }: { site: Site; desired: Dat
   const windows = o ? availableWindows(o.bl, new Date(Math.max(from, now.getTime())), new Date(from + span)) : [];
   const fee = o?.tariff ? (o.tariff.bookingFlat ?? 0) + (o.tariff.bookingPerHour ?? 0) * ((s ? (s.end.getTime() - s.start.getTime()) : 45 * MINUTE) / 3_600_000) : null;
   return (
-    <li className="result" role="button" tabIndex={0} onClick={onSelect} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(); } }} aria-label={`${site.shortName}, ${s ? fmtRange(s.start, s.end) : "no slot nearby"}`}>
+    // The <li> stays a list item (screen readers announce "1 of 8"); the button role sits inside it.
+    <li><div className="result" role="button" tabIndex={0} onClick={onSelect} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(); } }} aria-label={`${site.shortName}, ${s ? fmtRange(s.start, s.end) : "no slot nearby"}`}>
       <div className="row gap-12" style={{ minWidth: 0 }}>
         <span className="op-mark" title={site.operator}>{initials(site.operator)}</span>
         <div style={{ minWidth: 0 }}>
@@ -394,7 +395,7 @@ function ResultItem({ site, desired, now, onSelect }: { site: Site; desired: Dat
         {o && o.assessment.issues.filter((i) => i.level !== "block").map((i) => <span key={i.code} className={`tag ${i.level === "touch" ? "warn" : ""}`}>{i.text}</span>)}
         {site.isSimulator && <span className="tag">Simulated</span>}
       </div>
-    </li>
+    </div></li>
   );
 }
 

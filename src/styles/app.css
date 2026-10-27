@@ -33,11 +33,11 @@
   --ink: #1c2128;
   --ink-2: #39414c;
   --muted: #5d6673;
-  --faint: #8b939e;
+  --faint: #626a76;
   --line: #dde1e6;
   --line-2: #c8ced6;
 
-  --ok: #1b7f48;
+  --ok: #17703f;
   --ok-bg: #e2f2e8;
   --pending: #9a5f00;
   --pending-bg: #fdf0d5;
@@ -90,7 +90,7 @@
     --ink: #e9ecf0;
     --ink-2: #c9ced5;
     --muted: #a1a9b4;
-    --faint: #7b838e;
+    --faint: #8f97a2;
     --line: #2b3139;
     --line-2: #3a414b;
     --ok: #4cc283;
@@ -126,7 +126,7 @@
   --ink: #e9ecf0;
   --ink-2: #c9ced5;
   --muted: #a1a9b4;
-  --faint: #7b838e;
+  --faint: #8f97a2;
   --line: #2b3139;
   --line-2: #3a414b;
   --ok: #4cc283;
@@ -313,7 +313,7 @@ p { margin: 0; }
   border: 1px solid var(--line-2); background: var(--surface); cursor: pointer; font-size: var(--fs-sm); font-weight: 540; color: var(--ink-2);
 }
 .chip:hover { border-color: var(--faint); }
-.chip[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-strong); }
+.chip[aria-pressed="true"], .chip.on { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-strong); }
 .chip .sub { color: var(--faint); font-weight: 450; }
 .chip[aria-pressed="true"] .sub { color: inherit; opacity: 0.75; }
 

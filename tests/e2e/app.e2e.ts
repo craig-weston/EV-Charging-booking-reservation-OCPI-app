@@ -104,11 +104,18 @@ async function axe(page: Page, label: string) {
   const result = await page.evaluate(async () => {
     const w = window as unknown as { axe: { run(ctx: Document, opts: object): Promise<{ violations: { id: string; impact: string; help: string; nodes: { target: string[] }[] }[] }> } };
     const r = await w.axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] }, resultTypes: ["violations"] });
-    return r.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, targets: v.nodes.slice(0, 5).map((n) => n.target.join(" ")) }));
+    return r.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, targets: v.nodes.slice(0, 5).map((n) => `${n.target.join(" ")} ${(n as unknown as { html: string }).html.slice(0, 90)}`) }));
   });
   const serious = result.filter((v) => v.impact === "serious" || v.impact === "critical");
   for (const v of result.filter((x) => !serious.includes(x))) console.log(`  a11y (${label}, ${v.impact}): ${v.id}: ${v.help} → ${v.targets.join(", ")}`);
-  assert.deepEqual(serious, [], `${label}: serious accessibility problems:\n${serious.map((v) => `${v.id} (${v.impact}): ${v.help}\n    ${v.targets.join("\n    ")}`).join("\n")}`);
+  // Collected rather than thrown, so one run reports every page's problems.
+  for (const v of serious) a11y.push(`${label}: ${v.id} (${v.impact}): ${v.help}\n    ${v.targets.join("\n    ")}`);
+}
+
+const a11y: string[] = [];
+function noA11yProblems() {
+  const found = a11y.splice(0);
+  assert.deepEqual(found, [], `serious accessibility problems:\n${found.join("\n")}`);
 }
 
 test("dashboard loads in demo mode, with no errors and no CSP violations", async () => {
@@ -118,6 +125,7 @@ test("dashboard loads in demo mode, with no errors and no CSP violations", async
   await page.waitForTimeout(1500);
   assert.deepEqual(problems, []);
   await axe(page, "dashboard");
+  noA11yProblems();
   await ctx.close();
 });
 
@@ -151,6 +159,7 @@ test("book a slot end to end, then open the driver pass on a phone", async () =>
   await phone.getByText(/plug in/i).first().waitFor({ timeout: 15_000 });
   await axe(phone, "driver pass (mobile)");
   assert.deepEqual(phoneProblems, []);
+  noA11yProblems();
   await ctx.close();
 });
 
@@ -170,6 +179,7 @@ test("settings and team pages pass accessibility checks; keyboard reaches the ma
   });
   assert.ok(focused?.visible, "Tab moves focus to a visible control");
   assert.deepEqual(problems, []);
+  noA11yProblems();
   await ctx.close();
 });
 
@@ -182,5 +192,6 @@ test("dark mode and a phone-sized screen render without horizontal scrolling", a
   assert.ok(overflow <= 1, `page scrolls sideways by ${overflow}px on a phone`);
   await axe(page, "dashboard (dark, mobile)");
   assert.deepEqual(problems, []);
+  noA11yProblems();
   await ctx.close();
 });
