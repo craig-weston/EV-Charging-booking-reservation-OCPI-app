@@ -96,7 +96,8 @@ export const isSealed = (stored: string | null | undefined) => !!stored && store
 
 /**
  * Sliding-window limiter held in memory. On Cloudflare each isolate keeps its own counts, so this
- * is a first line of defence; add a Cloudflare WAF rate-limiting rule for a global limit (README).
+ * is only a first line of defence: the shared limits below (Workers Rate Limiting bindings) count
+ * across every isolate in a Cloudflare location, and a WAF rule can add a global limit.
  */
 export class RateLimiter {
   private hits = new Map<string, number[]>();
@@ -122,6 +123,38 @@ export class RateLimiter {
   /** Counts without recording (e.g. failed sign-ins already over the limit). */
   count(key: string, windowMs: number, now = Date.now()): number {
     return (this.hits.get(key) ?? []).filter((t) => t > now - windowMs).length;
+  }
+}
+
+/** A Cloudflare Workers Rate Limiting binding (wrangler.jsonc → "ratelimits"). */
+export interface RateLimitBinding {
+  limit(opts: { key: string }): Promise<{ success: boolean }>;
+}
+
+/**
+ * Limits shared by every isolate in a Cloudflare location. Counts are approximate and per
+ * location; for the in-memory limiter above they're a backstop, not a replacement.
+ */
+export interface SharedLimits {
+  api?: RateLimitBinding;
+  ocpi?: RateLimitBinding;
+  publicToken?: RateLimitBinding;
+  ocpiAuthFail?: RateLimitBinding;
+}
+
+export function sharedLimits(env: { RL_API?: unknown; RL_OCPI?: unknown; RL_PUBLIC?: unknown; RL_OCPI_AUTH?: unknown }): SharedLimits {
+  const b = (v: unknown) => (v && typeof (v as RateLimitBinding).limit === "function" ? (v as RateLimitBinding) : undefined);
+  return { api: b(env.RL_API), ocpi: b(env.RL_OCPI), publicToken: b(env.RL_PUBLIC), ocpiAuthFail: b(env.RL_OCPI_AUTH) };
+}
+
+/** True when the shared limit is exceeded. Fails open: a binding error must not take the API down. */
+export async function overShared(binding: RateLimitBinding | undefined, key: string): Promise<boolean> {
+  if (!binding) return false;
+  try {
+    return !(await binding.limit({ key })).success;
+  } catch (e) {
+    console.warn("rate limit binding failed", e);
+    return false;
   }
 }
 

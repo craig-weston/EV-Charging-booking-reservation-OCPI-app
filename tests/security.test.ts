@@ -6,7 +6,7 @@ import type { AuditEntry, BookingRow, Fleet, FleetInvite } from "../shared/model
 import type { Token } from "../shared/ocpi/types";
 import { createLocalCtx, dispatch } from "../server/dispatch";
 import type { AuthUser } from "../server/context";
-import { RateLimiter, checkLogo, openSecret, sealSecret, sha256Hex, withSecurityHeaders } from "../server/security";
+import { RateLimiter, checkLogo, sharedLimits, type RateLimitBinding, openSecret, sealSecret, sha256Hex, withSecurityHeaders } from "../server/security";
 import { guard, noteOutcome } from "../server/live";
 import { ocpiCall, ocpiPullAll, redactSecrets } from "../server/ocpi/client";
 import { MemoryStore } from "../server/store/memory";
@@ -148,6 +148,29 @@ test("rate limits, body size limits and security headers", async () => {
   // Repeated OCPI requests with unknown credentials lock that client out for a while.
   for (let i = 0; i < 20; i++) noteOutcome(req("/ocpi/emsp/2.3.0/tokens"), new Response(null, { status: 401 }), rl, t0);
   assert.equal((await guard(req("/ocpi/emsp/2.3.0/tokens"), rl, t0 + 1000))?.status, 429);
+
+  // Shared limits (Workers Rate Limiting bindings) count across isolates: a fresh in-memory limiter
+  // (another isolate) still refuses once the shared count is over.
+  const counts = new Map<string, number>();
+  const binding = (max: number): RateLimitBinding => ({
+    async limit({ key }) { const n = (counts.get(`${max}:${key}`) ?? 0) + 1; counts.set(`${max}:${key}`, n); return { success: n <= max }; },
+  });
+  const shared = sharedLimits({ RL_API: binding(3), RL_PUBLIC: binding(2), RL_OCPI: binding(5), RL_OCPI_AUTH: binding(2) });
+  const ip2 = { ip: "192.0.2.44" };
+  for (let i = 0; i < 3; i++) assert.equal(await guard(req("/api/me", ip2), new RateLimiter(), t0, shared), null);
+  assert.equal((await guard(req("/api/me", ip2), new RateLimiter(), t0, shared))?.status, 429);
+  assert.equal(await guard(req("/api/pass/a", { ip: "192.0.2.45" }), new RateLimiter(), t0, shared), null);
+  assert.equal(await guard(req("/api/pass/b", { ip: "192.0.2.45" }), new RateLimiter(), t0, shared), null);
+  assert.equal((await guard(req("/api/pass/c", { ip: "192.0.2.45" }), new RateLimiter(), t0, shared))?.status, 429);
+  // OCPI auth failures seen elsewhere trip the shared limit; this isolate then blocks the client.
+  const iso = new RateLimiter();
+  const ocpiReq = () => req("/ocpi/emsp/2.3.0/tokens", { ip: "192.0.2.46" });
+  for (let i = 0; i < 3; i++) await noteOutcome(ocpiReq(), new Response(null, { status: 401 }), iso, t0, shared);
+  assert.equal((await guard(ocpiReq(), iso, t0 + 1000, shared))?.status, 429);
+  // A failing binding fails open.
+  const broken = sharedLimits({ RL_API: { limit: async () => { throw new Error("down"); } } });
+  assert.equal(await guard(req("/api/me", { ip: "192.0.2.47" }), new RateLimiter(), t0, broken), null);
+  assert.deepEqual(sharedLimits({ RL_API: "not a binding" }), { api: undefined, ocpi: undefined, publicToken: undefined, ocpiAuthFail: undefined });
 
   const big = await guard(req("/api/fleets", { method: "POST", headers: { "Content-Length": String(300 * 1024) } }), rl, t0);
   assert.equal(big?.status, 413);
