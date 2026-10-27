@@ -88,6 +88,12 @@ Then **Settings → Variables and Secrets**:
 
 Until the `SUPABASE_*` values are set, the site runs in demo mode.
 
+**Live updates.** Planners' screens update the moment an operator confirms, a session starts or
+a charge record arrives, through Supabase Realtime (run
+`supabase/migrations/20261030000000_realtime.sql` once; Realtime is on by default in Supabase).
+Row level security decides which changes each person is told about, and the browser then reloads
+through the API. If the connection drops, the app falls back to polling.
+
 Also recommended in Cloudflare: SSL/TLS **Full (strict)**, minimum TLS 1.2, Always Use HTTPS, WAF
 managed rules, and a rate-limiting rule for `/api/*` and `/ocpi/*` (on a custom domain).
 

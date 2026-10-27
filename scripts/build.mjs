@@ -137,7 +137,9 @@ if (serve) {
   fs.writeFileSync(path.join(out, "index.html"), html({ css: names[".css"], js: names[".js"], preload, fonts }));
   copyPublic(out);
   const headersFile = path.join(out, "_headers");
-  fs.writeFileSync(headersFile, fs.readFileSync(headersFile, "utf8").replaceAll("__SUPABASE_ORIGIN__", supabaseOrigin()));
+  // https for Auth, wss for Realtime live updates (listed explicitly for older browsers).
+  const sb = supabaseOrigin();
+  fs.writeFileSync(headersFile, fs.readFileSync(headersFile, "utf8").replaceAll("__SUPABASE_ORIGIN__", `${sb} ${sb.replace(/^https:/, "wss:")}`));
   writeSecurityTxt(out);
   console.log(`built dist/ → ${names[".js"]} ${names[".css"]}`);
 
