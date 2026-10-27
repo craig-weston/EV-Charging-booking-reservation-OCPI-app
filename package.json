@@ -37,7 +37,7 @@
     "@types/react-dom": "^19.2.0",
     "esbuild": "0.28.2",
     "tsx": "4.23.15",
-    "typescript": "6.0.3",
+    "typescript": "7.0.2",
     "wrangler": "^4.0.0"
   }
 }
