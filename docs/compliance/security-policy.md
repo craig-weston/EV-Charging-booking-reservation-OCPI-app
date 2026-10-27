@@ -125,11 +125,13 @@ and apply these baselines:
 | `SUPABASE_SERVICE_ROLE_KEY` | Cloudflare environment variable (encrypted) | When anyone with access leaves, or on suspected exposure |
 | `DATA_ENCRYPTION_KEY` | Cloudflare environment variable | Every 12 months, or at once on suspected exposure (procedure below) |
 | Operator (OCPI) credentials | Database: tokens we issue as SHA-256 hashes only; tokens operators give us AES-256-GCM encrypted | Ask the operator to re-register, or issue a new registration token |
+| Driver pass and team invite links | Database: AES-256-GCM encrypted, looked up by SHA-256 | A planner resets a pass link; an owner revokes an invite |
 | Personal passwords, recovery codes | Password manager | On suspected exposure |
 
 **Rotating `DATA_ENCRYPTION_KEY`:** generate 32 random bytes (`openssl rand -base64 32`); set the
 current value as `DATA_ENCRYPTION_KEY_PREVIOUS` and the new one as `DATA_ENCRYPTION_KEY`; redeploy;
-in Compliance → Encryption key, choose **Re-encrypt stored credentials**; then remove
+in Compliance → Encryption key, choose **Re-encrypt stored credentials** (this covers operator
+credentials and pass and invite links); then remove
 `DATA_ENCRYPTION_KEY_PREVIOUS` and redeploy. Never commit keys or paste them into chat or tickets.
 
 ## 9. Logging and monitoring

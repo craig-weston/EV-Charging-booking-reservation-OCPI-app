@@ -164,7 +164,8 @@ so you can test end to end before connecting a real network. Every message in an
 - **Two-step verification** with an authenticator app: required for admins, optional for whole fleets.
 - **Strict Content-Security-Policy**, no third-party scripts or fonts, rate limits and input
   validation on every request.
-- **Operator credentials encrypted** at rest or stored only as hashes, never in logs.
+- **Operator credentials encrypted** at rest or stored only as hashes, never in logs. Driver
+  pass and invite links are encrypted too, and looked up by hash.
 - **Fleets isolated** in the API and again by database row level security.
 - **UK GDPR tools built in:** data export, deletion, automatic retention, an audit log, and legal
   page templates.

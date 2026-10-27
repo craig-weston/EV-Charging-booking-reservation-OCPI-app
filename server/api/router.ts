@@ -683,8 +683,9 @@ async function adminRoutes(req: Request, ctx: Ctx, user: AuthUser, seg: string[]
       await ctx.store.upsertPartner(p);
       count++;
     }
-    await audit(ctx, req, user, { action: "security.reencrypt", data: { tokens: count } });
-    return json({ ok: true, tokens: count });
+    const links = (await ctx.store.resealLinkTokens?.()) ?? 0;
+    await audit(ctx, req, user, { action: "security.reencrypt", data: { tokens: count, links } });
+    return json({ ok: true, tokens: count, links });
   }
   if (res === "legal") {
     if (m === "GET") return json(await legalInfo(ctx));
