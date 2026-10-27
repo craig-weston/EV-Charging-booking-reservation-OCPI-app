@@ -22,3 +22,13 @@ test("worker: /api, /ocpi and /sim go to the handler, everything else to the sta
   assert.equal(await (await call("/apiary.png")).text(), "asset", "only the /api/ prefix is dynamic");
   assert.deepEqual(served, ["/", "/apiary.png"]);
 });
+
+test("static hosting: unknown paths are a real 404, not the app", async () => {
+  const { readFileSync, existsSync } = await import("node:fs");
+  // wrangler.jsonc allows comments; strip whole-line ones before parsing.
+  const cfg = JSON.parse(readFileSync("wrangler.jsonc", "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n")) as { assets: { not_found_handling: string } };
+  assert.equal(cfg.assets.not_found_handling, "404-page");
+  assert.ok(existsSync("public/404.html"), "404 page is published (Workers and Pages both serve it with status 404)");
+  const html = readFileSync("public/404.html", "utf8");
+  assert.doesNotMatch(html, /<script|style=/, "CSP: no inline script or style");
+});
