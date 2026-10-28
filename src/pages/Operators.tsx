@@ -42,10 +42,11 @@ export function OperatorsPage({ config }: { config: AppConfig }) {
     document.title = `For charge point operators · ${config.brand.name}`;
     window.scrollTo(0, 0);
     // A plain health check: shows operators the platform is up without exposing anything.
+    if (config.mode !== "live") return;
     fetch("/api/health", { headers: { Accept: "application/json" } })
       .then((r) => setOnline(r.ok))
       .catch(() => setOnline(false));
-  }, [config.brand]);
+  }, [config.brand, config.mode]);
   const contact = config.legal.contact_email || config.brand.support_email;
   const copy = async () => { if (await copyText(config.ocpi_versions_url)) { setCopied(true); setTimeout(() => setCopied(false), 1800); } };
 
