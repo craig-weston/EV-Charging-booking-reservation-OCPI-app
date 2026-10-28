@@ -882,10 +882,12 @@ details.disclose[open] > summary .icon { transform: rotate(90deg); }
 .empty-art, .truck-art { pointer-events: none; }
 .charging-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 16px; border: 0; background: none; text-align: left; cursor: pointer; font: inherit; color: inherit; }
 .charging-row:hover { background: var(--surface-2); }
-.first-run { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.6fr); gap: 24px; padding: 20px; margin-bottom: 18px; align-items: center; }
-.first-run-copy { display: flex; flex-direction: column; gap: 10px; }
+.first-run { display: grid; grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.6fr); gap: 40px; padding: 32px 36px; margin: 24px 0 28px; align-items: center; }
+.first-run-copy { display: flex; flex-direction: column; gap: 14px; }
+.first-run-copy .row { margin-top: 6px; }
 .first-run-copy h2 { font-size: var(--fs-xl); }
-@media (max-width: 900px) { .first-run { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 900px) { .first-run { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 24px; } }
+@media (max-width: 420px) { .first-run { padding: 18px; margin: 18px 0 22px; } }
 .modal.wide { width: min(820px, calc(100vw - 24px)); }
 
 .vehicle-preview { position: relative; border-radius: var(--r-md); border: 1px solid var(--line); background: linear-gradient(var(--art-sky-top), var(--art-sky-bottom)); padding: 14px 18px 6px; }
@@ -901,7 +903,7 @@ details.disclose[open] > summary .icon { transform: rotate(90deg); }
 }
 
 /* ---------------------------------------------------------------- dashboard */
-.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 4px; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-top: 4px; }
 @media (max-width: 1180px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 420px) { .kpis { gap: 10px; } }
 .kpi {
