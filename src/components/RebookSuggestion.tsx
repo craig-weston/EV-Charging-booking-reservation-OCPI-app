@@ -23,8 +23,8 @@ export function RebookSuggestion({ booking, onBooked, compact }: { booking: Book
   if (options.length === 0) {
     return (
       <div className={`rebook ${compact ? "compact" : ""}`}>
-        <span className="small muted grow">No free bay nearby within 3 hours of the original time.</span>
-        <button className="btn sm" onClick={openBook}>Find another time</button>
+        <div className="small muted">No free bay nearby within 3 hours of the original time.</div>
+        <div className="rebook-links"><button type="button" className="linkish" onClick={openBook}>Find another time</button></div>
       </div>
     );
   }
@@ -50,20 +50,20 @@ export function RebookSuggestion({ booking, onBooked, compact }: { booking: Book
       <ul className="rebook-list">
         {shown.map((r, i) => (
           <li key={`${r.site.key}-${r.slot.start.toISOString()}`}>
-            <div className="grow" style={{ minWidth: 0 }}>
+            <div className="rebook-info">
               <div className="rebook-site"><b>{r.sameSite ? `${r.site.shortName}, another bay` : r.site.shortName}</b>{r.option.assessment.zeroTouch && <span className="tag ok">No card needed</span>}</div>
               <div className="xs muted">
                 {fmtDay(r.slot.start, now)}, {fmtRange(r.slot.start, r.slot.end)} ({describeShift(r.shiftMin)})
                 {r.distanceKm != null && !r.sameSite ? `, ${Math.max(1, Math.round(r.distanceKm * 0.621371))} miles away` : ""}
               </div>
             </div>
-            <button className="btn sm primary" disabled={busy !== null} onClick={() => void book(i)}>{busy === i ? <Spinner /> : <Icon name="book" size="sm" />}Book this</button>
+            <button className="btn sm primary rebook-go" disabled={busy !== null} onClick={() => void book(i)}>{busy === i ? <Spinner /> : <Icon name="book" size="sm" />}Book this</button>
           </li>
         ))}
       </ul>
-      <div className="row gap-8 wrap">
-        {options.length > 1 && !more && <button className="btn sm ghost" onClick={() => setMore(true)}>{options.length - 1} more nearby</button>}
-        <button className="btn sm ghost" onClick={openBook}>Choose another time</button>
+      <div className="rebook-links">
+        {options.length > 1 && !more && <button type="button" className="linkish" onClick={() => setMore(true)}>{options.length - 1} more nearby</button>}
+        <button type="button" className="linkish" onClick={openBook}>Choose another time</button>
       </div>
     </div>
   );
