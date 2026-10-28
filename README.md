@@ -11,6 +11,8 @@ No RFID cards. No payment terminals. No driver app.
 [![OCPI 2.3.0 + Bookings 1.1](https://img.shields.io/badge/OCPI-2.3.0%20%2B%20Bookings%201.1-1b7f48)](https://evroaming.org/ocpi/)
 [![CI](https://github.com/craig-weston/EV-Charging-booking-reservation-OCPI-app/actions/workflows/ci.yml/badge.svg)](https://github.com/craig-weston/EV-Charging-booking-reservation-OCPI-app/actions/workflows/ci.yml)
 
+**[Try the live demo →](https://depotcharge.craig-weston1.workers.dev/#/demo)** sample trucks, bookings and simulated operators in your browser; no sign-up.
+
 <img src="docs/images/hero.png" alt="Depotcharge: book the bay, the truck does the rest. Plug & Charge, Autocharge and OCPI 2.3.0 Bookings. No RFID cards, no payment terminals, no driver app." width="100%">
 
 </div>

@@ -51,6 +51,7 @@ function Shell() {
   const app = useApp();
   const { me, meError, brand, backend, toasts, bookings, now } = app;
   const route = useRoute();
+  const [demoBarHidden, setDemoBarHidden] = useState(false);
   const openId = route.params.get("open");
   // Finish an invite that started before sign-up (the confirmation email lands on the home page).
   useEffect(() => {
@@ -125,7 +126,16 @@ function Shell() {
           {me.is_admin && <a className="btn ghost sm icon-only" href={href("/network")} aria-label="Network"><Icon name="network" /></a>}
           <a className="btn ghost sm icon-only" href={href("/settings")} aria-label="Settings"><Icon name="settings" /></a>
         </header>
-        {backend.mode === "demo" && (
+        {backend.publicDemo && !demoBarHidden && (
+          <div className="demo-bar public" role="note">
+            <span className="dot" aria-hidden="true" />
+            <span className="grow"><span className="long">You're exploring a demo: sample trucks, simulated operators and two weeks of made-up history. Nothing here is real.</span><span className="short">Sample data only.</span></span>
+            <button className="btn sm primary" onClick={() => backend.publicDemo!.signUp()}>Create an account</button>
+            <button className="btn sm ghost" onClick={() => backend.publicDemo!.exit()}>Exit demo</button>
+            <button className="btn sm ghost icon-only" onClick={() => setDemoBarHidden(true)} aria-label="Hide this bar (for screenshots)" title="Hide this bar"><Icon name="x" size="sm" /></button>
+          </div>
+        )}
+        {backend.mode === "demo" && !backend.publicDemo && (
           <div className="demo-bar" role="note">
             <span className="dot" aria-hidden="true" />
             <span className="grow"><span className="long">Demo mode: operators are simulated and data stays in this browser. Add your Supabase keys to go live.</span><span className="short">Demo mode. Data stays in this browser.</span></span>

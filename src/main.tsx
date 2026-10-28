@@ -13,11 +13,28 @@ declare global {
   }
 }
 
+function sessionFlag(): boolean {
+  try { return sessionStorage.getItem("depotcharge.try-demo") === "1"; } catch { return false; }
+}
+
 async function boot() {
   const root = createRoot(document.getElementById("root")!);
   const config = window.__DEPOTCHARGE_FORCE_DEMO__ ? null : await fetchConfig();
   let backend: Backend;
-  if (config && config.mode === "live" && config.supabase_url && config.supabase_anon_key) {
+  const live = !!(config && config.mode === "live" && config.supabase_url && config.supabase_anon_key);
+  // "Try the demo" on a live site: the in-browser demo, separate from any real account or data.
+  const tryDemo = /^#\/demo(\/|\?|$)/.test(window.location.hash) || new URLSearchParams(window.location.search).has("demo") || sessionFlag();
+  if (live && tryDemo) {
+    const { createDemoBackend, demoRequested } = await import("./app/demo");
+    if (demoRequested()) {
+      backend = await createDemoBackend(config ?? undefined, { publicDemo: true });
+      applyBrand(backend.config.brand);
+      document.title = `${backend.config.brand.name} demo`;
+      root.render(<ErrorBoundary><App backend={backend} /></ErrorBoundary>);
+      return;
+    }
+  }
+  if (live && config) {
     backend = createLiveBackend(config);
     installErrorReporting();
     try {

@@ -18,6 +18,8 @@ export interface Backend {
   /** Notifies of server-side changes (demo only — live mode polls). */
   onChange?(cb: () => void): () => void;
   reset?(): Promise<void>;
+  /** The public "Try the demo" on a live deployment: sample data in this browser, no account. */
+  publicDemo?: { exit(): void; signUp(): void };
 }
 
 async function parse<T>(res: Response): Promise<T> {

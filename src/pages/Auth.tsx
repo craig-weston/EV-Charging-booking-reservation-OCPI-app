@@ -24,7 +24,7 @@ export const PENDING_INVITE_KEY = "depotcharge.invite";
 
 export function SignIn({ auth, config, inviteToken }: { auth: AuthClient; config: AppConfig; inviteToken?: string }) {
   const brand = config.brand;
-  const [mode, setMode] = useState<"signin" | "signup" | "link">(inviteToken ? "signup" : "signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "link">(inviteToken || window.location.hash.startsWith("#/signup") ? "signup" : "signin");
   const [invite, setInvite] = useState<InvitePreview | null>(null);
   useEffect(() => {
     if (!inviteToken) return;
@@ -101,6 +101,13 @@ export function SignIn({ auth, config, inviteToken }: { auth: AuthClient; config
             {brand.name} is a service for businesses. By creating an account you agree to use it in line with the <a href={href("/legal/terms")}>terms of service</a>.
             The <a href={href("/legal/privacy")}>privacy notice</a> explains how your data is used.
           </p>
+        )}
+        {!inviteToken && (
+          <a className="try-demo" href="#/demo" onClick={(e) => { e.preventDefault(); window.location.hash = "#/demo"; window.location.reload(); }}>
+            <span className="try-demo-icon" aria-hidden="true"><Icon name="play" size="sm" /></span>
+            <span className="grow"><b>Not ready to sign up? Try the demo</b><span className="xs muted">Sample trucks, bookings and simulated operators. Nothing is real and nothing is saved to an account.</span></span>
+            <Icon name="chevronRight" size="sm" />
+          </a>
         )}
         {config.certifications?.length > 0 && <CertificationBadges list={config.certifications} compact />}
         <LegalFooter config={config} compact />
