@@ -170,6 +170,7 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
           />
         </section>
       )}
+      {hasHistory && <a className="savings-link" href={href("/savings")}><Icon name="leaf" size="sm" />See the fuel and CO₂e your trucks avoided<Icon name="chevronRight" size="sm" /></a>}
 
       {loaded.bookings && bookings.length === 0 && vehicles.length > 0 && (
         <section className="panel first-run" aria-label="How charging works">

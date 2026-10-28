@@ -186,6 +186,9 @@ test("settings and team pages pass accessibility checks; keyboard reaches the ma
   await page.goto(`${base}/#/trip`);
   await page.getByRole("heading", { name: "Plan a trip" }).waitFor({ timeout: 15_000 });
   await axe(page, "trip planner");
+  await page.goto(`${base}/#/savings`);
+  await page.getByRole("heading", { name: "Savings", level: 1 }).waitFor({ timeout: 15_000 });
+  await axe(page, "savings");
   await page.goto(`${base}/#/statements`);
   await page.getByRole("heading", { name: "Charging statement" }).waitFor({ timeout: 15_000 });
   await page.getByText("Total incl. VAT").first().waitFor({ timeout: 15_000 });
@@ -211,7 +214,7 @@ test("dark mode and a phone-sized screen render without horizontal scrolling", a
   assert.ok(overflow <= 1, `page scrolls sideways by ${overflow}px on a phone`);
   await axe(page, "dashboard (dark, mobile)");
   // Every main page fits a phone, and the toasts and booking bar sit above the tab bar.
-  for (const hash of ["#/book", "#/bookings", "#/statements", "#/fleet", "#/network", "#/settings", "#/compliance"]) {
+  for (const hash of ["#/book", "#/bookings", "#/statements", "#/savings", "#/fleet", "#/network", "#/settings", "#/compliance"]) {
     await page.goto(`${base}/${hash}`);
     await page.getByRole("heading", { level: 1 }).first().waitFor({ timeout: 15_000 });
     await page.waitForTimeout(600);

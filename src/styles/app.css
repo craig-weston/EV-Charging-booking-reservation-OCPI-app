@@ -1347,6 +1347,28 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
   .trip-foot > .btn { width: 100%; }
 }
 
+/* savings */
+.kpi-accent .kpi-label { color: var(--ok); }
+.kpi-accent .kpi-value { color: var(--ok); }
+.savings-link { display: inline-flex; align-items: center; gap: 6px; margin: 12px 0 0; font-size: var(--fs-sm); color: var(--brand-text); text-decoration: none; font-weight: 560; }
+.savings-link:hover { text-decoration: underline; }
+.month-bars { position: relative; padding: 8px 16px 12px; }
+.month-bars svg { display: block; width: 100%; height: auto; overflow: visible; }
+.month-bars g { outline: none; cursor: default; }
+.month-bars g:focus-visible .mb-bar { stroke: var(--focus); stroke-width: 2; }
+.mb-axis { stroke: var(--line-2); stroke-width: 1; }
+.mb-bar { fill: var(--brand); }
+.mb-bar.on { fill: var(--brand-strong); }
+.mb-val { font-size: 12px; font-weight: 600; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+.mb-x { font-size: 12px; fill: var(--muted); }
+.mb-tip { position: absolute; top: 4px; transform: translateX(-50%); background: var(--ink); color: var(--surface); border-radius: 8px; padding: 6px 10px; font-size: var(--fs-xs); display: flex; flex-direction: column; gap: 1px; pointer-events: none; white-space: nowrap; }
+.savings-facts { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--ink-2); }
+.savings-edit { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; align-items: end; }
+.savings-edit > .table-scroll, .savings-edit > .row { grid-column: 1 / -1; }
+.savings-types .stmt-table { min-width: 460px; }
+.savings-types .input { max-width: 120px; height: 34px; }
+@media (max-width: 760px) { .savings-edit { grid-template-columns: minmax(0, 1fr); } .mb-x { font-size: 20px; } .mb-val { font-size: 20px; } .month-bars { padding: 8px 8px 12px; } }
+
 /* ------------------------------------------------------------------ phone and tablet polish
    Last in the file on purpose: these override base rules of equal specificity above. */
 @media (max-width: 1023px) {
