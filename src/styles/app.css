@@ -1238,6 +1238,60 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
   .stmt-table thead th { background: none; }
 }
 
+/* for operators (public) */
+.ops-main { width: 100%; max-width: 1040px; margin: 0 auto; padding: 8px 28px 56px; display: flex; flex-direction: column; gap: 28px; }
+.ops-hero { display: flex; flex-direction: column; gap: 14px; padding: 36px 0 8px; max-width: 760px; }
+.ops-eyebrow { font-size: var(--fs-xs); font-weight: 650; text-transform: uppercase; letter-spacing: 0.08em; color: var(--brand-text); }
+.ops-hero h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.08; letter-spacing: -0.025em; text-wrap: balance; }
+.ops-lead { font-size: var(--fs-lg); line-height: 1.55; color: var(--ink-2); max-width: 66ch; }
+.ops-benefits { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.ops-benefit { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 20px; display: flex; flex-direction: column; gap: 8px; }
+.ops-benefit h2 { font-size: var(--fs-lg); }
+.ops-benefit p { font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.5; }
+.ops-icon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand-strong); }
+.ops-section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 28px; display: flex; flex-direction: column; gap: 18px; }
+.ops-section h2 { font-size: var(--fs-xl); }
+.ops-head-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
+.ops-flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; counter-reset: flow; }
+.ops-flow li { counter-increment: flow; position: relative; padding: 0 18px 0 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); color: var(--ink-2); }
+.ops-flow li::before { content: counter(flow); width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--brand); color: #fff; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+.ops-flow li:not(:last-child)::after { content: ""; position: absolute; top: 14px; left: 36px; right: 8px; height: 2px; background: var(--brand-line); }
+.ops-flow b { color: var(--ink); }
+.ops-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.ops-facts > div { border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 14px; min-width: 0; }
+.ops-facts .wide { grid-column: 1 / -1; }
+.ops-facts dt { font-size: var(--fs-xs); color: var(--muted); margin-bottom: 4px; }
+.ops-facts dd { margin: 0; font-weight: 600; }
+.ops-url { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ops-url code { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; font-weight: 500; }
+.ops-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); min-width: 560px; }
+.ops-table th, .ops-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ops-table thead th { font-size: var(--fs-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.ops-table tbody th { font-weight: 650; white-space: nowrap; }
+.ops-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 28px; }
+.ops-steps li { display: flex; gap: 14px; align-items: flex-start; }
+.ops-steps p { font-size: var(--fs-sm); color: var(--ink-2); margin-top: 3px; line-height: 1.5; }
+.ops-num { flex: none; width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--brand); color: var(--brand-text); display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+.ops-h3 { font-size: var(--fs-md, 15px); font-weight: 650; }
+.ops-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); color: var(--ink-2); }
+.ops-open { flex-direction: row; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; background: var(--brand-softer); border-color: var(--brand-line); }
+.ops-open > div:first-child { max-width: 62ch; display: flex; flex-direction: column; gap: 8px; }
+.ops-open p { color: var(--ink-2); font-size: var(--fs-sm); line-height: 1.55; }
+@media (max-width: 900px) {
+  .ops-benefits, .ops-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ops-flow { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .ops-flow li { padding: 0 0 0 40px; }
+  .ops-flow li::before { position: absolute; left: 0; top: 0; margin: 0; }
+  .ops-flow li:not(:last-child)::after { top: 32px; bottom: -14px; left: 13px; right: auto; width: 2px; height: auto; }
+  .ops-steps { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .ops-main { padding: 4px 16px 40px; gap: 18px; }
+  .ops-benefits, .ops-facts { grid-template-columns: minmax(0, 1fr); }
+  .ops-section { padding: 20px 18px; }
+  .ops-hero { padding-top: 20px; }
+}
+
 /* ------------------------------------------------------------------ phone and tablet polish
    Last in the file on purpose: these override base rules of equal specificity above. */
 @media (max-width: 1023px) {

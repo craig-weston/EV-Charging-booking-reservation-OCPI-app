@@ -180,6 +180,9 @@ test("settings and team pages pass accessibility checks; keyboard reaches the ma
   await page.goto(`${base}/#/network`);
   await page.getByRole("heading", { name: "Network", level: 1 }).waitFor({ timeout: 15_000 });
   await axe(page, "network");
+  await page.goto(`${base}/#/operators`);
+  await page.getByRole("heading", { name: "Fill your HGV bays with booked trucks" }).waitFor({ timeout: 15_000 });
+  await axe(page, "for operators");
   await page.goto(`${base}/#/statements`);
   await page.getByRole("heading", { name: "Charging statement" }).waitFor({ timeout: 15_000 });
   await page.getByText("Total incl. VAT").first().waitFor({ timeout: 15_000 });

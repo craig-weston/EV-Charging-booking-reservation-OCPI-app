@@ -48,7 +48,7 @@ npx wrangler dev                 # builds, then serves on http://localhost:8787
    12**, and turn on **leaked password protection** if your plan has it.
 5. **Authentication → Multi-Factor**: make sure **TOTP (App Authenticator)** is enabled.
 6. **Authentication → URL Configuration**: set the Site URL to your app's address (for example
-   `https://depotcharge.<your-subdomain>.workers.dev`) and add the same address followed by `/**`
+   `https://depotcharge.<your-subdomain>.workers.dev`, or your own domain) and add the same address followed by `/**`
    to the redirect URLs.
 7. **Project Settings → API Keys**: you'll need the **Project URL**, the **publishable** key and
    the **secret** key.
@@ -278,3 +278,18 @@ psql -d depotcharge_test -f supabase_stub.sql -f ../../supabase/migrations/20261
   If you see "exceeded CPU" errors on Cloudflare's free plan, move to Workers Paid or turn the
   simulator off. Real operators don't run inside your project.
 - Times are stored in UTC and shown in the site's time zone (Europe/London for UK sites).
+
+## Your own domain
+
+1. Cloudflare → Workers & Pages → your Worker → Domains → Add Domain: pick a domain on the same
+   account and a subdomain (e.g. `depotcharge`). Cloudflare creates the DNS record and certificate.
+2. Settings → Variables: set `PUBLIC_BASE_URL` to `https://<subdomain>.<domain>` and deploy. Links in
+   emails, driver passes and your OCPI versions URL use it.
+3. Supabase → Authentication → URL Configuration: set the Site URL to the new address and add
+   `https://<subdomain>.<domain>/**` to the redirect URLs (keep the old one for links already sent).
+4. Tell connected operators your new versions URL (their stored endpoints keep working on the old one
+   while workers.dev stays enabled).
+
+Visitors who open the production workers.dev address are sent to the new domain when its first label
+matches the Worker's (e.g. `depotcharge.example.workers.dev` → `depotcharge.example.com`). Preview
+addresses stay where they are.
