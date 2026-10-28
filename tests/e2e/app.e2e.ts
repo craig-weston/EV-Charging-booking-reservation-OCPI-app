@@ -171,6 +171,15 @@ test("settings and team pages pass accessibility checks; keyboard reaches the ma
   await page.goto(`${base}/#/team`);
   await page.waitForTimeout(1500);
   await axe(page, "team");
+  await page.goto(`${base}/#/network/connect`);
+  await page.getByRole("heading", { name: "Connect a real operator" }).waitFor({ timeout: 15_000 });
+  await axe(page, "operator guide");
+  await page.getByRole("button", { name: /Check their interface, then connect/ }).click();
+  await page.getByRole("textbox", { name: "Their versions URL" }).waitFor();
+  await axe(page, "operator guide (connect step)");
+  await page.goto(`${base}/#/network`);
+  await page.getByRole("heading", { name: "Network", level: 1 }).waitFor({ timeout: 15_000 });
+  await axe(page, "network");
   // Keyboard: the first few Tabs land on visible, focusable controls (skip link or nav).
   await page.keyboard.press("Tab");
   const focused = await page.evaluate(() => {

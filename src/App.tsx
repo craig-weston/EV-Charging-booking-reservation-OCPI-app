@@ -10,6 +10,7 @@ import { BookingsPage, bucket } from "./pages/Bookings";
 import { BookingDrawer } from "./pages/BookingDrawer";
 import { FleetPage } from "./pages/Fleet";
 import { NetworkPage } from "./pages/Network";
+import { OperatorGuidePage } from "./pages/OperatorGuide";
 import { SettingsPage } from "./pages/Settings";
 import { PassPage } from "./pages/Pass";
 import { Onboarding, PENDING_INVITE_KEY, SignIn } from "./pages/Auth";
@@ -137,7 +138,7 @@ function Shell() {
             : page === "book" ? <BookPage />
             : page === "bookings" ? <BookingsPage openBooking={openBooking} />
             : page === "fleet" ? <FleetPage />
-            : page === "network" ? <AdminMfaGate><NetworkPage /></AdminMfaGate>
+            : page === "network" ? <AdminMfaGate>{route.segments[1] === "connect" ? <OperatorGuidePage /> : <NetworkPage />}</AdminMfaGate>
             : page === "settings" ? <SettingsPage />
             : page === "compliance" && me.is_admin ? <CompliancePage />
             : <div className="page"><h1>Page not found</h1><p className="muted" style={{ marginTop: 8 }}><a href={href("/")}>Go to the dashboard</a></p></div>}
