@@ -196,7 +196,7 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
           </section>
 
           <section className="section" aria-labelledby="plan-h">
-            <div className="section-head"><h2 id="plan-h">Today's plan</h2><span className="right xs muted">Click an empty stretch of a lane to book that truck</span></div>
+            <div className="section-head"><h2 id="plan-h">Today's plan</h2><span className="right xs muted">Pick an empty stretch of a lane to book that truck</span></div>
             <LaneBoard
               vehicles={vehicles}
               bookings={bookings}
