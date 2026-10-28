@@ -259,9 +259,6 @@ p { margin: 0; }
   }
   .tabbar a { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); padding: 4px 0; text-decoration: none; }
   .tabbar a[aria-current="page"] { color: var(--brand-text); }
-  /* Keep bottom-anchored things clear of the tab bar. */
-  .summary-bar { bottom: calc(58px + env(safe-area-inset-bottom)); }
-  .toasts { left: 16px; right: 16px; bottom: calc(70px + env(safe-area-inset-bottom)); max-width: none; }
 }
 @media (min-width: 1024px) { .topbar { display: none; } }
 
@@ -1190,4 +1187,41 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
   .guide-progress { flex-direction: column; align-items: stretch; gap: 6px; }
   .guide-progress-bar { flex: none; width: 100%; max-width: none; }
   .guide-title .icon { display: none; }
+/* ------------------------------------------------------------------ phone and tablet polish
+   Last in the file on purpose: these override base rules of equal specificity above. */
+@media (max-width: 1023px) {
+  /* Keep bottom-anchored things clear of the tab bar. */
+  .summary-bar { bottom: calc(57px + env(safe-area-inset-bottom)); border-radius: 0; }
+  .toasts { left: 16px; right: 16px; bottom: calc(70px + env(safe-area-inset-bottom)); max-width: none; }
+}
+@media (max-width: 560px) {
+  /* Page actions fill the row instead of hanging off the right edge. */
+  .page-head { gap: 14px; margin-bottom: 18px; }
+  .page-head > div:first-child { flex: 1 1 100%; }
+  .page-head .actions { margin-left: 0; width: 100%; justify-content: stretch; }
+  .page-head .actions > .btn { flex: 1 1 auto; }
+  /* Segmented controls scroll sideways rather than wrapping into a second row. */
+  .seg:not(.full) { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .seg:not(.full)::-webkit-scrollbar { display: none; }
+  .seg button { flex: none; white-space: nowrap; }
+  .panel-head.wrap > .right { margin-left: 0; width: 100%; }
+  /* Bookings search spans the width under the tabs. */
+  .toolbar-search { flex: 1 1 100% !important; min-width: 0 !important; margin-left: 0 !important; }
+  /* Fleet: plates in a fixed column so names line up. */
+  .vehicle-row { grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; padding: 12px 14px; }
+  /* Today's plan: a narrower label column leaves room for the timeline. */
+  .lanes { --label-w: 104px; }
+  .lane-label { padding: 8px 10px; }
+  /* Drawer and pass actions share the width evenly. */
+  .drawer-foot { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
+  .drawer-foot > .btn { flex: 1 1 auto; margin-left: 0; }
+  .pass-actions > .btn { flex: 1 1 0; }
+  .first-run { padding: 18px; margin: 18px 0 22px; }
+}
+/* Touch screens: comfortable tap targets (44px is the usual guidance; 36px keeps dense lists usable). */
+@media (pointer: coarse) {
+  .btn.sm { height: 36px; padding: 0 12px; }
+  .btn.sm.icon-only { width: 36px; }
+  .seg button { min-height: 36px; }
+  .check input, input[type="checkbox"] { width: 20px; height: 20px; }
 }

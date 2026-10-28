@@ -61,7 +61,7 @@ export function BookingsPage({ openBooking }: { openBooking(id: string): void })
           { value: "past", label: "Past" },
           { value: "problems", label: `Problems${counts.problems ? ` (${counts.problems})` : ""}` },
         ]} />
-        <div className="right" style={{ position: "relative", minWidth: 220, flex: "0 1 300px" }}>
+        <div className="right toolbar-search" style={{ position: "relative", minWidth: 220, flex: "0 1 300px" }}>
           <input className="input" placeholder="Search plate, site or driver" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search bookings" style={{ paddingLeft: 34 }} />
           <span style={{ position: "absolute", left: 10, top: 10, color: "var(--faint)" }}><Icon name="search" size="sm" /></span>
         </div>

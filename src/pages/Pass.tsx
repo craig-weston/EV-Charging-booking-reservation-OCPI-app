@@ -70,7 +70,7 @@ export function PassPage({ backend, token }: { backend: Backend; token: string }
               <div className="tag ok" style={{ height: 32, fontSize: 14, alignSelf: "flex-start" }}><Icon name="battery" size="sm" />{pass.session.kwh >= 1 ? `Charging, ${fmtKwh(pass.session.kwh)} so far` : "Charging started"}</div>
             </div>
           )}
-          <div className="row gap-8 wrap">
+          <div className="row gap-8 wrap pass-actions">
             <a className="btn primary lg" href={maps} target="_blank" rel="noreferrer"><Icon name="navigation" size="sm" />Directions</a>
             {pass.site.help_phone && <a className="btn lg" href={`tel:${pass.site.help_phone}`}><Icon name="phone" size="sm" />Site help</a>}
           </div>

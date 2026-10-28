@@ -200,6 +200,20 @@ test("dark mode and a phone-sized screen render without horizontal scrolling", a
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert.ok(overflow <= 1, `page scrolls sideways by ${overflow}px on a phone`);
   await axe(page, "dashboard (dark, mobile)");
+  // Every main page fits a phone, and the toasts and booking bar sit above the tab bar.
+  for (const hash of ["#/book", "#/bookings", "#/fleet", "#/network", "#/settings", "#/compliance"]) {
+    await page.goto(`${base}/${hash}`);
+    await page.getByRole("heading", { level: 1 }).first().waitFor({ timeout: 15_000 });
+    await page.waitForTimeout(600);
+    const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.ok(sideways <= 1, `${hash} scrolls sideways by ${sideways}px on a phone`);
+  }
+  const clear = await page.evaluate(() => {
+    const tab = document.querySelector(".tabbar")?.getBoundingClientRect();
+    const toasts = document.querySelector(".toasts");
+    return { tabTop: tab?.top ?? 0, toastsBottom: toasts ? parseFloat(getComputedStyle(toasts).bottom) : 999 };
+  });
+  assert.ok(clear.toastsBottom >= 56, `toasts sit ${clear.toastsBottom}px from the bottom, under the tab bar`);
   assert.deepEqual(problems, []);
   noA11yProblems();
   await ctx.close();
