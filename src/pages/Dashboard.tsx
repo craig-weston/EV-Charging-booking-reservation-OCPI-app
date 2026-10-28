@@ -96,14 +96,16 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
       {attention.length > 0 && (
         <div className="attention" role="region" aria-label="Needs attention">
           {attention.map((b) => (
-            <div className="attention-item" key={b.id}>
+            <div className="attention-item stacked" key={b.id}>
               <Icon name="alert" />
-              <div className="grow" style={{ minWidth: 0 }}>
-                <div>{reason(b)}</div>
-                <div className="xs muted">{fmtDay(b.start_at, now)}, {fmtRange(b.start_at, b.end_at)}. Updated {fmtRelative(b.updated_at, now)}.</div>
+              <div className="attention-body">
+                <div className="attention-text">
+                  <div>{reason(b)}</div>
+                  <div className="xs muted">{fmtDay(b.start_at, now)}, {fmtRange(b.start_at, b.end_at)}. Updated {fmtRelative(b.updated_at, now)}.</div>
+                </div>
                 <RebookSuggestion booking={b} compact onBooked={(id) => { dismiss(b.id); openBooking(id); }} />
               </div>
-              <button className="btn sm ghost" onClick={() => dismiss(b.id)}>Dismiss</button>
+              <button className="btn sm ghost icon-only attention-close" onClick={() => dismiss(b.id)} aria-label="Dismiss" title="Dismiss"><Icon name="x" size="sm" /></button>
             </div>
           ))}
         </div>

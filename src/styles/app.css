@@ -603,9 +603,9 @@ details.disclose[open] > summary .icon { transform: rotate(90deg); }
 .attention-item + .attention-item { border-top: 1px solid color-mix(in oklab, var(--pending) 22%, transparent); }
 .attention-item > .icon { color: var(--pending); }
 @media (max-width: 760px) {
-  .attention-item { flex-wrap: wrap; align-items: flex-start; }
-  .attention-item .grow { flex: 1 1 calc(100% - 40px); }
-  .attention-item .btn:first-of-type { margin-left: 32px; }
+  .attention-item:not(.stacked) { flex-wrap: wrap; align-items: flex-start; }
+  .attention-item:not(.stacked) .grow { flex: 1 1 calc(100% - 40px); }
+  .attention-item:not(.stacked) > .btn:first-of-type { margin-left: 32px; }
 }
 
 .today-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; margin-top: 18px; }
@@ -1293,13 +1293,25 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
 }
 
 /* rebooking after a cancellation */
-.rebook { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--line); }
-.rebook.compact { margin-top: 8px; padding: 10px 12px; }
-.rebook:has(> .grow) { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.attention-item.stacked { align-items: flex-start; }
+.attention-item.stacked > .icon { margin-top: 2px; flex: none; }
+.attention-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.attention-text { display: flex; flex-direction: column; gap: 2px; }
+.attention-close { flex: none; margin: -4px -6px 0 0; }
+.rebook { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--line); }
+.rebook.compact { padding: 12px; }
 .rebook-title { text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
-.rebook-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.rebook-list li { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.rebook-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.rebook-list li { display: flex; align-items: center; gap: 12px; }
+.rebook-list li + li { border-top: 1px solid var(--line); padding-top: 10px; }
+.rebook-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .rebook-site { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rebook-go { flex: none; }
+.rebook-links { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: var(--fs-sm); }
+@media (max-width: 560px) {
+  .rebook-list li { flex-direction: column; align-items: stretch; gap: 8px; }
+  .rebook-go { width: 100%; }
+}
 .drawer-body > .rebook { margin: 0 16px 16px; }
 
 /* webhooks */
