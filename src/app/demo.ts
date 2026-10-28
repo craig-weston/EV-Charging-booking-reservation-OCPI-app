@@ -96,6 +96,8 @@ export async function createDemoBackend(base?: Partial<AppConfig>, opts: { publi
 
   if (!saved) {
     store.data.admins.push(USER.id);
+    // A sample 10% margin on operator prices, so statements show how fleets are billed.
+    await store.setSetting("billing", { margin_percent: 10, vat_rate: 0.2, history: [{ from: "2020-01-01T00:00:00.000Z", margin_percent: 10 }] });
     if (base?.brand) await store.setBrand({ ...DEFAULT_BRAND, ...base.brand });
     try {
       await seed(api, clock, () => ctx.flush(), store, async () => { await tick(ctx); await ctx.flush(); });

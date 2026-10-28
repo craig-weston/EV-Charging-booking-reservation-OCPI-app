@@ -10,6 +10,7 @@ import { BookingsPage, bucket } from "./pages/Bookings";
 import { BookingDrawer } from "./pages/BookingDrawer";
 import { FleetPage } from "./pages/Fleet";
 import { NetworkPage } from "./pages/Network";
+import { StatementsPage } from "./pages/Statements";
 import { OperatorGuidePage } from "./pages/OperatorGuide";
 import { SettingsPage } from "./pages/Settings";
 import { PassPage } from "./pages/Pass";
@@ -147,6 +148,7 @@ function Shell() {
           {page === "" || page === "dashboard" || page === "today" ? <DashboardPage openBooking={openBooking} />
             : page === "book" ? <BookPage />
             : page === "bookings" ? <BookingsPage openBooking={openBooking} />
+            : page === "statements" ? <StatementsPage />
             : page === "fleet" ? <FleetPage />
             : page === "network" ? <AdminMfaGate>{route.segments[1] === "connect" ? <OperatorGuidePage /> : <NetworkPage />}</AdminMfaGate>
             : page === "settings" ? <SettingsPage />

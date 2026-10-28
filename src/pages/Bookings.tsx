@@ -52,7 +52,10 @@ export function BookingsPage({ openBooking }: { openBooking(id: string): void })
           <h1>Bookings</h1>
           <div className="sub">Every slot your fleet has requested, live from the operators.</div>
         </div>
-        <div className="actions"><a className="btn primary" href={href("/book")}><Icon name="book" size="sm" />Book a slot</a></div>
+        <div className="actions">
+          <a className="btn" href={href("/statements")}><Icon name="fileText" size="sm" />Monthly statements</a>
+          <a className="btn primary" href={href("/book")}><Icon name="book" size="sm" />Book a slot</a>
+        </div>
       </div>
       <div className="row gap-12 wrap" style={{ marginBottom: 16 }}>
         <Seg<Tab> label="Show" value={tab} onChange={setTab} options={[

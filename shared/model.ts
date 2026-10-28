@@ -22,6 +22,10 @@ export interface Fleet {
   terms_accepted_by: string | null;
   created_at: string;
   updated_at: string;
+  /** The platform's margin on operator prices, in percent (read-only; set by platform admins). */
+  margin_percent?: number;
+  /** Past and current margins with the moment each took effect, so old charges keep their price. */
+  margin_history?: import("./billing").MarginChange[];
 }
 
 export type NotifyChannel = "off" | "sms" | "whatsapp";
@@ -365,6 +369,14 @@ export interface AuditEntry {
 }
 
 /** Everything the planner UI needs to show and filter sites. */
+/** A fleet's monthly charging statement, as the API returns it. */
+export type FleetStatement = import("./billing").Statement & {
+  fleet: { id: string; name: string };
+  /** Who the fleet pays: the platform's company details (from Compliance → Company & legal). */
+  issuer: { company_name: string; company_number: string; registered_office: string; vat_number: string; contact_email: string };
+  generated_at: string;
+};
+
 /** One item on the operator guide's "Get ready" checklist. */
 export interface ReadinessCheck {
   id: string;

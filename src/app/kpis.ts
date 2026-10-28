@@ -1,5 +1,6 @@
 // Dashboard figures, computed from the bookings the app already holds (the last two weeks).
 // Pure functions so they can be tested, and moved server-side when fleets get large.
+import { marginAt, type MarginChange } from "../../shared/billing";
 import type { BookingRow, Vehicle } from "../../shared/model";
 import { addLocalDays, localDateKey, startOfLocalDay } from "../../shared/util";
 import { DEFAULT_TZ } from "./format";
@@ -46,7 +47,8 @@ export interface Kpis {
 
 const empty = (): PeriodFigures => ({ kwh: 0, cost: 0, costedKwh: 0, sessions: 0, kept: 0, noShows: 0, operatorCancels: 0, fleetCancels: 0, declined: 0 });
 
-export function computeKpis(bookings: BookingRow[], now: Date, days = 7, tz = DEFAULT_TZ): Kpis {
+/** `margins`: the platform's margin history, so spend shows what the fleet pays (operator price + margin). */
+export function computeKpis(bookings: BookingRow[], now: Date, days = 7, tz = DEFAULT_TZ, margins: MarginChange[] = []): Kpis {
   const today = startOfLocalDay(now, tz);
   const daily: DayPoint[] = [];
   for (let i = 2 * days - 1; i >= 0; i--) {
@@ -79,8 +81,9 @@ export function computeKpis(bookings: BookingRow[], now: Date, days = 7, tz = DE
       period.sessions++;
     }
     if (b.cdr) {
-      day.cost += b.cdr.total_cost;
-      period.cost += b.cdr.total_cost;
+      const k = 1 + marginAt(margins, b.cdr.end_date_time) / 100;
+      day.cost += b.cdr.total_cost * k;
+      period.cost += b.cdr.total_cost * k;
       period.costedKwh += b.cdr.total_energy;
       currency = b.cdr.currency || currency;
     }

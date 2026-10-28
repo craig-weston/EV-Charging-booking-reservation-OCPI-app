@@ -1199,6 +1199,45 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
 .try-demo .xs { display: block; margin-top: 2px; }
 .try-demo-icon { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--brand); color: #fff; }
 
+/* charging statements */
+.statements .back-link { display: inline-flex; align-items: center; gap: 2px; margin-bottom: 6px; color: var(--muted); text-decoration: none; }
+.month-nav { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; }
+.month-label { min-width: 150px; text-align: center; font-size: var(--fs-lg); }
+.label-caps { text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+.stmt-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 24px; padding: 22px 24px; align-items: start; }
+.stmt-head b { display: block; font-size: var(--fs-lg); }
+.stmt-total { text-align: right; }
+.stmt-big { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+.table-scroll { overflow-x: auto; }
+.stmt-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); min-width: 680px; }
+.stmt-table th, .stmt-table td { padding: 11px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+.stmt-table thead th { font-weight: 600; color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.05em; background: var(--surface-2); }
+.stmt-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stmt-table .nowrap { white-space: nowrap; }
+.stmt-table tfoot th { text-align: right; font-weight: 500; color: var(--muted); }
+.stmt-table tfoot tr:last-child th, .stmt-table tfoot tr:last-child td { border-bottom: 0; }
+.stmt-table tfoot .grand th, .stmt-table tfoot .grand td { color: var(--ink); font-size: var(--fs-lg); border-top: 2px solid var(--line-2); }
+.stmt-note { margin-top: 14px; max-width: 70ch; }
+.pricing-example { font-variant-numeric: tabular-nums; }
+.stmt-cards { display: none; list-style: none; margin: 0; padding: 0; }
+.stmt-cards > li { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; }
+.stmt-cards > li + li { border-top: 1px solid var(--line); }
+.stmt-card-top { display: flex; align-items: center; gap: 10px; }
+.stmt-card-totals > div { display: flex; justify-content: space-between; gap: 12px; }
+.stmt-card-totals .grand { font-size: var(--fs-lg); padding-top: 8px; margin-top: 4px; border-top: 2px solid var(--line-2); }
+@media (max-width: 760px) {
+  .stmt-head { grid-template-columns: minmax(0, 1fr); padding: 18px; gap: 16px; }
+  .stmt-total { text-align: left; }
+}
+@media screen and (max-width: 640px) {
+  .stmt-cards { display: block; }
+  .statements .table-scroll { display: none; }
+}
+@media print {
+  .stmt-table { min-width: 0; }
+  .stmt-table thead th { background: none; }
+}
+
 /* ------------------------------------------------------------------ phone and tablet polish
    Last in the file on purpose: these override base rules of equal specificity above. */
 @media (max-width: 1023px) {

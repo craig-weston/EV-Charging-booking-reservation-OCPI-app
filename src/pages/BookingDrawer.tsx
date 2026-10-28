@@ -7,6 +7,7 @@ import { canChange, cancelTerms, deadlines } from "../../shared/booking/terms";
 import { summarizeTariffs } from "../../shared/booking/tariffs";
 import { MINUTE, startOfLocalDay } from "../../shared/util";
 import { useApp } from "../app/state";
+import { DEFAULT_VAT_RATE, marginAt, priceLine } from "../../shared/billing";
 import { ApiFailure } from "../app/backend";
 import { DEFAULT_TZ, fmtDateTime, fmtDay, fmtDuration, fmtKwh, fmtMoney, fmtRange, fmtRelative, fmtTime, sessionKw } from "../app/format";
 import { findBookingLocation, findLocation, operatorFor, shortSiteName, tariffsFor } from "../app/network";
@@ -24,7 +25,7 @@ const EVENT_TONE: Record<string, string> = {
 };
 
 export function BookingDrawer({ id, onClose }: { id: string; onClose(): void }) {
-  const { bookings, events, vehicles, drivers, network, now, api, toast, upsertBooking, fleetId, me, refreshBookings } = useApp();
+  const { bookings, events, vehicles, drivers, network, now, api, toast, upsertBooking, fleetId, fleet, me, refreshBookings } = useApp();
   const b = bookings.find((x) => x.id === id) ?? null;
   const [mode, setMode] = useState<"none" | "change" | "cancel">("none");
   const [busy, setBusy] = useState<string | null>(null);
@@ -149,7 +150,10 @@ export function BookingDrawer({ id, onClose }: { id: string; onClose(): void }) 
             )}
             <div className="panel-body row gap-24 wrap">
               <div><div className="xs muted">Energy</div><div className="bigtime md">{fmtKwh(b.cdr?.total_energy ?? b.session?.kwh ?? 0)}</div></div>
-              {b.cdr && <div><div className="xs muted">Total</div><div className="bigtime md">{fmtMoney(b.cdr.total_cost_incl_tax ?? b.cdr.total_cost, b.cdr.currency)}</div><div className="xs muted">{fmtMoney(b.cdr.total_cost, b.cdr.currency)} ex. VAT, incl. {fmtMoney(b.cdr.total_reservation_cost ?? 0, b.cdr.currency)} booking</div></div>}
+              {b.cdr && (() => {
+                const p = priceLine(b.cdr, marginAt(fleet?.margin_history, b.cdr.end_date_time));
+                return <div><div className="xs muted">You pay</div><div className="bigtime md">{fmtMoney(Math.round(p.net * (1 + DEFAULT_VAT_RATE) * 100) / 100, b.cdr.currency)}</div><div className="xs muted">{fmtMoney(p.net, b.cdr.currency)} ex. VAT{b.cdr.total_reservation_cost ? `, incl. ${fmtMoney(b.cdr.total_reservation_cost, b.cdr.currency)} booking fee` : ""}</div></div>;
+              })()}
               <div><div className="xs muted">Session</div><div style={{ fontWeight: 600 }}>{b.session?.status === "ACTIVE" ? "Charging" : "Finished"}</div><div className="xs muted">Started {fmtTime(b.session?.start_date_time ?? b.start_at, tz)}{b.session?.end_date_time ? `, ended ${fmtTime(b.session.end_date_time, tz)}` : ""}</div></div>
             </div>
           </div>
