@@ -3,6 +3,7 @@ import "./styles/app.css";
 import { App } from "./App";
 import { createLiveBackend, fetchConfig, type Backend } from "./app/backend";
 import { applyBrand } from "./app/brand";
+import { canonicalOrigin } from "./app/canonical";
 import { installErrorReporting } from "./app/errors";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
@@ -22,6 +23,12 @@ async function boot() {
   const config = window.__DEPOTCHARGE_FORCE_DEMO__ ? null : await fetchConfig();
   let backend: Backend;
   const live = !!(config && config.mode === "live" && config.supabase_url && config.supabase_anon_key);
+  // Old links to the production workers.dev address move to the platform's own domain.
+  const canonical = live && config ? canonicalOrigin(window.location, config.ocpi_versions_url) : null;
+  if (canonical) {
+    window.location.replace(canonical + window.location.pathname + window.location.search + window.location.hash);
+    return;
+  }
   // "Try the demo" on a live site: the in-browser demo, separate from any real account or data.
   const tryDemo = /^#\/demo(\/|\?|$)/.test(window.location.hash) || new URLSearchParams(window.location.search).has("demo") || sessionFlag();
   if (live && tryDemo) {

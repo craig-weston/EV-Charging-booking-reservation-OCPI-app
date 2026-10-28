@@ -11,6 +11,7 @@ import { BookingDrawer } from "./pages/BookingDrawer";
 import { FleetPage } from "./pages/Fleet";
 import { NetworkPage } from "./pages/Network";
 import { StatementsPage } from "./pages/Statements";
+import { OperatorsPage } from "./pages/Operators";
 import { OperatorGuidePage } from "./pages/OperatorGuide";
 import { SettingsPage } from "./pages/Settings";
 import { PassPage } from "./pages/Pass";
@@ -28,6 +29,7 @@ export function App({ backend }: { backend: Backend }) {
   // Public pages: the driver pass and the legal documents need no sign-in.
   if (route.segments[0] === "pass" && route.segments[1]) return <PassPage backend={backend} token={route.segments[1]} />;
   if (route.segments[0] === "legal") return <LegalPage config={backend.config} doc={route.segments[1]} />;
+  if (route.segments[0] === "operators") return <OperatorsPage config={backend.config} />;
   if (backend.mode === "live" && backend.auth && !session) {
     return <SignIn auth={backend.auth} config={backend.config} inviteToken={route.segments[0] === "join" ? route.segments[1] : undefined} />;
   }
