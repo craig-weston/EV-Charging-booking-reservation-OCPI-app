@@ -14,6 +14,8 @@ import { findBookingLocation, findLocation, operatorFor, shortSiteName, tariffsF
 import { SlotPicker } from "../components/SlotPicker";
 import { Drawer, Icon, Json, Plate, Seg, Spinner, StatusBadge } from "../ui/ui";
 import { PassShare } from "./PassShare";
+import { RebookSuggestion } from "../components/RebookSuggestion";
+import { navigate } from "../app/router";
 import { ChargeStory } from "../components/art/ChargeStory";
 import { ChargingMini } from "../components/art/Mini";
 import { accessKindOf, truckKindOf } from "../components/art/scene";
@@ -179,6 +181,10 @@ export function BookingDrawer({ id, onClose }: { id: string; onClose(): void }) 
           </dd>
           {b.notes && <><dt>Note</dt><dd>{b.notes}</dd></>}
         </dl>
+
+        {(b.reservation_status === "REJECTED" || b.reservation_status === "FAILED" || b.reservation_status === "NO_SHOW" || (b.reservation_status === "CANCELED" && b.booking?.canceled?.who_canceled === "CPO"))
+          && new Date(b.end_at).getTime() > now.getTime() - 6 * 3_600_000
+          && <RebookSuggestion booking={b} onBooked={(id) => navigate("/bookings", { open: id })} />}
 
         {(open || b.reservation_status === "FULFILLED") && <PassShare booking={b} vehicle={vehicle} siteName={name} />}
 

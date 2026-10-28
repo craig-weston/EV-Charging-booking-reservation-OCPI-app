@@ -601,7 +601,7 @@ details.disclose[open] > summary .icon { transform: rotate(90deg); }
 .attention { display: flex; flex-direction: column; border: 1px solid color-mix(in oklab, var(--pending) 30%, var(--surface)); background: var(--pending-bg); border-radius: var(--r-md); margin-bottom: 18px; }
 .attention-item { display: flex; align-items: center; gap: 12px; padding: 11px 14px; }
 .attention-item + .attention-item { border-top: 1px solid color-mix(in oklab, var(--pending) 22%, transparent); }
-.attention-item .icon { color: var(--pending); }
+.attention-item > .icon { color: var(--pending); }
 @media (max-width: 760px) {
   .attention-item { flex-wrap: wrap; align-items: flex-start; }
   .attention-item .grow { flex: 1 1 calc(100% - 40px); }
@@ -1070,7 +1070,7 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
 
 /* dashboard security prompt */
 .attention.nudge { border-color: var(--brand-line); background: var(--brand-softer); }
-.attention.nudge .attention-item .icon { color: var(--brand-text); }
+.attention.nudge .attention-item > .icon { color: var(--brand-text); }
 
 /* certificates on the sign-in card */
 .cert-list.compact { margin: 0; }
@@ -1291,6 +1291,16 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
   .ops-section { padding: 20px 18px; }
   .ops-hero { padding-top: 20px; }
 }
+
+/* rebooking after a cancellation */
+.rebook { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--line); }
+.rebook.compact { margin-top: 8px; padding: 10px 12px; }
+.rebook:has(> .grow) { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.rebook-title { text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.rebook-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rebook-list li { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.rebook-site { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.drawer-body > .rebook { margin: 0 16px 16px; }
 
 /* ------------------------------------------------------------------ phone and tablet polish
    Last in the file on purpose: these override base rules of equal specificity above. */
