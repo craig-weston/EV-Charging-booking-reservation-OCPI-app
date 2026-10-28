@@ -22,6 +22,7 @@
     .cell-off { background:#2B3139 !important; }
     .brand { color:#EEF1F5 !important; }
     .link { color:#8EA8FF !important; }
+    .codebox { color:#D8CCFF !important; }
   }
 </style>
 </head>
@@ -39,11 +40,18 @@
         <tr><td class="card" style="background:#FFFFFF;border:1px solid #DDE1E6;border-radius:20px;overflow:hidden;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             <tr><td class="pad" bgcolor="#0D9488" style="background-color:#0D9488;background-image:linear-gradient(135deg, #0D9488 0%, #2F5BEA 100%);padding:34px 36px 30px;border-radius:19px 19px 0 0;">
-              <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-                <td width="56" height="56" align="center" style="width:56px;height:56px;border-radius:16px;background:rgba(255,255,255,.22);font:400 30px/56px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">📱</td>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+                <td valign="middle"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td width="56" height="56" align="center" style="width:56px;height:56px;border-radius:16px;background:rgba(255,255,255,.22);font:400 30px/56px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">📱</td></tr></table></td>
+                <td valign="middle" align="right"><table role="presentation" cellpadding="0" cellspacing="0" style="border-radius:6px;box-shadow:0 2px 0 rgba(0,0,0,.18);"><tr>
+                  <td bgcolor="#1E3A8A" style="background:#1E3A8A;border-radius:6px 0 0 6px;padding:7px 6px;font:800 9px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#FFD23F;letter-spacing:.04em;">GB</td>
+                  <td bgcolor="#FFD23F" style="background:#FFD23F;border-radius:0 6px 6px 0;padding:6px 12px;font:800 16px/1 'Arial Black', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;letter-spacing:.06em;color:#111111;white-space:nowrap;">N3W N0</td>
+                </tr></table></td>
               </tr></table>
               <p style="margin:18px 0 6px;font:700 12px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.85);">Security alert</p>
               <h1 class="h1" style="margin:0;font:800 30px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;letter-spacing:-.02em;color:#FFFFFF;">Phone number changed</h1>
+            </td></tr>
+            <tr><td bgcolor="#1F2430" style="background:#1F2430;padding:6px 36px;font-size:0;line-height:0;">
+              <div style="border-top:3px dashed #FFD23F;font-size:0;line-height:0;">&nbsp;</div>
             </td></tr>
             <tr><td class="pad" style="padding:30px 36px 26px;">
 <p class="ink" style="margin:0 0 16px;font:400 16px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#1C2128;">The phone number on your Depotcharge account changed from <strong>{{ .OldPhone }}</strong> to <strong>{{ .Phone }}</strong>.</p>

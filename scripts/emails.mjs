@@ -59,7 +59,35 @@ function button(t, href, label) {
 }
 
 function fallback(href) {
-  return small(`Button not working? Copy this link into your browser:<br><a class="link" href="${href}" style="color:${BRAND.blue};word-break:break-all;">${href}</a>`);
+  return `
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">
+            <tr><td class="panel muted" bgcolor="${BRAND.panel}" style="background:${BRAND.panel};border-radius:10px;padding:10px 12px;font:400 12px/1.5 ${FONT};color:${BRAND.muted};">
+              Button not working? Copy this link into your browser:<br>
+              <a class="link" href="${href}" style="color:${BRAND.muted};word-break:break-all;text-decoration:underline;">${href}</a>
+            </td></tr>
+          </table>`;
+}
+
+/** A progress tracker: done steps ticked, the current one highlighted, the rest waiting. */
+function steps(t, items, current) {
+  const cells = items.map((label, i) => {
+    const done = i < current, now = i === current;
+    const dot = done ? `<span style="display:inline-block;width:22px;height:22px;border-radius:999px;background:#22C55E;color:#FFFFFF;font:800 12px/22px ${FONT};text-align:center;">&#10003;</span>`
+      : now ? `<span style="display:inline-block;width:22px;height:22px;border-radius:999px;${grad(t)}color:#FFFFFF;font:800 12px/22px ${FONT};text-align:center;">${i + 1}</span>`
+      : `<span class="cell-off" style="display:inline-block;width:22px;height:22px;border-radius:999px;background:${BRAND.line};color:${BRAND.muted};font:800 12px/22px ${FONT};text-align:center;">${i + 1}</span>`;
+    const color = now ? t.from : done ? "#15803D" : BRAND.muted;
+    return `<td align="center" valign="top" width="${Math.floor(100 / items.length)}%" style="padding:0 2px;">${dot}<div style="margin-top:6px;font:${now ? 800 : 600} 11px/1.3 ${FONT};color:${color};">${label}</div></td>`;
+  }).join("");
+  return `
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;"><tr>${cells}</tr></table>`;
+}
+
+/** A UK-style number plate with the GB band: a little Depotcharge signature in every header. */
+function plate(text) {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="border-radius:6px;box-shadow:0 2px 0 rgba(0,0,0,.18);"><tr>
+                  <td bgcolor="#1E3A8A" style="background:#1E3A8A;border-radius:6px 0 0 6px;padding:7px 6px;font:800 9px/1 ${FONT};color:#FFD23F;letter-spacing:.04em;">GB</td>
+                  <td bgcolor="#FFD23F" style="background:#FFD23F;border-radius:0 6px 6px 0;padding:6px 12px;font:800 16px/1 'Arial Black', ${FONT};letter-spacing:.06em;color:#111111;white-space:nowrap;">${esc(text)}</td>
+                </tr></table>`;
 }
 
 function panel(t, icon, html) {
@@ -77,11 +105,11 @@ function panel(t, icon, html) {
 function code(t, token) {
   return `
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 24px;">
-            <tr><td align="center" class="panel" bgcolor="${t.soft}" style="background:${t.soft};border:2px dashed ${t.from};border-radius:14px;padding:20px;font:800 36px/1 'SFMono-Regular', Menlo, Consolas, monospace;letter-spacing:.32em;color:${t.from};">${token}</td></tr>
+            <tr><td align="center" class="panel codebox" bgcolor="${t.soft}" style="background:${t.soft};border:2px dashed ${t.from};border-radius:14px;padding:20px;font:800 36px/1 'SFMono-Regular', Menlo, Consolas, monospace;letter-spacing:.32em;color:${t.from};">${token}</td></tr>
           </table>`;
 }
 
-function layout({ preheader, heading, kicker, body, footerReason, theme }) {
+function layout({ preheader, heading, kicker, body, footerReason, theme, plate: plateText }) {
   const t = THEMES[theme];
   return `<!doctype html>
 <html lang="en-GB" xmlns="http://www.w3.org/1999/xhtml">
@@ -107,6 +135,7 @@ function layout({ preheader, heading, kicker, body, footerReason, theme }) {
     .cell-off { background:#2B3139 !important; }
     .brand { color:#EEF1F5 !important; }
     .link { color:#8EA8FF !important; }
+    .codebox { color:#D8CCFF !important; }
   }
 </style>
 </head>
@@ -124,11 +153,15 @@ function layout({ preheader, heading, kicker, body, footerReason, theme }) {
         <tr><td class="card" style="background:#FFFFFF;border:1px solid ${BRAND.line};border-radius:20px;overflow:hidden;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             <tr><td class="pad" bgcolor="${t.from}" style="${grad(t)}padding:34px 36px 30px;border-radius:19px 19px 0 0;">
-              <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-                <td width="56" height="56" align="center" style="width:56px;height:56px;border-radius:16px;background:rgba(255,255,255,.22);font:400 30px/56px ${FONT};">${t.emoji}</td>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+                <td valign="middle"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td width="56" height="56" align="center" style="width:56px;height:56px;border-radius:16px;background:rgba(255,255,255,.22);font:400 30px/56px ${FONT};">${t.emoji}</td></tr></table></td>
+                <td valign="middle" align="right">${plate(plateText)}</td>
               </tr></table>
               <p style="margin:18px 0 6px;font:700 12px/1.2 ${FONT};letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.85);">${esc(kicker)}</p>
               <h1 class="h1" style="margin:0;font:800 30px/1.2 ${FONT};letter-spacing:-.02em;color:#FFFFFF;">${heading}</h1>
+            </td></tr>
+            <tr><td bgcolor="#1F2430" style="background:#1F2430;padding:6px 36px;font-size:0;line-height:0;">
+              <div style="border-top:3px dashed #FFD23F;font-size:0;line-height:0;">&nbsp;</div>
             </td></tr>
             <tr><td class="pad" style="padding:30px 36px 26px;">
 ${body(t)}
@@ -158,13 +191,14 @@ const sentTo = "You're getting this because {{ .Email }} was used on " + BRAND.n
 const emails = {
   // ---- Authentication
   confirmation: {
+    plate: "PLUG 1N",
     subject: "⚡ One tap to plug you in to Depotcharge",
     preheader: "Confirm your email and your trucks are ready to book their first charge.",
     heading: "You're nearly plugged in",
     theme: "electric",
     kicker: "Welcome to Depotcharge",
     body: (t) => [
-      meter(t, 80, "Account charge: 80%"),
+      steps(t, ["Sign up", "Confirm email", "Two-step", "Book a bay"], 1),
       p("Welcome aboard! Before we hand over the keys to the bays, we just need to check this email address is really yours."),
       p("It's one tap. That's fewer than it takes to find a working charger at most motorway services."),
       button(t, "{{ .ConfirmationURL }}", "Confirm my email"),
@@ -175,6 +209,7 @@ const emails = {
     footerReason: sentTo,
   },
   invite: {
+    plate: "W3LC0ME",
     subject: "You've been invited to Depotcharge ⚡",
     preheader: "There's a bay with your name on it. Accept the invite to get started.",
     heading: "There's a bay with your name on it",
@@ -189,6 +224,7 @@ const emails = {
     footerReason: sentTo,
   },
   magic_link: {
+    plate: "1 TAP",
     subject: "🔌 Your sign-in link is fully charged",
     preheader: "One tap and you're in. No password needed.",
     heading: "Your sign-in link is ready",
@@ -205,6 +241,7 @@ const emails = {
     footerReason: sentTo,
   },
   email_change: {
+    plate: "N3W ADDR",
     subject: "Switching sockets? Confirm your new email",
     preheader: "Confirm the new email address for your Depotcharge account.",
     heading: "Confirm your new email address",
@@ -219,6 +256,7 @@ const emails = {
     footerReason: sentTo,
   },
   recovery: {
+    plate: "R3CHARGE",
     subject: "🔋 Flat password? Let's get you recharged",
     preheader: "Choose a new password for your Depotcharge account.",
     heading: "Reset your password",
@@ -235,6 +273,7 @@ const emails = {
     footerReason: sentTo,
   },
   reauthentication: {
+    plate: "IT'S ME",
     subject: "Your Depotcharge security code: {{ .Token }}",
     preheader: "Enter this code to confirm it's you.",
     heading: "Here's your security code",
@@ -250,6 +289,7 @@ const emails = {
 
   // ---- Security notifications
   password_changed_notification: {
+    plate: "ALL G00D",
     subject: "Your Depotcharge password was changed",
     preheader: "If that was you, you're all set.",
     heading: "Password changed",
@@ -263,6 +303,7 @@ const emails = {
     footerReason: sentTo,
   },
   email_changed_notification: {
+    plate: "M0VED",
     subject: "Your Depotcharge email address was changed",
     preheader: "Your account now uses a new email address.",
     heading: "Email address changed",
@@ -275,6 +316,7 @@ const emails = {
     footerReason: "You're getting this because the email on a " + BRAND.name + " account changed.",
   },
   phone_changed_notification: {
+    plate: "N3W N0",
     subject: "Your Depotcharge phone number was changed",
     preheader: "The phone number on your account has changed.",
     heading: "Phone number changed",
@@ -287,6 +329,7 @@ const emails = {
     footerReason: sentTo,
   },
   identity_linked_notification: {
+    plate: "+1 WAY",
     subject: "A new sign-in method was added to Depotcharge",
     preheader: "{{ .Provider }} can now be used to sign in to your account.",
     heading: "New sign-in method added",
@@ -299,6 +342,7 @@ const emails = {
     footerReason: sentTo,
   },
   identity_unlinked_notification: {
+    plate: "-1 WAY",
     subject: "A sign-in method was removed from Depotcharge",
     preheader: "{{ .Provider }} can no longer be used to sign in.",
     heading: "Sign-in method removed",
@@ -311,6 +355,7 @@ const emails = {
     footerReason: sentTo,
   },
   mfa_factor_enrolled_notification: {
+    plate: "2 STEPS",
     subject: "🔐 Two-step verification added to Depotcharge",
     preheader: "Your account now has a second lock.",
     heading: "Two-step verification is on",
@@ -324,6 +369,7 @@ const emails = {
     footerReason: sentTo,
   },
   mfa_factor_unenrolled_notification: {
+    plate: "1 STEP",
     subject: "Two-step verification removed from Depotcharge",
     preheader: "A verification method was removed from your account.",
     heading: "Verification method removed",
