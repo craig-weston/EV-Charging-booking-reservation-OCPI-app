@@ -365,6 +365,21 @@ export interface AuditEntry {
 }
 
 /** Everything the planner UI needs to show and filter sites. */
+/** One item on the operator guide's "Get ready" checklist. */
+export interface ReadinessCheck {
+  id: string;
+  /** ok: done. warn: works, but worth fixing. todo: fix before connecting a real operator. */
+  level: "ok" | "warn" | "todo";
+  title: string;
+  detail: string;
+}
+export interface Readiness {
+  checks: ReadinessCheck[];
+  simulator: boolean;
+  simulator_connected: boolean;
+  versions_url: string;
+}
+
 export interface NetworkSnapshot {
   operators: { country_code: string; party_id: string; name: string; partner_id: string | null; is_simulator: boolean }[];
   locations: StoredObject<import("./ocpi/types").Location>[];

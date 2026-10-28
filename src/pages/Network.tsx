@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import type { OcpiLogEntry, Partner } from "../../shared/model";
 
 /** Partners as the admin API returns them: token material stays on the server. */
-type AdminPartner = Omit<Partner, "our_token_hash" | "registration_token_hash" | "their_token"> & {
+export type AdminPartner = Omit<Partner, "our_token_hash" | "registration_token_hash" | "their_token"> & {
   has_their_token: boolean;
   awaiting_registration: boolean;
   /** Only present right after an invite or a new token: shown once. */
   registration_token?: string;
 };
 import { useApp } from "../app/state";
+import { href } from "../app/router";
 import { ApiFailure } from "../app/backend";
 import { fmtDateTime, fmtRelative, fmtTime } from "../app/format";
 import { Empty, Field, Icon, Json, Modal, Seg, Spinner, copyText } from "../ui/ui";
@@ -59,6 +60,7 @@ export function NetworkPage() {
           <div className="sub">Charge point operators connected over OCPI 2.3.0 with the Bookings module.</div>
         </div>
         <div className="actions">
+          <a className="btn" href={href("/network/connect")}><Icon name="route" size="sm" />Step-by-step guide</a>
           <button className="btn" onClick={() => setDialog("invite")}>Invite an operator</button>
           <button className="btn primary" onClick={() => setDialog("connect")}><Icon name="link" size="sm" />Connect an operator</button>
         </div>
@@ -67,7 +69,7 @@ export function NetworkPage() {
       <section className="panel">
         <div className="panel-head"><h2>Connections</h2><span className="right xs muted">{network ? `${network.locations.length} sites, ${network.booking_locations.length} bookable bay types` : ""}</span></div>
         {!partners ? <div className="empty"><Spinner /></div> : connected.length === 0 ? (
-          <Empty art={<EmptyBayArt label="" />} title="No operators connected">Connect an operator with their OCPI versions URL and token, or invite them with a registration token.{config.simulator ? " Or start with the simulator below." : ""}</Empty>
+          <Empty art={<EmptyBayArt label="" />} title="No operators connected" action={<a className="btn primary" href={href("/network/connect")}><Icon name="route" size="sm" />Connect your first operator</a>}>Connect an operator with their OCPI versions URL and token, or invite them with a registration token.{config.simulator ? " Or start with the simulator below." : ""}</Empty>
         ) : (
           <ul className="list">
             {connected.map((p) => (
@@ -140,7 +142,7 @@ export function NetworkPage() {
   );
 }
 
-function CopyRow({ label, value }: { label: string; value: string }) {
+export function CopyRow({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="field">
@@ -186,7 +188,7 @@ function ConnectDialog({ onClose, onDone }: { onClose(): void; onDone(): void })
   );
 }
 
-function InviteDialog({ onClose, onDone }: { onClose(): void; onDone(): void }) {
+export function InviteDialog({ onClose, onDone }: { onClose(): void; onDone(): void }) {
   const { api, config } = useApp();
   const [name, setName] = useState("");
   const [partner, setPartner] = useState<AdminPartner | null>(null);

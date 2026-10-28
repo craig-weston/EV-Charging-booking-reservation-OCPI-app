@@ -4,12 +4,13 @@ import type { BookingLocation, CanceledReason, ConnectorType, Location, VehicleT
 import type {
   ApiKey, AppConfig, AuditEntry, Brand, BookingRow, Certification, Driver, Fleet, FleetInvite, InvitePreview, LegalInfo, MemberRole, NetworkSnapshot, PassView, Partner, TeamView, Vehicle,
 } from "../../shared/model";
-import { DEFAULT_BRAND, EMPTY_LEGAL } from "../../shared/model";
+import { DEFAULT_BRAND, EMPTY_LEGAL, type Readiness, type ReadinessCheck } from "../../shared/model";
 import { FLEET_CANCEL_REASONS } from "../../shared/booking/labels";
 import { displayPlate, iso, normalizePlate, randomToken, shortId, upper, uuid } from "../../shared/util";
 import { PASSWORD_MIN_LENGTH, TERMS_VERSION, adminMfaRequired, brandFromEnv, legalFromEnv, ocpiUrls, type AuthUser, type Ctx } from "../context";
 import { ApiError, cancelBooking, changeBooking, createBooking, operatorName } from "../emsp/service";
 import { invitePartner, newRegistrationToken, registerWithPartner, syncPartner, unregisterPartner } from "../ocpi/registration";
+import { probeOperator } from "../ocpi/probe";
 import { simControl, simPrepareRegistration, simStatus, tick, type SimAction } from "../sim/cpo";
 import { API_KEY_PREFIX, BODY_LIMITS, BodyTooLarge, checkLogo, clientIp, hint, isApiKey, readLimited, sha256Hex } from "../security";
 import { complianceReport, saveTick } from "./compliance";
@@ -713,6 +714,57 @@ function maskPartner(p: Partner) {
   return { ...rest, has_their_token: !!their_token, awaiting_registration: !!p.registration_token_hash };
 }
 
+/** Operator addresses must be public https URLs (this app's own address is allowed, for the simulator). */
+export function checkOperatorUrl(raw: string, ctx: Pick<Ctx, "baseUrl">): URL {
+  let u: URL;
+  try { u = new URL(raw); } catch { throw new ApiError(400, "That isn't a web address. It should look like https://ocpi.operator.example/versions"); }
+  const own = (() => { try { return new URL(ctx.baseUrl).origin === u.origin; } catch { return false; } })();
+  if (own) return u;
+  if (u.protocol !== "https:") throw new ApiError(400, "The operator's address must start with https://");
+  const h = u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  const privateHost = h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal") || !h.includes(".")
+    || /^(127|10|0)\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h) || /^169\.254\./.test(h) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(h)
+    || h === "::1" || /^f[cd]/.test(h) || /^fe80/.test(h);
+  if (privateHost) throw new ApiError(400, "The operator's address must be on the public internet");
+  return u;
+}
+
+/** What an operator will look at before connecting: the "Get ready" step of the operator guide. */
+export async function readiness(ctx: Ctx): Promise<Readiness> {
+  const host = (() => { try { return new URL(ctx.baseUrl); } catch { return null; } })();
+  const local = !host || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(host.hostname) || host.hostname.endsWith(".localhost");
+  const legal = await legalInfo(ctx).catch(() => EMPTY_LEGAL);
+  const partners = await ctx.store.listPartners().catch(() => [] as Partner[]);
+  const checks: ReadinessCheck[] = [
+    local || host?.protocol !== "https:"
+      ? { id: "url", level: "todo", title: "Public HTTPS address", detail: "Operators call this app over the internet, so it needs a public https:// address. Deploy it first." }
+      : host.hostname.endsWith(".workers.dev")
+        ? { id: "url", level: "warn", title: "Public HTTPS address", detail: `${host.hostname} works. A domain of your own looks more trustworthy to operators and doesn't change if the Worker is renamed; if you add one later, operators need the new versions URL.` }
+        : { id: "url", level: "ok", title: "Public HTTPS address", detail: host.hostname },
+    ctx.env.OCPI_PARTY_ID && ctx.env.OCPI_COUNTRY_CODE
+      ? { id: "party", level: "ok", title: "OCPI party ID", detail: `${ctx.party.country_code}*${ctx.party.party_id}. Check with each operator that no one else on their platform uses it.` }
+      : { id: "party", level: "todo", title: "OCPI party ID", detail: "Set OCPI_COUNTRY_CODE and OCPI_PARTY_ID (three letters or digits that identify your company in OCPI) in the Worker's variables." },
+    ctx.env.OCPI_BUSINESS_NAME
+      ? { id: "name", level: "ok", title: "Business name", detail: ctx.party.name }
+      : { id: "name", level: "warn", title: "Business name", detail: `Operators will see "${ctx.party.name}". Set OCPI_BUSINESS_NAME to your company's name.` },
+    ctx.env.DATA_ENCRYPTION_KEY || ctx.mode === "demo"
+      ? { id: "key", level: "ok", title: "Operator tokens encrypted", detail: "Tokens operators give you are sealed before they're stored." }
+      : { id: "key", level: "todo", title: "Operator tokens encrypted", detail: "Set the DATA_ENCRYPTION_KEY secret before connecting a real operator, so their tokens aren't stored in plain text." },
+    legal.company_name
+      ? { id: "legal", level: "ok", title: "Company details", detail: legal.company_name }
+      : { id: "legal", level: "warn", title: "Company details", detail: "Operators sign an agreement with a company. Add your company details in Compliance so they appear on your legal pages." },
+    legal.security_contact
+      ? { id: "security", level: "ok", title: "Security contact", detail: "Operators can report a problem with the integration." }
+      : { id: "security", level: "warn", title: "Security contact", detail: "Set SECURITY_CONTACT so operators know where to report a security problem." },
+  ];
+  return {
+    checks,
+    simulator: ctx.simulatorEnabled,
+    simulator_connected: partners.some((p) => p.is_simulator && p.status !== "REMOVED"),
+    versions_url: ocpiUrls(ctx.baseUrl).versions,
+  };
+}
+
 async function adminRoutes(req: Request, ctx: Ctx, user: AuthUser, seg: string[], url: URL): Promise<Response> {
   const m = req.method;
   const [res, id, action] = seg;
@@ -728,6 +780,7 @@ async function adminRoutes(req: Request, ctx: Ctx, user: AuthUser, seg: string[]
       }
       if (b.action === "connect") {
         if (!b.versions_url || !b.token) throw new ApiError(400, "Versions URL and token are required");
+        checkOperatorUrl(b.versions_url.trim(), ctx);
         let p: Partner;
         try {
           p = await registerWithPartner(ctx, b.versions_url.trim(), b.token.trim(), { name: b.name?.trim().slice(0, 80) || undefined });
@@ -760,6 +813,18 @@ async function adminRoutes(req: Request, ctx: Ctx, user: AuthUser, seg: string[]
       await audit(ctx, req, user, { action: "partner.disconnect", target: p.name, data: { partner_id: p.id } });
       return json({ ok: true });
     }
+  }
+  if (res === "readiness" && m === "GET") return json(await readiness(ctx));
+  // Read-only check of an operator's OCPI interface before connecting it (GET requests only).
+  if (res === "probe" && m === "POST") {
+    const b = await body<{ versions_url?: string; token?: string }>(req);
+    const versionsUrl = (b.versions_url ?? "").toString().trim();
+    const token = (b.token ?? "").toString().trim();
+    if (!versionsUrl || !token) throw new ApiError(400, "Enter the operator's versions URL and token");
+    checkOperatorUrl(versionsUrl, ctx);
+    const report = await probeOperator({ versionsUrl, token, from: { country_code: ctx.party.country_code, party_id: ctx.party.party_id }, maxPages: 3, fetch: (r) => ctx.transport(r) });
+    await audit(ctx, req, user, { action: "partner.probe", target: new URL(versionsUrl).hostname, data: { ok: report.ok } });
+    return json(report);
   }
   if (res === "audit" && m === "GET") {
     return json(await ctx.store.listAudit({ limit: Math.min(500, Number(url.searchParams.get("limit") ?? 200) || 200) }));
