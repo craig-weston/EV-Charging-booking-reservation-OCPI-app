@@ -12,11 +12,37 @@ import { tick } from "../../server/sim/cpo";
 import { ApiFailure, type Backend } from "./backend";
 
 const STORAGE_KEY = "depotcharge.demo.v1";
+const SEEDED_KEY = "depotcharge.demo.seeded";
+/** Sample history is relative to the day it was made; after this long it's rebuilt so "today" stays today. */
+const FRESH_FOR_MS = 18 * 60 * 60 * 1000;
+const TRY_FLAG = "depotcharge.try-demo";
+
+/** Someone chose "Try the demo" on a live deployment (#/demo or ?demo), for this browser tab. */
+export function demoRequested(): boolean {
+  const hash = window.location.hash;
+  const asked = /^#\/demo(\/|\?|$)/.test(hash) || new URLSearchParams(window.location.search).has("demo");
+  if (asked) {
+    try { sessionStorage.setItem(TRY_FLAG, "1"); } catch { /* still works for this load */ }
+    const url = new URL(window.location.href);
+    url.searchParams.delete("demo");
+    history.replaceState(null, "", `${url.pathname}${url.search}#/`);
+    return true;
+  }
+  try { return sessionStorage.getItem(TRY_FLAG) === "1"; } catch { return false; }
+}
+
+export function leaveDemo(next = "#/") {
+  try { sessionStorage.removeItem(TRY_FLAG); } catch { /* ignore */ }
+  window.location.hash = next;
+  window.location.reload();
+}
 // The demo user counts as signed in with a second factor, so security settings can be tried out.
 const USER = { id: "demo-user", email: "planner@example.com", aal: "aal2" as const, mfa: false };
 
 function loadData(): MemoryData | null {
   try {
+    const seeded = Number(localStorage.getItem(SEEDED_KEY) ?? 0);
+    if (!seeded || Date.now() - seeded > FRESH_FOR_MS) return null;
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const d = JSON.parse(raw) as MemoryData;
@@ -44,7 +70,7 @@ export interface DemoClock {
   now(): Date;
 }
 
-export async function createDemoBackend(base?: Partial<AppConfig>): Promise<Backend> {
+export async function createDemoBackend(base?: Partial<AppConfig>, opts: { publicDemo?: boolean } = {}): Promise<Backend> {
   const saved = loadData();
   const store = new MemoryStore(saved ?? undefined);
   store.maxLogs = 160;
@@ -77,6 +103,7 @@ export async function createDemoBackend(base?: Partial<AppConfig>): Promise<Back
       clock.set(null);
     }
     await ctx.flush();
+    try { localStorage.setItem(SEEDED_KEY, String(Date.now())); } catch { /* ignore */ }
   }
   ctx.simDelayMs = 1600; // feel the asynchronous CPO confirmation from now on
 
@@ -95,9 +122,10 @@ export async function createDemoBackend(base?: Partial<AppConfig>): Promise<Back
     config: { ...config, mode: "demo", ocpi_versions_url: "https://your-domain.example/ocpi/versions" },
     auth: null,
     api,
+    publicDemo: opts.publicDemo ? { exit: () => leaveDemo("#/"), signUp: () => leaveDemo("#/signup") } : undefined,
     onChange: (cb) => store.onChange(cb),
     async reset() {
-      try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+      try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(SEEDED_KEY); } catch { /* ignore */ }
       window.location.reload();
     },
   };

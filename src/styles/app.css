@@ -1187,6 +1187,18 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
   .guide-progress { flex-direction: column; align-items: stretch; gap: 6px; }
   .guide-progress-bar { flex: none; width: 100%; max-width: none; }
   .guide-title .icon { display: none; }
+}
+
+/* public demo */
+.demo-bar.public { background: var(--brand-softer); color: var(--ink-2); border-bottom-color: var(--brand-line); }
+.demo-bar.public .dot { background: var(--brand); }
+.try-demo { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px dashed var(--brand-line); border-radius: var(--r-md); background: var(--brand-softer); color: var(--ink); text-decoration: none; }
+.try-demo:hover { border-style: solid; }
+.try-demo:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.try-demo b { display: block; font-size: var(--fs-sm); }
+.try-demo .xs { display: block; margin-top: 2px; }
+.try-demo-icon { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--brand); color: #fff; }
+
 /* ------------------------------------------------------------------ phone and tablet polish
    Last in the file on purpose: these override base rules of equal specificity above. */
 @media (max-width: 1023px) {
