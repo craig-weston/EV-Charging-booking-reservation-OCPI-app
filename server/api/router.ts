@@ -4,7 +4,7 @@ import type { BookingLocation, CanceledReason, ConnectorType, Location, VehicleT
 import type {
   ApiKey, AppConfig, AuditEntry, Brand, BookingRow, Certification, Driver, Fleet, FleetInvite, InvitePreview, LegalInfo, MemberRole, NetworkSnapshot, PassView, Partner, TeamView, Vehicle,
 } from "../../shared/model";
-import { DEFAULT_BRAND, EMPTY_LEGAL, type FleetStatement, type Readiness, type ReadinessCheck } from "../../shared/model";
+import { DEFAULT_BRAND, EMPTY_LEGAL, WEBHOOK_EVENTS, type FleetWebhook, type FleetWebhookRow, type WebhookEvent, type FleetStatement, type Readiness, type ReadinessCheck } from "../../shared/model";
 import { DEFAULT_BILLING, buildStatement, cleanBilling, cleanMargin, monthOf, monthPeriod, validMonth, withMargin, type BillingSettings } from "../../shared/billing";
 import { FLEET_CANCEL_REASONS } from "../../shared/booking/labels";
 import { displayPlate, iso, normalizePlate, randomToken, shortId, upper, uuid } from "../../shared/util";
@@ -12,8 +12,9 @@ import { PASSWORD_MIN_LENGTH, TERMS_VERSION, adminMfaRequired, brandFromEnv, leg
 import { ApiError, cancelBooking, changeBooking, createBooking, operatorName } from "../emsp/service";
 import { invitePartner, newRegistrationToken, registerWithPartner, syncPartner, unregisterPartner } from "../ocpi/registration";
 import { probeOperator } from "../ocpi/probe";
+import { deliver } from "../webhooks";
 import { simControl, simPrepareRegistration, simStatus, tick, type SimAction } from "../sim/cpo";
-import { API_KEY_PREFIX, BODY_LIMITS, BodyTooLarge, checkLogo, clientIp, hint, isApiKey, readLimited, sha256Hex } from "../security";
+import { API_KEY_PREFIX, BODY_LIMITS, BodyTooLarge, checkLogo, clientIp, hint, isApiKey, readLimited, sealSecret, sha256Hex } from "../security";
 import { complianceReport, saveTick } from "./compliance";
 import { sampleDrivers, sampleVehicles } from "./samples";
 import { notifyChannels, notifyDriver } from "../notify";
@@ -322,6 +323,7 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
   // Team routes check roles themselves (anyone may leave; only owners manage the team).
   if (res === "team" || res === "members" || res === "invites") return teamRoutes(req, ctx, user, fleetId, role, res, id);
   if (res === "api-keys") return apiKeyRoutes(req, ctx, user, fleetId, role, id);
+  if (res === "webhooks") return webhookRoutes(req, ctx, user, fleetId, role, id, action);
   // Monthly charging statement: every charge record that ended in the month, at the operator's
   // price plus the platform's margin. Read-only, for anyone on the team.
   if (res === "statements" && m === "GET") {
@@ -534,6 +536,65 @@ async function apiKeyRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: str
       await audit(ctx, req, user, { fleet_id: fleetId, action: "api_key.revoke", target: k.name, data: { key_id: id } });
     }
     return json({ ok: true });
+  }
+  return err(404, "Not found");
+}
+
+// ------------------------------------------------------------------ webhooks
+const MAX_WEBHOOKS = 5;
+
+function publicWebhook({ secret: _s, ...w }: FleetWebhookRow): FleetWebhook {
+  return w;
+}
+
+function cleanEvents(x: unknown): WebhookEvent[] {
+  if (!Array.isArray(x)) return [];
+  const all = WEBHOOK_EVENTS as readonly string[];
+  if (x.some((e) => !all.includes(e))) throw new ApiError(400, `Events must be some of: ${WEBHOOK_EVENTS.join(", ")}`);
+  return [...new Set(x as WebhookEvent[])];
+}
+
+async function webhookRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: string, role: MemberRole, id: string | undefined, action: string | undefined): Promise<Response> {
+  const m = req.method;
+  if (user.apiKey || role !== "owner") throw new ApiError(403, "Only fleet owners can manage webhooks");
+  const hooks = await ctx.store.listWebhooks(fleetId);
+  if (!id && m === "GET") return json(hooks.map(publicWebhook));
+  if (!id && m === "POST") {
+    if (hooks.length >= MAX_WEBHOOKS) throw new ApiError(409, `A fleet can have ${MAX_WEBHOOKS} webhooks. Remove one you no longer use first.`);
+    const b = await body<{ url?: string; description?: string; events?: string[] }>(req);
+    const url = checkOperatorUrl((b.url ?? "").toString().trim(), ctx, "The webhook address", "https://tms.example.com/hooks/depotcharge").toString();
+    if (url.length > 500) throw new ApiError(400, "That address is too long");
+    const secret = `whsec_${randomToken(32)}`;
+    const row: FleetWebhookRow = {
+      id: uuid(), fleet_id: fleetId, url, description: (b.description ?? "").toString().replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 80),
+      secret: (await sealSecret(secret, ctx.env.DATA_ENCRYPTION_KEY))!, secret_hint: hint(secret) ?? "", events: cleanEvents(b.events), active: true,
+      created_by: user.id, created_at: iso(ctx.now()), last_attempt_at: null, last_status: null, last_error: null, failures: 0,
+    };
+    await ctx.store.createWebhook(row);
+    await audit(ctx, req, user, { fleet_id: fleetId, action: "webhook.create", target: new URL(url).hostname, data: { webhook_id: row.id, events: row.events } });
+    // The secret is shown this once.
+    return json({ ...publicWebhook(row), secret }, 201);
+  }
+  const hook = id ? hooks.find((h) => h.id === id) : undefined;
+  if (!hook) throw new ApiError(404, "Webhook not found");
+  if (m === "PATCH" && !action) {
+    const b = await body<{ active?: boolean; events?: string[]; description?: string }>(req);
+    const patch: Partial<FleetWebhookRow> = {};
+    if (typeof b.active === "boolean") { patch.active = b.active; if (b.active) patch.failures = 0; }
+    if (b.events !== undefined) patch.events = cleanEvents(b.events);
+    if (typeof b.description === "string") patch.description = b.description.replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 80);
+    await ctx.store.updateWebhook(hook.id, patch);
+    await audit(ctx, req, user, { fleet_id: fleetId, action: "webhook.update", target: new URL(hook.url).hostname, data: { webhook_id: hook.id, ...patch } });
+    return json(publicWebhook({ ...hook, ...patch }));
+  }
+  if (m === "DELETE" && !action) {
+    await ctx.store.deleteWebhook(hook.id);
+    await audit(ctx, req, user, { fleet_id: fleetId, action: "webhook.delete", target: new URL(hook.url).hostname, data: { webhook_id: hook.id } });
+    return json({ ok: true });
+  }
+  if (m === "POST" && action === "test") {
+    const r = await deliver(ctx, hook, { id: uuid(), type: "webhook.test", created_at: iso(ctx.now()), fleet_id: fleetId, data: { message: "Test delivery from Depotcharge. Check the signature, then answer 2xx." } });
+    return json(r);
   }
   return err(404, "Not found");
 }
@@ -764,17 +825,18 @@ async function fleetStatement(ctx: Ctx, fleet: Fleet, month: string): Promise<Fl
 }
 
 /** Operator addresses must be public https URLs (this app's own address is allowed, for the simulator). */
-export function checkOperatorUrl(raw: string, ctx: Pick<Ctx, "baseUrl">): URL {
+export function checkOperatorUrl(raw: string, ctx: Pick<Ctx, "baseUrl">, what = "The operator's address", example = "https://ocpi.operator.example/versions"): URL {
   let u: URL;
-  try { u = new URL(raw); } catch { throw new ApiError(400, "That isn't a web address. It should look like https://ocpi.operator.example/versions"); }
+  try { u = new URL(raw); } catch { throw new ApiError(400, `That isn't a web address. It should look like ${example}`); }
   const own = (() => { try { return new URL(ctx.baseUrl).origin === u.origin; } catch { return false; } })();
   if (own) return u;
-  if (u.protocol !== "https:") throw new ApiError(400, "The operator's address must start with https://");
+  if (u.protocol !== "https:") throw new ApiError(400, `${what} must start with https://`);
+  if (u.username || u.password) throw new ApiError(400, `${what} can't contain a user name or password`);
   const h = u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
   const privateHost = h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal") || !h.includes(".")
     || /^(127|10|0)\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h) || /^169\.254\./.test(h) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(h)
     || h === "::1" || /^f[cd]/.test(h) || /^fe80/.test(h);
-  if (privateHost) throw new ApiError(400, "The operator's address must be on the public internet");
+  if (privateHost) throw new ApiError(400, `${what} must be on the public internet`);
   return u;
 }
 

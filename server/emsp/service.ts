@@ -1,4 +1,5 @@
 // eMSP-side booking logic: sending BookingRequests to CPOs and applying what they send back.
+import { notifyWebhooks } from "../webhooks";
 import type { Booking, BookingLocation, CDR, CanceledReason, CdrDimensionType, Location, Session } from "../../shared/ocpi/types";
 import type { BookingEvent, BookingRow, CdrSummary, Partner, SessionSummary, Vehicle } from "../../shared/model";
 import { assess } from "../../shared/booking/compat";
@@ -39,6 +40,8 @@ export async function addEvents(ctx: Ctx, row: Pick<BookingRow, "id" | "fleet_id
     data: e.data ?? null,
   }));
   await ctx.store.addEvents(list);
+  // The fleet's own systems hear about it too (no-op without webhooks).
+  ctx.waitUntil(notifyWebhooks(ctx, row.fleet_id, row.id, list));
 }
 
 /** Apply a Booking object received from the CPO (POST response, PUT or PATCH push). */

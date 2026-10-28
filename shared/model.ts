@@ -355,6 +355,35 @@ export interface ApiKeyRow extends ApiKey {
   key_hash: string;
 }
 
+/** Kinds of booking change a webhook can be told about (see docs/webhooks.md). */
+export const WEBHOOK_EVENTS = [
+  "booking.requested", "booking.confirmed", "booking.changed", "booking.declined", "booking.cancelled",
+  "booking.no_show", "charging.started", "charging.completed", "charge_record.received",
+] as const;
+export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
+
+/** A fleet's webhook endpoint as the API returns it: the secret never leaves the server again. */
+export interface FleetWebhook {
+  id: string;
+  fleet_id: string;
+  url: string;
+  description: string;
+  secret_hint: string;
+  /** Empty = every event. */
+  events: WebhookEvent[];
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+  last_attempt_at: string | null;
+  last_status: number | null;
+  last_error: string | null;
+  failures: number;
+}
+export interface FleetWebhookRow extends FleetWebhook {
+  /** Sealed with DATA_ENCRYPTION_KEY when it's set. */
+  secret: string;
+}
+
 /** Security-relevant actions, kept for 12 months (see the retention schedule). */
 export interface AuditEntry {
   id: string;
