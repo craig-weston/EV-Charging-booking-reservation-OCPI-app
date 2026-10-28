@@ -1309,6 +1309,32 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
 .webhook-event-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; padding-left: 26px; }
 @media (max-width: 560px) { .webhook-event-grid { grid-template-columns: minmax(0, 1fr); } .webhook-actions { width: 100%; padding-left: 44px; } }
 
+/* trip planner */
+.trip .back-link { display: inline-flex; align-items: center; gap: 2px; margin-bottom: 6px; color: var(--muted); text-decoration: none; }
+.trip-grid { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.trip-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.trip-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
+.trip-summary > div { padding: 16px 20px; display: flex; flex-direction: column; gap: 2px; }
+.trip-summary > div + div { border-left: 1px solid var(--line); }
+.trip-summary b { font-size: var(--fs-xl); }
+.trip-steps { list-style: none; margin: 0; padding: 20px; display: flex; flex-direction: column; gap: 0; }
+.trip-steps > li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; position: relative; padding-bottom: 18px; }
+.trip-steps > li:not(:last-child)::before { content: ""; position: absolute; left: 13px; top: 24px; bottom: 0; width: 2px; background: var(--brand-line); }
+.trip-dot { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 2px solid var(--line-2); position: relative; z-index: 1; }
+.trip-end .trip-dot { width: 16px; height: 16px; margin: 4px 6px; background: var(--ink-2); border: 0; }
+.trip-dot.end { background: var(--ok); }
+.trip-dot.bad { background: var(--bad); }
+.trip-dot.charge { background: var(--brand); border-color: var(--brand); color: #fff; }
+.trip-card { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 14px; }
+.trip-foot { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+@media (max-width: 900px) { .trip-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) {
+  .trip-summary > div { padding: 12px; }
+  .trip-summary b { font-size: var(--fs-lg); }
+  .trip-steps { padding: 16px 14px; }
+  .trip-foot > .btn { width: 100%; }
+}
+
 /* ------------------------------------------------------------------ phone and tablet polish
    Last in the file on purpose: these override base rules of equal specificity above. */
 @media (max-width: 1023px) {

@@ -11,6 +11,7 @@ import { BookingDrawer } from "./pages/BookingDrawer";
 import { FleetPage } from "./pages/Fleet";
 import { NetworkPage } from "./pages/Network";
 import { StatementsPage } from "./pages/Statements";
+import { TripPage } from "./pages/Trip";
 import { OperatorsPage } from "./pages/Operators";
 import { OperatorGuidePage } from "./pages/OperatorGuide";
 import { SettingsPage } from "./pages/Settings";
@@ -149,6 +150,7 @@ function Shell() {
         <main>
           {page === "" || page === "dashboard" || page === "today" ? <DashboardPage openBooking={openBooking} />
             : page === "book" ? <BookPage />
+            : page === "trip" ? <TripPage />
             : page === "bookings" ? <BookingsPage openBooking={openBooking} />
             : page === "statements" ? <StatementsPage />
             : page === "fleet" ? <FleetPage />

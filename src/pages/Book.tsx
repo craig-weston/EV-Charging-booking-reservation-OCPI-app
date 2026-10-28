@@ -186,6 +186,9 @@ export function BookPage() {
           <h1>Book a slot</h1>
           <div className="sub">Pick the truck and roughly when it needs charge. Sites are matched to it automatically.</div>
         </div>
+        <div className="actions">
+          <a className="btn" href={href("/trip")}><Icon name="route" size="sm" />Plan a long trip</a>
+        </div>
         <div className="actions mobile-only">
           <Seg<"list" | "map"> label="View" value={mobileView} onChange={setMobileView} options={[{ value: "list", label: "List" }, { value: "map", label: "Map" }]} />
         </div>
