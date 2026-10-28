@@ -1,6 +1,6 @@
 // In-memory Store — used by the browser demo (persisted to localStorage) and by the tests.
 import type {
-  ApiKey, ApiKeyRow, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
+  ApiKey, ApiKeyRow, FleetWebhookRow, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
   Partner, StoredObject, Vehicle, AuditEntry,
 } from "../../shared/model";
 import { iso, upper, uuid } from "../../shared/util";
@@ -23,10 +23,11 @@ export interface MemoryData {
   settings: Record<string, unknown>;
   audit: AuditEntry[];
   apiKeys: ApiKeyRow[];
+  webhooks?: FleetWebhookRow[];
 }
 
 export function emptyData(): MemoryData {
-  return { fleets: [], members: [], invites: [], admins: [], brand: null, vehicles: [], drivers: [], partners: [], objects: [], bookings: [], events: [], logs: [], sim: {}, settings: {}, audit: [], apiKeys: [] };
+  return { fleets: [], members: [], invites: [], admins: [], brand: null, vehicles: [], drivers: [], partners: [], objects: [], bookings: [], events: [], logs: [], sim: {}, settings: {}, audit: [], apiKeys: [], webhooks: [] };
 }
 
 const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
@@ -153,6 +154,21 @@ export class MemoryStore implements Store {
   }
 
   // API keys -----------------------------------------------------------------------
+  async listWebhooks(fleetId: string) {
+    return clone((this.data.webhooks ?? []).filter((w) => w.fleet_id === fleetId).sort((a, b) => a.created_at.localeCompare(b.created_at)));
+  }
+  async createWebhook(row: FleetWebhookRow) {
+    (this.data.webhooks ??= []).push(clone(row));
+    this.changed();
+  }
+  async updateWebhook(id: string, patch: Partial<FleetWebhookRow>) {
+    const w = (this.data.webhooks ?? []).find((x) => x.id === id);
+    if (w) { Object.assign(w, clone(patch)); this.changed(); }
+  }
+  async deleteWebhook(id: string) {
+    this.data.webhooks = (this.data.webhooks ?? []).filter((w) => w.id !== id);
+    this.changed();
+  }
   async listApiKeys(fleetId: string): Promise<ApiKey[]> {
     return clone(this.data.apiKeys.filter((k) => k.fleet_id === fleetId).sort((a, b) => b.created_at.localeCompare(a.created_at)).map(({ key_hash: _h, ...k }) => k));
   }

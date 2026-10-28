@@ -2,7 +2,7 @@
 //  - SupabaseStore (Postgres via PostgREST) for production on Cloudflare Pages
 //  - MemoryStore for the in-browser demo and the test-suite
 import type {
-  ApiKey, ApiKeyRow, AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
+  ApiKey, ApiKeyRow, FleetWebhookRow, AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
   Partner, StoredObject, Vehicle,
 } from "../../shared/model";
 
@@ -42,6 +42,10 @@ export interface Store {
 
   // API keys --------------------------------------------------------------------
   /** The fleet's keys, newest first, revoked ones included (no hashes). */
+  listWebhooks(fleetId: string): Promise<FleetWebhookRow[]>;
+  createWebhook(row: FleetWebhookRow): Promise<void>;
+  updateWebhook(id: string, patch: Partial<Pick<FleetWebhookRow, "active" | "last_attempt_at" | "last_status" | "last_error" | "failures" | "url" | "description" | "events">>): Promise<void>;
+  deleteWebhook(id: string): Promise<void>;
   listApiKeys(fleetId: string): Promise<ApiKey[]>;
   createApiKey(row: ApiKeyRow): Promise<ApiKey>;
   findApiKeyByHash(hash: string): Promise<ApiKeyRow | null>;

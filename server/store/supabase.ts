@@ -1,7 +1,7 @@
 // Store backed by Supabase Postgres through PostgREST (plain fetch, no SDK — runs on Workers).
 // Uses the service-role / secret key, so it bypasses RLS: the API layer enforces fleet access.
 import type {
-  ApiKey, ApiKeyRow, AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
+  ApiKey, ApiKeyRow, FleetWebhookRow, AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
   Partner, StoredObject, Vehicle,
 } from "../../shared/model";
 import { iso, upper } from "../../shared/util";
@@ -210,6 +210,18 @@ export class SupabaseStore implements Store {
   }
 
   // API keys -----------------------------------------------------------------------
+  listWebhooks(fleetId: string) {
+    return this.rest.select<FleetWebhookRow>("fleet_webhooks", `select=*&fleet_id=eq.${enc(fleetId)}&order=created_at.asc`);
+  }
+  async createWebhook(row: FleetWebhookRow) {
+    await this.rest.insert("fleet_webhooks", row, { returning: false });
+  }
+  async updateWebhook(id: string, patch: Partial<FleetWebhookRow>) {
+    await this.rest.update("fleet_webhooks", `id=eq.${enc(id)}`, patch);
+  }
+  async deleteWebhook(id: string) {
+    await this.rest.remove("fleet_webhooks", `id=eq.${enc(id)}`);
+  }
   listApiKeys(fleetId: string) {
     return this.rest.select<ApiKey>("fleet_api_keys", `select=id,fleet_id,name,role,key_hint,created_by,created_at,last_used_at,expires_at,revoked_at&fleet_id=eq.${enc(fleetId)}&order=created_at.desc`);
   }

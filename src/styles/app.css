@@ -1302,6 +1302,13 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
 .rebook-site { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .drawer-body > .rebook { margin: 0 16px 16px; }
 
+/* webhooks */
+.webhook-row { flex-wrap: wrap; }
+.webhook-actions { flex-wrap: wrap; }
+.webhook-events { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.webhook-event-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; padding-left: 26px; }
+@media (max-width: 560px) { .webhook-event-grid { grid-template-columns: minmax(0, 1fr); } .webhook-actions { width: 100%; padding-left: 44px; } }
+
 /* ------------------------------------------------------------------ phone and tablet polish
    Last in the file on purpose: these override base rules of equal specificity above. */
 @media (max-width: 1023px) {
