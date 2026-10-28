@@ -241,14 +241,14 @@ function MessageLog() {
       {!rows ? <div className="empty"><Spinner /></div> : rows.length === 0 ? <Empty title="No messages yet">Requests to and from operators appear here as they happen.</Empty> : (
         <ul className="list">
           {rows.slice(0, limit).map((r) => (
-            <li key={r.id} className="log-row" role="button" tabIndex={0} onClick={() => setOpen(r)} onKeyDown={(e) => { if (e.key === "Enter") setOpen(r); }}>
+            <li key={r.id}><button type="button" className="log-row" onClick={() => setOpen(r)} aria-label={`${r.direction === "IN" ? "Received" : "Sent"} ${r.method} ${r.url.replace(/^https?:\/\/[^/]+/, "")}, status ${r.status_code ?? r.http_status ?? "unknown"}`}>
               <span className="num xs muted">{fmtTime(r.at)}</span>
               <span title={r.direction === "IN" ? "Received" : "Sent"}><Icon name={r.direction === "IN" ? "arrowDownLeft" : "arrowUpRight"} size="sm" /></span>
               <span className="small" style={{ fontWeight: 600 }}>{r.method}</span>
               <span className="path" title={r.url}>{r.url.replace(/^https?:\/\/[^/]+/, "")}</span>
               <span className={`tag ${r.status_code && r.status_code < 2000 ? "ok" : "bad"}`}>{r.status_code ?? r.http_status ?? "—"}</span>
               <span className="xs muted hide-sm">{r.party ?? ""}</span>
-            </li>
+            </button></li>
           ))}
           {rows.length > limit && (
             <li style={{ padding: "10px 14px" }}>

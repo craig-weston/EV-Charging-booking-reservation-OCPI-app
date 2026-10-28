@@ -195,7 +195,7 @@ Thanks,`;
         <h3 className="guide-h3" style={{ margin: 0 }}>A first message you can send</h3>
         <button type="button" className="btn sm" onClick={async () => { if (await copyText(text)) { setCopied(true); setTimeout(() => setCopied(false), 1800); } }}><Icon name={copied ? "check" : "copy"} size="sm" />{copied ? "Copied" : "Copy"}</button>
       </div>
-      <pre className="guide-pre">{text}</pre>
+      <pre className="guide-pre" tabIndex={0} aria-label="Message text">{text}</pre>
     </div>
   );
 }
