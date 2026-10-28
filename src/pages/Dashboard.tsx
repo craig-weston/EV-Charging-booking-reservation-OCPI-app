@@ -15,6 +15,7 @@ import { ChargeStory } from "../components/art/ChargeStory";
 import { TruckArt } from "../components/art/Mini";
 import { truckKindOf } from "../components/art/scene";
 import { MfaEnrol } from "./Security";
+import { RebookSuggestion } from "../components/RebookSuggestion";
 
 const DISMISS_KEY = "depotcharge.dismissed";
 
@@ -97,11 +98,11 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
           {attention.map((b) => (
             <div className="attention-item" key={b.id}>
               <Icon name="alert" />
-              <div className="grow">
+              <div className="grow" style={{ minWidth: 0 }}>
                 <div>{reason(b)}</div>
                 <div className="xs muted">{fmtDay(b.start_at, now)}, {fmtRange(b.start_at, b.end_at)}. Updated {fmtRelative(b.updated_at, now)}.</div>
+                <RebookSuggestion booking={b} compact onBooked={(id) => { dismiss(b.id); openBooking(id); }} />
               </div>
-              <button className="btn sm" onClick={() => navigate("/book", { vehicle: b.vehicle_id, at: b.start_at, duration: Math.round((new Date(b.end_at).getTime() - new Date(b.start_at).getTime()) / 60000) })}>Rebook</button>
               <button className="btn sm ghost" onClick={() => dismiss(b.id)}>Dismiss</button>
             </div>
           ))}
