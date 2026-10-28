@@ -5,6 +5,7 @@ import { useApp } from "../app/state";
 import { fmtDateTime, fmtDay, fmtKw, fmtKwh, fmtLongDate, fmtMoney, fmtRange, fmtRelative, fmtTime, greeting } from "../app/format";
 import { findLocation, operatorFor, shortSiteName } from "../app/network";
 import { href, navigate } from "../app/router";
+import { marginAt, priceLine } from "../../shared/billing";
 import { change, computeKpis, fleetOverview, keptRate, pricePerKwh, recentCharges, type TruckOverview } from "../app/kpis";
 import { LaneBoard } from "../components/LaneBoard";
 import { Sparkline } from "../components/Sparkline";
@@ -38,7 +39,8 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
     return loc ? shortSiteName(loc, operatorFor(network, b.cpo_country_code, b.cpo_party_id, loc)) : b.location_id;
   };
 
-  const kpis = useMemo(() => computeKpis(bookings, now), [bookings, now]);
+  const margins = fleet?.margin_history;
+  const kpis = useMemo(() => computeKpis(bookings, now, 7, undefined, margins), [bookings, now, margins]);
   const trucks = useMemo(() => fleetOverview(vehicles, bookings, now), [vehicles, bookings, now]);
   const recent = useMemo(() => recentCharges(bookings, 5), [bookings]);
 
@@ -245,7 +247,7 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
                     </span>
                     <span className="charge-figs">
                       <span className="num">{fmtKwh(b.cdr?.total_energy ?? b.session?.kwh ?? 0)}</span>
-                      <span className="xs muted num">{b.cdr ? fmtMoney(b.cdr.total_cost, b.cdr.currency) : "Awaiting record"}</span>
+                      <span className="xs muted num">{b.cdr ? fmtMoney(priceLine(b.cdr, marginAt(margins, b.cdr.end_date_time)).net, b.cdr.currency) : "Awaiting record"}</span>
                     </span>
                   </button>
                 </li>

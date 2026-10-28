@@ -4,7 +4,8 @@ import type { BookingLocation, CanceledReason, ConnectorType, Location, VehicleT
 import type {
   ApiKey, AppConfig, AuditEntry, Brand, BookingRow, Certification, Driver, Fleet, FleetInvite, InvitePreview, LegalInfo, MemberRole, NetworkSnapshot, PassView, Partner, TeamView, Vehicle,
 } from "../../shared/model";
-import { DEFAULT_BRAND, EMPTY_LEGAL, type Readiness, type ReadinessCheck } from "../../shared/model";
+import { DEFAULT_BRAND, EMPTY_LEGAL, type FleetStatement, type Readiness, type ReadinessCheck } from "../../shared/model";
+import { DEFAULT_BILLING, buildStatement, cleanBilling, cleanMargin, monthOf, monthPeriod, validMonth, withMargin, type BillingSettings } from "../../shared/billing";
 import { FLEET_CANCEL_REASONS } from "../../shared/booking/labels";
 import { displayPlate, iso, normalizePlate, randomToken, shortId, upper, uuid } from "../../shared/util";
 import { PASSWORD_MIN_LENGTH, TERMS_VERSION, adminMfaRequired, brandFromEnv, legalFromEnv, ocpiUrls, type AuthUser, type Ctx } from "../context";
@@ -321,10 +322,20 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
   // Team routes check roles themselves (anyone may leave; only owners manage the team).
   if (res === "team" || res === "members" || res === "invites") return teamRoutes(req, ctx, user, fleetId, role, res, id);
   if (res === "api-keys") return apiKeyRoutes(req, ctx, user, fleetId, role, id);
+  // Monthly charging statement: every charge record that ended in the month, at the operator's
+  // price plus the platform's margin. Read-only, for anyone on the team.
+  if (res === "statements" && m === "GET") {
+    const month = id ?? monthOf(ctx.now());
+    if (!validMonth(month)) throw new ApiError(400, "Month must look like 2026-10");
+    return json(await fleetStatement(ctx, fleet, month));
+  }
   if (write && role === "viewer") throw new ApiError(403, user.apiKey ? "This API key is read-only" : "Your role is view-only");
 
   if (!res) {
-    if (m === "GET") return json(fleet);
+    if (m === "GET") {
+      const billing = await billingSettings(ctx);
+      return json({ ...fleet, margin_percent: billing.margin_percent, margin_history: billing.history });
+    }
     if (m === "PATCH") {
       if (role !== "owner") throw new ApiError(403, "Only the fleet owner can change fleet settings");
       const b = await body<Partial<Fleet> & { accept_terms?: boolean }>(req);
@@ -714,6 +725,44 @@ function maskPartner(p: Partner) {
   return { ...rest, has_their_token: !!their_token, awaiting_registration: !!p.registration_token_hash };
 }
 
+async function billingSettings(ctx: Ctx): Promise<BillingSettings> {
+  return cleanBilling(await ctx.store.getSetting<Partial<BillingSettings>>("billing").catch(() => null) ?? DEFAULT_BILLING);
+}
+
+async function fleetStatement(ctx: Ctx, fleet: Fleet, month: string): Promise<FleetStatement> {
+  const { from, to } = monthPeriod(month);
+  const day = 864e5;
+  // A charge can end in the month after a slot that started before it; a record can arrive a day late.
+  const [bookings, vehicles, partners, billing, legal] = await Promise.all([
+    ctx.store.listBookings(fleet.id, { from: new Date(from.getTime() - 3 * day).toISOString(), to: new Date(to.getTime() + day).toISOString(), limit: 5000 }),
+    ctx.store.listVehicles(fleet.id),
+    ctx.store.listPartners(),
+    billingSettings(ctx),
+    legalInfo(ctx),
+  ]);
+  const locs = new Map<string, Location | null>();
+  for (const b of bookings) {
+    if (!b.cdr) continue;
+    const k = `${b.cpo_country_code}*${b.cpo_party_id}*${b.location_id}`;
+    if (!locs.has(k)) locs.set(k, (await ctx.store.getObject<Location>("locations", b.cpo_country_code, b.cpo_party_id, b.location_id).catch(() => null))?.data ?? null);
+  }
+  const loc = (b: BookingRow) => locs.get(`${b.cpo_country_code}*${b.cpo_party_id}*${b.location_id}`) ?? null;
+  const statement = buildStatement({
+    month,
+    bookings,
+    billing,
+    site: (b) => loc(b)?.name ?? b.location_id,
+    operator: (b) => operatorName(partners.find((p) => p.id === b.partner_id) ?? null, b.cpo_country_code, b.cpo_party_id, loc(b)),
+    vehicleName: (b) => vehicles.find((v) => v.id === b.vehicle_id)?.name ?? null,
+  });
+  return {
+    ...statement,
+    fleet: { id: fleet.id, name: fleet.name },
+    issuer: { company_name: legal.company_name || legal.trading_name || ctx.party.name, company_number: legal.company_number, registered_office: legal.registered_office, vat_number: legal.vat_number, contact_email: legal.contact_email },
+    generated_at: iso(ctx.now()),
+  };
+}
+
 /** Operator addresses must be public https URLs (this app's own address is allowed, for the simulator). */
 export function checkOperatorUrl(raw: string, ctx: Pick<Ctx, "baseUrl">): URL {
   let u: URL;
@@ -815,6 +864,19 @@ async function adminRoutes(req: Request, ctx: Ctx, user: AuthUser, seg: string[]
     }
   }
   if (res === "readiness" && m === "GET") return json(await readiness(ctx));
+  if (res === "billing") {
+    if (m === "GET") return json(await billingSettings(ctx));
+    if (m === "PUT") {
+      const b = await body<{ margin_percent?: number }>(req);
+      const before = await billingSettings(ctx);
+      const margin = cleanMargin(b.margin_percent);
+      if (margin === null) throw new ApiError(400, "Enter the margin as a number from 0 to 100");
+      const next = withMargin(before, margin, ctx.now());
+      await ctx.store.setSetting("billing", next);
+      await audit(ctx, req, user, { action: "billing.update", data: { margin_percent: next.margin_percent, vat_rate: next.vat_rate, previous_margin_percent: before.margin_percent } });
+      return json(next);
+    }
+  }
   // Read-only check of an operator's OCPI interface before connecting it (GET requests only).
   if (res === "probe" && m === "POST") {
     const b = await body<{ versions_url?: string; token?: string }>(req);

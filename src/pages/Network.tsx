@@ -111,6 +111,8 @@ export function NetworkPage() {
         </section>
       )}
 
+      <PricingPanel />
+
       <section className="panel section">
         <div className="panel-head"><h2>Your OCPI details</h2></div>
         <div className="panel-body stack gap-12">
@@ -273,6 +275,49 @@ function MessageLog() {
           </div>
         </Modal>
       )}
+    </section>
+  );
+}
+
+/** The platform's margin on operator prices: what every fleet pays is the operator's price plus this. */
+function PricingPanel() {
+  const { api, toast, refreshFleet } = useApp();
+  const [saved, setSaved] = useState<{ margin_percent: number; vat_rate: number; history: { from: string; margin_percent: number }[] } | null>(null);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void api<{ margin_percent: number; vat_rate: number; history: { from: string; margin_percent: number }[] }>("GET", "/admin/billing").then((b) => { setSaved(b); setValue(String(b.margin_percent)); }).catch(() => undefined);
+  }, [api]);
+  const n = Number(value);
+  const valid = value.trim() !== "" && Number.isFinite(n) && n >= 0 && n <= 100;
+  const example = valid ? Math.round(100 * (1 + n / 100) * 100) / 100 : null;
+  const save = async () => {
+    setBusy(true);
+    try {
+      const b = await api<{ margin_percent: number; vat_rate: number; history: { from: string; margin_percent: number }[] }>("PUT", "/admin/billing", { margin_percent: n });
+      setSaved(b);
+      setValue(String(b.margin_percent));
+      await refreshFleet();
+      toast(`Margin set to ${b.margin_percent}%`);
+    } catch (e) {
+      toast(e instanceof ApiFailure ? e.message : "Couldn't save the margin", "bad");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="panel section">
+      <div className="panel-head"><h2>Fleet pricing</h2><span className="tag right">Operator price + margin</span></div>
+      <div className="panel-body stack gap-12">
+        <p className="small muted">Fleets pay each operator's price plus this margin, then VAT. A new margin applies to charges that finish from now on; earlier charges and past statements keep the margin they had.</p>
+        <div className="row gap-12 wrap" style={{ alignItems: "flex-end" }}>
+          <Field label="Margin on operator prices (%)">{(id) => <input id={id} className="input" inputMode="decimal" style={{ width: 140 }} value={value} onChange={(e) => setValue(e.target.value)} />}</Field>
+          <button className="btn primary" disabled={!valid || busy || (saved != null && n === saved.margin_percent)} onClick={save}>{busy && <Spinner />}Save margin</button>
+        </div>
+        {!valid && value !== "" && <div className="error-text" role="alert">Enter a number from 0 to 100</div>}
+        {saved && saved.history.length > 0 && <p className="xs muted">Changes: {saved.history.slice(-4).reverse().map((h) => `${h.margin_percent}% from ${fmtDateTime(h.from, new Date())}`).join(" · ")}</p>}
+        {example != null && <p className="small pricing-example">A charge the operator prices at £100.00 ex VAT costs a fleet <b>£{example.toFixed(2)}</b> ex VAT, £{(example * (1 + (saved?.vat_rate ?? 0.2))).toFixed(2)} with VAT.</p>}
+      </div>
     </section>
   );
 }
