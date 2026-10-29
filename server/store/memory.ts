@@ -1,6 +1,7 @@
+import type { DepotVisit } from "../../shared/energy/depot";
 // In-memory Store — used by the browser demo (persisted to localStorage) and by the tests.
 import type {
-  ApiKey, ApiKeyRow, FleetWebhookRow, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
+  ApiKey, ApiKeyRow, FleetWebhookRow, FleetEnergyRow, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
   Partner, StoredObject, Vehicle, AuditEntry,
 } from "../../shared/model";
 import { iso, upper, uuid } from "../../shared/util";
@@ -24,10 +25,12 @@ export interface MemoryData {
   audit: AuditEntry[];
   apiKeys: ApiKeyRow[];
   webhooks?: FleetWebhookRow[];
+  energy?: FleetEnergyRow[];
+  depotVisits?: DepotVisit[];
 }
 
 export function emptyData(): MemoryData {
-  return { fleets: [], members: [], invites: [], admins: [], brand: null, vehicles: [], drivers: [], partners: [], objects: [], bookings: [], events: [], logs: [], sim: {}, settings: {}, audit: [], apiKeys: [], webhooks: [] };
+  return { fleets: [], members: [], invites: [], admins: [], brand: null, vehicles: [], drivers: [], partners: [], objects: [], bookings: [], events: [], logs: [], sim: {}, settings: {}, audit: [], apiKeys: [], webhooks: [], energy: [], depotVisits: [] };
 }
 
 const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
@@ -101,6 +104,8 @@ export class MemoryStore implements Store {
     this.data.drivers = this.data.drivers.filter((d) => d.fleet_id !== id);
     this.data.bookings = this.data.bookings.filter((b) => b.fleet_id !== id);
     this.data.events = this.data.events.filter((e) => e.fleet_id !== id);
+    this.data.energy = (this.data.energy ?? []).filter((e) => e.fleet_id !== id);
+    this.data.depotVisits = (this.data.depotVisits ?? []).filter((v) => v.fleet_id !== id);
     for (const l of this.data.logs) if (l.booking_id && bookingIds.has(l.booking_id)) l.booking_id = null;
     this.changed();
   }
@@ -167,6 +172,34 @@ export class MemoryStore implements Store {
   }
   async deleteWebhook(id: string) {
     this.data.webhooks = (this.data.webhooks ?? []).filter((w) => w.id !== id);
+    this.changed();
+  }
+  // depot energy ---------------------------------------------------------------------
+  async getEnergy(fleetId: string) {
+    const r = (this.data.energy ?? []).find((e) => e.fleet_id === fleetId);
+    return r ? clone(r) : null;
+  }
+  async saveEnergy(row: FleetEnergyRow) {
+    const list = (this.data.energy ??= []);
+    const i = list.findIndex((e) => e.fleet_id === row.fleet_id);
+    if (i >= 0) list[i] = clone(row); else list.push(clone(row));
+    this.changed();
+  }
+  async listEnergy() {
+    return clone(this.data.energy ?? []);
+  }
+  async listDepotVisits(fleetId: string, fromIso: string) {
+    return clone((this.data.depotVisits ?? []).filter((v) => v.fleet_id === fleetId && v.depart_at >= fromIso).sort((a, b) => a.arrive_at.localeCompare(b.arrive_at)));
+  }
+  async upsertDepotVisit(v: DepotVisit) {
+    const list = (this.data.depotVisits ??= []);
+    const i = list.findIndex((x) => x.id === v.id);
+    if (i >= 0) list[i] = clone(v); else list.push(clone(v));
+    this.changed();
+    return clone(v);
+  }
+  async deleteDepotVisit(id: string) {
+    this.data.depotVisits = (this.data.depotVisits ?? []).filter((v) => v.id !== id);
     this.changed();
   }
   async listApiKeys(fleetId: string): Promise<ApiKey[]> {

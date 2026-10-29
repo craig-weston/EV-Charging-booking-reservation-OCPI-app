@@ -1,7 +1,8 @@
+import type { DepotVisit } from "../../shared/energy/depot";
 // Store backed by Supabase Postgres through PostgREST (plain fetch, no SDK — runs on Workers).
 // Uses the service-role / secret key, so it bypasses RLS: the API layer enforces fleet access.
 import type {
-  ApiKey, ApiKeyRow, FleetWebhookRow, AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
+  ApiKey, ApiKeyRow, FleetWebhookRow, FleetEnergyRow, AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
   Partner, StoredObject, Vehicle,
 } from "../../shared/model";
 import { iso, upper } from "../../shared/util";
@@ -210,6 +211,27 @@ export class SupabaseStore implements Store {
   }
 
   // API keys -----------------------------------------------------------------------
+  // depot energy
+  async getEnergy(fleetId: string) {
+    const [r] = await this.rest.select<FleetEnergyRow>("fleet_energy", `select=*&fleet_id=eq.${enc(fleetId)}`);
+    return r ?? null;
+  }
+  async saveEnergy(row: FleetEnergyRow) {
+    await this.rest.insert("fleet_energy", row, { onConflict: "fleet_id", returning: false });
+  }
+  listEnergy() {
+    return this.rest.select<FleetEnergyRow>("fleet_energy", "select=*");
+  }
+  listDepotVisits(fleetId: string, fromIso: string) {
+    return this.rest.select<DepotVisit>("depot_visits", `select=*&fleet_id=eq.${enc(fleetId)}&depart_at=gte.${enc(fromIso)}&order=arrive_at.asc&limit=500`);
+  }
+  async upsertDepotVisit(v: DepotVisit) {
+    const [row] = await this.rest.insert<DepotVisit>("depot_visits", v, { onConflict: "id" });
+    return row ?? v;
+  }
+  async deleteDepotVisit(id: string) {
+    await this.rest.remove("depot_visits", `id=eq.${enc(id)}`);
+  }
   listWebhooks(fleetId: string) {
     return this.rest.select<FleetWebhookRow>("fleet_webhooks", `select=*&fleet_id=eq.${enc(fleetId)}&order=created_at.asc`);
   }

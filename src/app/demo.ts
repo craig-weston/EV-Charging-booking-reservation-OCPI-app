@@ -144,6 +144,7 @@ async function seed(api: Api, clock: DemoClock, flush: () => Promise<void>, stor
   await seedHistory(api, clock, flush, store, fleet, vehicles, drivers).catch((e) => console.warn("demo history skipped", e));
   await seedChargingNow(api, clock, flush, store, fleet, vehicles, drivers).catch((e) => console.warn("demo session skipped", e));
   clock.set(null);
+  await seedDepot(api, clock.now(), fleet, vehicles).catch((e) => console.warn("demo depot skipped", e));
   const now = clock.now();
   await api("POST", "/admin/simulator/connect");
   const net = await api<NetworkSnapshot>("GET", "/network");
@@ -291,4 +292,36 @@ async function seedHistory(api: Api, clock: DemoClock, flush: () => Promise<void
     if (t) b.updated_at = t.toISOString();
   }
   store.data.logs = store.data.logs.filter((l) => logsBefore.has(l.id));
+}
+
+/** The fleet's own yard: four 150 kW chargers on a 400 kW connection, five trucks overnight. */
+async function seedDepot(api: Api, now: Date, fleet: Fleet, vehicles: Vehicle[]) {
+  const depotId = "demo-yard";
+  const ch = (n: number) => ({ id: `bay-${n}`, name: `Bay ${n}`, station_id: `YARD-CP0${n}`, evse_id: 1, max_kw: 150 });
+  await api("PUT", `/fleets/${fleet.id}/energy`, { config: { depots: [{
+    id: depotId, name: "Northampton yard", postcode: "NN4 7AB", import_limit_kw: 400, site_load_kw: 60, goal: "balanced",
+    tariff: { kind: "tou", standard: 0.24, rates: [{ price: 0.13, start: "00:30", end: "07:30" }, { price: 0.34, start: "16:00", end: "19:00", days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"] }] },
+    chargers: [ch(1), ch(2), ch(3), ch(4)], control: { kind: "simulated" }, auto_dispatch: false,
+  }] } });
+  const tz = "Europe/London";
+  const today = startOfLocalDay(now, tz);
+  const at = (dayOffset: number, hh: number, mm = 0) => {
+    const [y, m, d] = localDateKey(new Date(addLocalDays(today, dayOffset, tz).getTime() + 12 * 60 * MINUTE), tz).split("-").map(Number);
+    return localToUtc(y, m, d, hh, mm, tz);
+  };
+  // Tonight if it's still afternoon; later in the day the trucks are arriving now.
+  const evening = at(0, 17, 30);
+  const shift = now.getTime() > evening.getTime() - 30 * MINUTE ? now.getTime() - evening.getTime() + 20 * MINUTE : 0;
+  const t = (d: Date) => new Date(d.getTime() + shift).toISOString();
+  const v = (name: string) => vehicles.find((x) => x.name === name)!.id;
+  const visits = [
+    { vehicle: "Rigid 03", charger: "bay-4", arrive: at(0, 17, 45), depart: at(1, 7, 0), soc: [38, 100] },
+    { vehicle: "Tractor 01", charger: "bay-1", arrive: at(0, 18, 30), depart: at(1, 5, 15), soc: [21, 90] },
+    { vehicle: "Reefer 04", charger: "bay-2", arrive: at(0, 19, 10), depart: at(1, 4, 30), soc: [34, 95] },
+    { vehicle: "Tanker 05", charger: "bay-3", arrive: at(0, 20, 15), depart: at(1, 6, 0), soc: [17, 85] },
+    { vehicle: "Tractor 02", charger: "bay-1", arrive: at(1, 5, 30), depart: at(1, 9, 0), soc: [44, 90] },
+  ];
+  for (const x of visits) {
+    await api("POST", `/fleets/${fleet.id}/depot-visits`, { depot_id: depotId, vehicle_id: v(x.vehicle), charger_id: x.charger, arrive_at: t(x.arrive), depart_at: t(x.depart), soc_start: x.soc[0], soc_target: x.soc[1] });
+  }
 }

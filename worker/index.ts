@@ -4,7 +4,8 @@
 //   everything else         → the static app (dist/, served by the ASSETS binding)
 // With Workers, static requests never reach this code (assets.run_worker_first lists only the
 // dynamic paths), so public/_headers applies to them; on Pages, _routes.json does the same.
-import { handle } from "../server/live";
+import { handle, isConfigured, liveCtx } from "../server/live";
+import { runDepotDispatch } from "../server/depot";
 import type { Env } from "../server/context";
 
 interface AssetsBinding {
@@ -27,5 +28,12 @@ export default {
       return handle({ request, env, waitUntil: (p) => ctx.waitUntil(p) });
     }
     return env.ASSETS.fetch(request);
+  },
+  /** Cron (wrangler.jsonc → triggers): every 15 minutes, re-plan depots set to dispatch automatically. */
+  async scheduled(_event: unknown, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
+    if (!isConfigured(env)) return;
+    const base = (env.PUBLIC_BASE_URL || "https://depotcharge.invalid").replace(/\/+$/, "");
+    const c = liveCtx({ request: new Request(`${base}/api/cron`), env, waitUntil: (p) => ctx.waitUntil(p) });
+    ctx.waitUntil(runDepotDispatch(c).then((n) => { if (n) console.log(`depot dispatch: ${n} depots`); }));
   },
 };

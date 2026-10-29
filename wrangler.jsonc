@@ -19,6 +19,8 @@
     "run_worker_first": ["/api/*", "/ocpi/*", "/sim/*"]
   },
   "keep_vars": true,
+  // Depot smart charging: re-plan and send schedules to chargers every 15 minutes (server/depot.ts).
+  "triggers": { "crons": ["*/15 * * * *"] },
   // Rate limits shared by every isolate in a Cloudflare location (Workers Rate Limiting, wrangler
   // 4.36+). Per client IP; the in-memory limiter in server/security.ts still applies as well.
   // namespace_id must be unique in your Cloudflare account; change it if another Worker uses it.

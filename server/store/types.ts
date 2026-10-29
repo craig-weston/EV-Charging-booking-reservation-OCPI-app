@@ -1,8 +1,9 @@
 // Persistence boundary. Two implementations:
 //  - SupabaseStore (Postgres via PostgREST) for production on Cloudflare Pages
 //  - MemoryStore for the in-browser demo and the test-suite
+import type { DepotVisit } from "../../shared/energy/depot";
 import type {
-  ApiKey, ApiKeyRow, FleetWebhookRow, AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
+  ApiKey, ApiKeyRow, FleetWebhookRow, FleetEnergyRow, AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
   Partner, StoredObject, Vehicle,
 } from "../../shared/model";
 
@@ -72,6 +73,16 @@ export interface Store {
   deleteVehicle(id: string): Promise<void>;
   findVehicleByToken(uid: string): Promise<Vehicle | null>;
   listTokenVehicles(opts: { offset: number; limit: number; dateFrom?: string; dateTo?: string }): Promise<Page<Vehicle>>;
+
+  // depot energy ------------------------------------------------------------------
+  getEnergy(fleetId: string): Promise<FleetEnergyRow | null>;
+  saveEnergy(row: FleetEnergyRow): Promise<void>;
+  /** Every fleet's energy row, for the 15-minute dispatch job. */
+  listEnergy(): Promise<FleetEnergyRow[]>;
+  /** Visits that leave at or after `fromIso`, earliest arrival first. */
+  listDepotVisits(fleetId: string, fromIso: string): Promise<DepotVisit[]>;
+  upsertDepotVisit(v: DepotVisit): Promise<DepotVisit>;
+  deleteDepotVisit(id: string): Promise<void>;
 
   listDrivers(fleetId: string): Promise<Driver[]>;
   getDriver(id: string): Promise<Driver | null>;

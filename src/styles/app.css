@@ -1450,3 +1450,71 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
 @media (max-width: 900px) { .timing-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 480px) { .timing-tiles { grid-template-columns: minmax(0, 1fr); } }
 .good-timing { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--ok); background: var(--ok-bg); border-radius: var(--r-sm); padding: 7px 10px; }
+
+/* Settings → more pages (phones only: the tab bar has no room for them) */
+.more-links { display: none; }
+@media (max-width: 900px) {
+  .more-links { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; margin-bottom: 16px; }
+  .more-links a { display: flex; align-items: center; gap: 10px; padding: 13px 14px; background: var(--surface); color: var(--ink); text-decoration: none; font-weight: 560; }
+  .more-links a svg:last-child { margin-left: auto; color: var(--faint); }
+}
+
+/* ------------------------------------------------------------------ depot charging */
+:root { --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4; --series-6: #008300; --series-7: #6250d6; --series-8: #e34948; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767; }
+}
+:root[data-theme="dark"] { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767; }
+.s1 { --c: var(--series-1); } .s2 { --c: var(--series-2); } .s3 { --c: var(--series-3); } .s4 { --c: var(--series-4); }
+.s5 { --c: var(--series-5); } .s6 { --c: var(--series-6); } .s7 { --c: var(--series-7); } .s8 { --c: var(--series-8); }
+.kpi-warn { border-color: var(--bad); }
+.kpi-warn .kpi-label { color: var(--bad); }
+.load-chart { position: relative; }
+.lc-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--fs-xs); color: var(--muted); margin-bottom: 8px; }
+.lc-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--c); flex: none; }
+.sw.limit { height: 0; border-top: 2px dashed var(--ink-2); border-radius: 0; width: 16px; }
+.lc-scroll { overflow-x: auto; }
+.lc-scroll svg { width: 100%; height: auto; display: block; }
+.load-chart .seg { fill: var(--c); }
+.load-chart .seg.on { filter: brightness(1.08); }
+.load-chart .price-cell { fill: var(--brand); }
+.lc-limit { stroke: var(--ink-2); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.lc-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.price-key { width: 48px; height: 8px; border-radius: 3px; background: linear-gradient(90deg, color-mix(in oklab, var(--brand) 90%, var(--surface)), color-mix(in oklab, var(--brand) 12%, var(--surface))); }
+.lc-tip { display: flex; flex-direction: column; gap: 2px; min-width: 190px; }
+.truck-plan { list-style: none; margin: 0; padding: 0; }
+.truck-plan li { display: grid; grid-template-columns: minmax(150px, 1.1fr) minmax(150px, 1fr) minmax(170px, 1.2fr) minmax(120px, 1.4fr) minmax(150px, auto) 36px; gap: 14px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line); }
+.truck-plan li:first-child { border-top: 0; }
+.tp-id { display: flex; gap: 10px; align-items: center; }
+.tp-when div { white-space: nowrap; }
+.tp-when .muted { display: inline-block; width: 56px; }
+.tp-bar { position: relative; height: 8px; border-radius: 4px; background: var(--surface-3); margin: 5px 0 4px; overflow: hidden; }
+.tp-bar .from { position: absolute; left: 0; top: 0; bottom: 0; background: var(--line-2); }
+.tp-bar .add { position: absolute; top: 0; bottom: 0; background: var(--ok); }
+.tp-bar i { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
+.tp-mini { position: relative; height: 18px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.tp-mini span { position: absolute; top: 0; bottom: 0; background: var(--c); }
+.tp-status { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.tp-status .tag { height: auto; padding: 4px 8px; }
+.tag.ok { background: var(--ok-bg); color: var(--ok); }
+.dispatch-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.dispatch-list li { display: flex; align-items: center; gap: 8px; }
+.dispatch-list li svg { color: var(--ok); }
+.linklike { background: none; border: 0; padding: 0; color: var(--brand-text); text-decoration: underline; cursor: pointer; font: inherit; }
+.rate-row, .charger-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rate-row .input { width: 70px; }
+.rate-row input[type="time"] { width: 104px; }
+.charger-row .input:first-child { flex: 1 1 120px; }
+.charger-row .input:nth-child(2) { flex: 1 1 110px; }
+.charger-row .input:nth-child(3) { width: 80px; }
+@media (max-width: 1100px) {
+  .truck-plan li { grid-template-columns: minmax(140px, 1fr) minmax(160px, 1fr) 36px; grid-template-areas: "id status edit" "when soc soc" "mini mini mini"; }
+  .tp-id { grid-area: id; } .tp-when { grid-area: when; } .tp-soc { grid-area: soc; } .tp-mini { grid-area: mini; } .tp-status { grid-area: status; } .tp-edit { grid-area: edit; }
+}
+@media (max-width: 560px) {
+  .truck-plan li { grid-template-columns: minmax(0, 1fr) 36px; grid-template-areas: "id edit" "status status" "when when" "soc soc" "mini mini"; gap: 8px; }
+}
+.energy .panel-head { flex-wrap: wrap; row-gap: 8px; }
+.energy .panel-head .right { flex-wrap: wrap; }
+@media (max-width: 560px) { .energy .panel-head .right { margin-left: 0; width: 100%; justify-content: space-between; } }
