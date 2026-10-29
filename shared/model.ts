@@ -462,3 +462,22 @@ export interface PassView {
 }
 
 export type { Booking, BookingRequest, CDR, Session };
+
+// ---- Depot energy (shared/energy/depot.ts holds the settings shape) --------------------------
+
+export interface ChargerDispatchResult { charger_id: string; ok: boolean; status: number | null; message: string }
+export interface DepotDispatch { at: string; ok: boolean; by: "auto" | "manual"; results: ChargerDispatchResult[] }
+
+/** What the app remembers about energy control: last schedules sent per depot. */
+export interface EnergyState {
+  dispatch: Record<string, DepotDispatch>;
+}
+
+export interface FleetEnergyRow {
+  fleet_id: string;
+  config: import("./energy/depot").EnergyConfig;
+  /** Sealed credentials per depot (CitrineOS token or webhook signing secret). Never sent to browsers. */
+  secrets: Record<string, string>;
+  state: EnergyState;
+  updated_at: string;
+}

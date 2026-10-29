@@ -12,6 +12,7 @@ import { FleetPage } from "./pages/Fleet";
 import { NetworkPage } from "./pages/Network";
 import { StatementsPage } from "./pages/Statements";
 import { SavingsPage } from "./pages/Savings";
+import { EnergyPage } from "./pages/Energy";
 import { TripPage } from "./pages/Trip";
 import { OperatorsPage } from "./pages/Operators";
 import { OperatorGuidePage } from "./pages/OperatorGuide";
@@ -47,6 +48,7 @@ const NAV: { path: string; label: string; icon: IconName; admin?: boolean }[] = 
   { path: "/book", label: "Book", icon: "book" },
   { path: "/bookings", label: "Bookings", icon: "bookings" },
   { path: "/fleet", label: "Fleet", icon: "fleet" },
+  { path: "/energy", label: "Depot smart charging", icon: "zap" },
   { path: "/savings", label: "Savings", icon: "leaf" },
   { path: "/network", label: "Network", icon: "network", admin: true },
   { path: "/compliance", label: "Compliance", icon: "shieldCheck", admin: true },
@@ -156,6 +158,7 @@ function Shell() {
             : page === "bookings" ? <BookingsPage openBooking={openBooking} />
             : page === "statements" ? <StatementsPage />
             : page === "savings" ? <SavingsPage />
+            : page === "energy" ? <EnergyPage />
             : page === "fleet" ? <FleetPage />
             : page === "network" ? <AdminMfaGate>{route.segments[1] === "connect" ? <OperatorGuidePage /> : <NetworkPage />}</AdminMfaGate>
             : page === "settings" ? <SettingsPage />
@@ -165,7 +168,7 @@ function Shell() {
       </div>
 
       <nav className="tabbar" aria-label="Main">
-        {nav.filter((n) => n.path !== "/network" && n.path !== "/compliance" && n.path !== "/settings" && n.path !== "/savings").concat([{ path: "/settings", label: "More", icon: "more" }]).map((n) => (
+        {nav.filter((n) => n.path !== "/network" && n.path !== "/compliance" && n.path !== "/settings" && n.path !== "/savings" && n.path !== "/energy").concat([{ path: "/settings", label: "More", icon: "more" }]).map((n) => (
           <a key={n.path} href={href(n.path)} aria-current={active(n.path) ? "page" : undefined}><Icon name={n.icon} />{n.label}</a>
         ))}
       </nav>

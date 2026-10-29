@@ -20,6 +20,8 @@ import { sampleDrivers, sampleVehicles } from "./samples";
 import { notifyChannels, notifyDriver } from "../notify";
 import { redactPath, reportError, scrub } from "../alerts";
 import { carbonFor } from "../energy";
+import { depotPlan, dispatchDepot, energyRow } from "../depot";
+import { cleanEnergy, type DepotVisit } from "../../shared/energy/depot";
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify({ data }), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
@@ -81,7 +83,8 @@ function apiKeyAllows(key: NonNullable<AuthUser["apiKey"]>, method: string, seg:
   if (seg[0] === "energy" && seg[1] === "carbon" && method === "GET") return true;
   if (seg[0] !== "fleets" || seg[1] !== key.fleet_id) return false;
   if (seg.length === 2) return method === "GET";
-  return ["vehicles", "drivers", "bookings"].includes(seg[2]);
+  if (seg[2] === "depots" && method === "GET") return true; // read depot charging plans
+  return ["vehicles", "drivers", "bookings", "depot-visits"].includes(seg[2]);
 }
 
 async function clientError(ctx: Ctx, req: Request): Promise<{ ref: string }> {
@@ -336,7 +339,28 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
     if (!validMonth(month)) throw new ApiError(400, "Month must look like 2026-10");
     return json(await fleetStatement(ctx, fleet, month));
   }
+  // Depot energy settings: anyone reads, owners change (credentials are write-only).
+  if (res === "energy" && !id) return energyRoutes(req, ctx, user, fleetId, role);
   if (write && role === "viewer") throw new ApiError(403, user.apiKey ? "This API key is read-only" : "Your role is view-only");
+  if (res === "depot-visits") return visitRoutes(req, ctx, user, fleetId, id);
+  if (res === "depots" && id && action === "plan" && m === "GET") {
+    const row = await energyRow(ctx, fleetId);
+    const depot = row.config.depots.find((d) => d.id === id);
+    if (!depot) throw new ApiError(404, "Depot not found");
+    const [visits, vehicles] = await Promise.all([ctx.store.listDepotVisits(fleetId, iso(ctx.now())), ctx.store.listVehicles(fleetId)]);
+    return json({ ...(await depotPlan(ctx, depot, visits, vehicles)), dispatch: row.state?.dispatch?.[depot.id] ?? null });
+  }
+  if (res === "depots" && id && action === "dispatch" && m === "POST") {
+    const row = await energyRow(ctx, fleetId);
+    const depot = row.config.depots.find((d) => d.id === id);
+    if (!depot) throw new ApiError(404, "Depot not found");
+    if (!depot.chargers.length) throw new ApiError(409, "Add the depot's chargers first");
+    const [visits, vehicles] = await Promise.all([ctx.store.listDepotVisits(fleetId, iso(ctx.now())), ctx.store.listVehicles(fleetId)]);
+    const view = await depotPlan(ctx, depot, visits, vehicles);
+    const d = await dispatchDepot(ctx, row, depot, view, "manual");
+    await audit(ctx, req, user, { fleet_id: fleetId, action: "depot.dispatch", target: depot.name, data: { depot_id: depot.id, ok: d.ok, chargers: d.results.length } });
+    return json(d);
+  }
 
   if (!res) {
     if (m === "GET") {
@@ -602,6 +626,90 @@ async function webhookRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: st
     return json(r);
   }
   return err(404, "Not found");
+}
+
+// ------------------------------------------------------------------ depot energy
+async function energyRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: string, role: MemberRole): Promise<Response> {
+  const row = await energyRow(ctx, fleetId);
+  const view = () => ({ config: row.config, state: row.state, has_secret: Object.fromEntries(Object.keys(row.secrets ?? {}).map((k) => [k, true])) });
+  if (req.method === "GET") return json(view());
+  if (req.method !== "PUT") return err(405, "Use GET or PUT");
+  if (user.apiKey || role !== "owner") throw new ApiError(403, "Only fleet owners can change depot settings");
+  const b = await body<{ config?: unknown; secrets?: Record<string, string | null> }>(req);
+  const config = cleanEnergy(b.config);
+  for (const d of config.depots) {
+    if (d.control.kind === "citrineos") checkOperatorUrl(d.control.base_url, ctx, "The CitrineOS address", "https://csms.example.com");
+    if (d.control.kind === "webhook") checkOperatorUrl(d.control.url, ctx, "The depot system's address", "https://depot.example.com/hooks/charging");
+  }
+  const secrets: Record<string, string> = {};
+  for (const d of config.depots) if (row.secrets?.[d.id]) secrets[d.id] = row.secrets[d.id];
+  for (const [depotId, value] of Object.entries(b.secrets ?? {})) {
+    const d = config.depots.find((x) => x.id === depotId);
+    if (!d) continue;
+    if (value === null || value === "") { delete secrets[depotId]; if (d.control.kind === "citrineos") delete d.control.token_hint; if (d.control.kind === "webhook") delete d.control.secret_hint; continue; }
+    const v = String(value).trim().slice(0, 500);
+    secrets[depotId] = (await sealSecret(v, ctx.env.DATA_ENCRYPTION_KEY))!;
+    if (d.control.kind === "citrineos") d.control.token_hint = hint(v) ?? "";
+    if (d.control.kind === "webhook") d.control.secret_hint = hint(v) ?? "";
+  }
+  // Keep hints for secrets that are still stored.
+  for (const d of config.depots) {
+    const prev = row.config.depots.find((x) => x.id === d.id);
+    if (!secrets[d.id]) continue;
+    if (d.control.kind === "citrineos" && !d.control.token_hint && prev?.control.kind === "citrineos") d.control.token_hint = prev.control.token_hint;
+    if (d.control.kind === "webhook" && !d.control.secret_hint && prev?.control.kind === "webhook") d.control.secret_hint = prev.control.secret_hint;
+  }
+  row.config = config; row.secrets = secrets; row.updated_at = iso(ctx.now());
+  await ctx.store.saveEnergy(row);
+  await audit(ctx, req, user, { fleet_id: fleetId, action: "energy.update", target: null, data: { depots: config.depots.map((d) => ({ id: d.id, name: d.name, chargers: d.chargers.length, control: d.control.kind, auto: d.auto_dispatch })) } });
+  return json(view());
+}
+
+async function visitRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: string, id: string | undefined): Promise<Response> {
+  const m = req.method;
+  const now = ctx.now();
+  if (!id && m === "GET") {
+    const url = new URL(req.url);
+    const from = url.searchParams.get("from");
+    return json(await ctx.store.listDepotVisits(fleetId, from && !Number.isNaN(Date.parse(from)) ? new Date(from).toISOString() : iso(new Date(now.getTime() - 24 * 3_600_000))));
+  }
+  const row = await energyRow(ctx, fleetId);
+  const existing = id ? (await ctx.store.listDepotVisits(fleetId, "1970-01-01T00:00:00Z")).find((v) => v.id === id) : undefined;
+  if (id && !existing) throw new ApiError(404, "Visit not found");
+  if (m === "DELETE" && existing) {
+    await ctx.store.deleteDepotVisit(existing.id);
+    return json({ ok: true });
+  }
+  if ((m === "POST" && !id) || (m === "PATCH" && existing)) {
+    const b = await body<Partial<DepotVisit>>(req);
+    const merged = { ...(existing ?? {}), ...b } as Partial<DepotVisit>;
+    const depot = row.config.depots.find((d) => d.id === merged.depot_id);
+    if (!depot) throw new ApiError(400, "Choose one of your depots");
+    const vehicle = merged.vehicle_id ? await ctx.store.getVehicle(merged.vehicle_id) : null;
+    if (!vehicle || vehicle.fleet_id !== fleetId) throw new ApiError(400, "Choose one of your vehicles");
+    const charger = merged.charger_id ? depot.chargers.find((c) => c.id === merged.charger_id) ?? null : null;
+    if (merged.charger_id && !charger) throw new ApiError(400, "That charger isn't at this depot");
+    const arrive = new Date(merged.arrive_at ?? ""), depart = new Date(merged.depart_at ?? "");
+    if (Number.isNaN(arrive.getTime()) || Number.isNaN(depart.getTime())) throw new ApiError(400, "Give arrival and departure times");
+    if (depart <= arrive) throw new ApiError(400, "Departure must be after arrival");
+    if (depart.getTime() - arrive.getTime() > 7 * 24 * 3_600_000) throw new ApiError(400, "A depot visit can be at most a week long");
+    const pct = (v: unknown, name: string) => { const n = Number(v); if (!Number.isFinite(n) || n < 0 || n > 100) throw new ApiError(400, `${name} must be between 0 and 100%`); return Math.round(n); };
+    const soc_start = pct(merged.soc_start, "Charge on arrival"), soc_target = pct(merged.soc_target, "Charge needed");
+    const status = (["planned", "plugged_in", "done", "cancelled"] as const).includes(merged.status as never) ? merged.status! : "planned";
+    if (charger && status !== "cancelled" && status !== "done") {
+      const others = (await ctx.store.listDepotVisits(fleetId, arrive.toISOString())).filter((v) => v.id !== existing?.id && v.charger_id === charger.id && v.status !== "cancelled" && v.status !== "done");
+      const clash = others.find((v) => new Date(v.arrive_at) < depart && new Date(v.depart_at) > arrive);
+      if (clash) throw new ApiError(409, `${charger.name} is already taken then. Pick another charger or time.`);
+    }
+    const v: DepotVisit = {
+      id: existing?.id ?? uuid(), fleet_id: fleetId, depot_id: depot.id, vehicle_id: vehicle.id, charger_id: charger?.id ?? null,
+      arrive_at: arrive.toISOString(), depart_at: depart.toISOString(), soc_start, soc_target, status,
+      created_at: existing?.created_at ?? iso(now), updated_at: iso(now),
+    };
+    const saved = await ctx.store.upsertDepotVisit(v);
+    return json(saved, existing ? 200 : 201);
+  }
+  return err(405, "Not allowed");
 }
 
 // ------------------------------------------------------------------ team

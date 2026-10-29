@@ -19,6 +19,12 @@ export function SettingsPage() {
   return (
     <div className="page">
       <div className="page-head"><div><h1>Settings</h1><div className="sub">Your fleet, how the app looks, and the brand your customers and drivers see.</div></div></div>
+      <nav className="more-links" aria-label="More pages">
+        <a href="#/energy"><Icon name="zap" size="sm" />Depot smart charging<Icon name="chevronRight" size="sm" /></a>
+        <a href="#/savings"><Icon name="leaf" size="sm" />Savings<Icon name="chevronRight" size="sm" /></a>
+        <a href="#/statements"><Icon name="fileText" size="sm" />Statements<Icon name="chevronRight" size="sm" /></a>
+        {me?.is_admin && <a href="#/network"><Icon name="network" size="sm" />Network<Icon name="chevronRight" size="sm" /></a>}
+      </nav>
       <div className="settings-grid">
         <nav className="settings-nav" aria-label="Settings sections">
           <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-fleet")?.scrollIntoView({ behavior: "smooth" }); }}>Fleet</a>
