@@ -92,8 +92,9 @@ export function StatementsPage() {
               <div className="small muted">{monthName(s.month)}</div>
             </div>
             <div className="stmt-total">
-              <div className="xs muted label-caps">{s.totals.credits ? "Amount due" : "Total incl. VAT"}</div>
-              <div className="stmt-big num">{fmtMoney(s.totals.credits ? s.totals.due : s.totals.gross, s.currency)}</div>
+              <div className="xs muted label-caps">Total incl. VAT</div>
+              <div className="stmt-big num">{fmtMoney(s.totals.gross, s.currency)}</div>
+              {s.totals.credits > 0 && <div className="small ok-text">{fmtMoney(s.totals.due, s.currency)} due after {fmtMoney(s.totals.credits, s.currency)} flexibility credits</div>}
               <div className="xs muted">{s.totals.charges} {s.totals.charges === 1 ? "charge" : "charges"}, {KWH.format(s.totals.kwh)} kWh</div>
             </div>
           </section>

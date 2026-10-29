@@ -393,14 +393,14 @@ function VisitDrawer({ depot, visit, vehicles, now, onClose, onSaved, existing }
 
 function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyView; depotId: string | null; onClose(): void; onSaved(e: EnergyView, id: string): void }) {
   const { api, fleetId, toast } = useApp();
-  const [cfg, setCfg] = useState<EnergyConfig>(() => (energy.config.depots.length ? structuredClone(energy.config) : { depots: [newDepot("Main depot")] }));
+  const [cfg, setCfg] = useState<EnergyConfig>(() => (energy.config.depots.length ? structuredClone(energy.config) : { ...energy.config, depots: [newDepot("Main depot")] }));
   const [id, setId] = useState(depotId ?? cfg.depots[0].id);
   const [secret, setSecret] = useState("");
   const [flexSecret, setFlexSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const d = cfg.depots.find((x) => x.id === id) ?? cfg.depots[0];
-  const set = (patch: Partial<Depot>) => setCfg({ depots: cfg.depots.map((x) => (x.id === d.id ? { ...x, ...patch } : x)) });
+  const set = (patch: Partial<Depot>) => setCfg({ ...cfg, depots: cfg.depots.map((x) => (x.id === d.id ? { ...x, ...patch } : x)) });
   const setRate = (i: number, patch: Partial<DepotRate>) => set({ tariff: { ...d.tariff, rates: d.tariff.rates.map((r, j) => (j === i ? { ...r, ...patch } : r)) } });
   const hasSecret = energy.has_secret[d.id];
 
@@ -538,7 +538,7 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
           )}
         </div>
         {err && <div className="error-text" role="alert">{err}</div>}
-        <button className="btn sm ghost" style={{ alignSelf: "flex-start" }} onClick={() => { const nd = newDepot(`Depot ${cfg.depots.length + 1}`); setCfg({ depots: [...cfg.depots, nd] }); setId(nd.id); }}><Icon name="plus" size="sm" />Add another depot</button>
+        <button className="btn sm ghost" style={{ alignSelf: "flex-start" }} onClick={() => { const nd = newDepot(`Depot ${cfg.depots.length + 1}`); setCfg({ ...cfg, depots: [...cfg.depots, nd] }); setId(nd.id); }}><Icon name="plus" size="sm" />Add another depot</button>
       </div>
     </Drawer>
   );
