@@ -20,8 +20,10 @@ export interface BillingSettings {
   /** Every margin and when it took effect, oldest first: a charge is priced at the margin in force
    *  when it finished, so changing the margin never re-prices a month already billed. */
   history: MarginChange[];
+  /** The fleet's share of grid flexibility payments, percent (the rest is the platform's fee). */
+  flex_fleet_share: number;
 }
-export const DEFAULT_BILLING: BillingSettings = { margin_percent: 0, vat_rate: DEFAULT_VAT_RATE, history: [] };
+export const DEFAULT_BILLING: BillingSettings = { margin_percent: 0, vat_rate: DEFAULT_VAT_RATE, history: [], flex_fleet_share: 80 };
 
 /** The margin in force at a moment (0 before any margin was set). */
 export function marginAt(history: MarginChange[] | undefined, at: string): number {
@@ -60,9 +62,11 @@ export interface Statement {
   margin_percent: number | null;
   vat_rate: number;
   lines: StatementLine[];
-  totals: { kwh: number; operator_cost: number; margin: number; net: number; vat: number; gross: number; charges: number };
+  totals: { kwh: number; operator_cost: number; margin: number; net: number; vat: number; gross: number; charges: number; credits: number; due: number };
   /** Currencies on charge records that differ from the statement's (left out of the totals). */
   other_currencies: string[];
+  /** Grid flexibility payments credited to the fleet this month. */
+  credits: StatementCredit[];
 }
 
 const pennies = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -112,6 +116,7 @@ export function cleanBilling(input: Partial<BillingSettings> | null | undefined)
     margin_percent: cleanMargin(input?.margin_percent) ?? history.at(-1)?.margin_percent ?? DEFAULT_BILLING.margin_percent,
     vat_rate: Number.isFinite(v) && v >= 0 && v <= 0.5 ? v : DEFAULT_BILLING.vat_rate,
     history,
+    flex_fleet_share: (() => { const f = Number(input?.flex_fleet_share); return input?.flex_fleet_share != null && Number.isFinite(f) && f >= 0 && f <= 100 ? Math.round(f * 10) / 10 : DEFAULT_BILLING.flex_fleet_share; })(),
   };
 }
 
@@ -121,9 +126,24 @@ export function withMargin(b: BillingSettings, margin: number, now: Date): Billi
   return cleanBilling({ ...b, margin_percent: margin, history: [...b.history.filter((h) => h.from < at), { from: at, margin_percent: margin }] });
 }
 
+/** A grid flexibility payment credited to the fleet (its share), shown after the charges. */
+export interface StatementCredit {
+  event_id: string;
+  at: string;
+  depot: string;
+  programme: string;
+  direction: "down" | "up";
+  kwh: number;
+  /** Fleet's share, in the statement currency. */
+  amount: number;
+  estimated: boolean;
+}
+
 export interface StatementInput {
   month: string;
   bookings: BookingRow[];
+  /** Flexibility credits for the month (already the fleet's share). */
+  credits?: StatementCredit[];
   billing: BillingSettings;
   site(b: BookingRow): string;
   operator(b: BookingRow): string;
@@ -133,6 +153,12 @@ export interface StatementInput {
 
 /** Every charge record that ended in the month, priced at the operator's price plus the margin. */
 export function buildStatement(i: StatementInput): Statement {
+  const s = buildCharges(i);
+  s.totals.due = pennies(s.totals.gross - s.totals.credits);
+  return s;
+}
+
+function buildCharges(i: StatementInput): Statement {
   const { from, to } = monthPeriod(i.month);
   const inMonth = i.bookings.filter((b): b is BookingRow & { cdr: CdrSummary } => {
     if (!b.cdr) return false;
@@ -178,8 +204,11 @@ export function buildStatement(i: StatementInput): Statement {
       vat,
       gross: pennies(net + vat),
       charges: lines.length,
+      credits: pennies((i.credits ?? []).filter((c) => { const t = Date.parse(c.at); return t >= from.getTime() && t < to.getTime(); }).reduce((s, c) => s + c.amount, 0)),
+      due: 0,
     },
     other_currencies: [...other],
+    credits: (i.credits ?? []).filter((c) => { const t = Date.parse(c.at); return t >= from.getTime() && t < to.getTime(); }).sort((a, b) => a.at.localeCompare(b.at)),
   };
 }
 
@@ -206,6 +235,13 @@ export function statementCsv(s: Statement, fleetName: string): string {
     ["Total ex VAT", null, null, null, null, null, null, s.totals.kwh, s.totals.operator_cost.toFixed(2), null, s.totals.margin.toFixed(2), s.totals.net.toFixed(2)],
     [`VAT ${Math.round(s.vat_rate * 1000) / 10}%`, null, null, null, null, null, null, null, null, null, null, s.totals.vat.toFixed(2)],
     ["Total incl. VAT", null, null, null, null, null, null, null, null, null, null, s.totals.gross.toFixed(2)],
+    ...(s.credits?.length ? [
+      [],
+      ["Grid flexibility credits", "Event", "Ended", "Depot", "Programme", "Direction", null, "kWh shifted", null, null, null, `Credit (${s.currency})`],
+      ...s.credits.map((c) => ["Grid flexibility credit", c.event_id, c.at, c.depot, c.programme, c.direction === "down" ? "Turn down" : "Turn up", null, c.kwh, null, null, null, (-c.amount).toFixed(2)]),
+      ["Credits total (no VAT)", null, null, null, null, null, null, null, null, null, null, (-s.totals.credits).toFixed(2)],
+      ["Amount due", null, null, null, null, null, null, null, null, null, null, s.totals.due.toFixed(2)],
+    ] : []),
   ];
   return rows.map((r) => r.map(esc).join(",")).join("\r\n") + "\r\n";
 }

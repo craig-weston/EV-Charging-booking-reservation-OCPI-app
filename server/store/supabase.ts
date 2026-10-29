@@ -1,4 +1,5 @@
 import type { DepotVisit } from "../../shared/energy/depot";
+import type { FlexEvent } from "../../shared/energy/flex";
 // Store backed by Supabase Postgres through PostgREST (plain fetch, no SDK — runs on Workers).
 // Uses the service-role / secret key, so it bypasses RLS: the API layer enforces fleet access.
 import type {
@@ -228,6 +229,21 @@ export class SupabaseStore implements Store {
   async upsertDepotVisit(v: DepotVisit) {
     const [row] = await this.rest.insert<DepotVisit>("depot_visits", v, { onConflict: "id" });
     return row ?? v;
+  }
+  listFlexEvents(fleetId: string, fromIso: string) {
+    return this.rest.select<FlexEvent>("flex_events", `select=*&fleet_id=eq.${enc(fleetId)}&end_at=gte.${enc(fromIso)}&order=start_at.asc&limit=500`);
+  }
+  async getFlexEvent(id: string) {
+    const [r] = await this.rest.select<FlexEvent>("flex_events", `select=*&id=eq.${enc(id)}`);
+    return r ?? null;
+  }
+  async findFlexEventByProvider(fleetId: string, providerEventId: string) {
+    const [r] = await this.rest.select<FlexEvent>("flex_events", `select=*&fleet_id=eq.${enc(fleetId)}&provider_event_id=eq.${enc(providerEventId)}`);
+    return r ?? null;
+  }
+  async upsertFlexEvent(e: FlexEvent) {
+    const [row] = await this.rest.insert<FlexEvent>("flex_events", e, { onConflict: "id" });
+    return row ?? e;
   }
   async deleteDepotVisit(id: string) {
     await this.rest.remove("depot_visits", `id=eq.${enc(id)}`);

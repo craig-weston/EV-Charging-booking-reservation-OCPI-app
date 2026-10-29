@@ -6,6 +6,7 @@
 // dynamic paths), so public/_headers applies to them; on Pages, _routes.json does the same.
 import { handle, isConfigured, liveCtx } from "../server/live";
 import { runDepotDispatch } from "../server/depot";
+import { runFlexHousekeeping } from "../server/flex";
 import type { Env } from "../server/context";
 
 interface AssetsBinding {
@@ -34,6 +35,6 @@ export default {
     if (!isConfigured(env)) return;
     const base = (env.PUBLIC_BASE_URL || "https://depotcharge.invalid").replace(/\/+$/, "");
     const c = liveCtx({ request: new Request(`${base}/api/cron`), env, waitUntil: (p) => ctx.waitUntil(p) });
-    ctx.waitUntil(runDepotDispatch(c).then((n) => { if (n) console.log(`depot dispatch: ${n} depots`); }));
+    ctx.waitUntil(runFlexHousekeeping(c).then((n) => { if (n) console.log(`flex: ${n} events closed`); }).then(() => runDepotDispatch(c)).then((n) => { if (n) console.log(`depot dispatch: ${n} depots`); }));
   },
 };

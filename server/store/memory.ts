@@ -1,4 +1,5 @@
 import type { DepotVisit } from "../../shared/energy/depot";
+import type { FlexEvent } from "../../shared/energy/flex";
 // In-memory Store — used by the browser demo (persisted to localStorage) and by the tests.
 import type {
   ApiKey, ApiKeyRow, FleetWebhookRow, FleetEnergyRow, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
@@ -27,10 +28,11 @@ export interface MemoryData {
   webhooks?: FleetWebhookRow[];
   energy?: FleetEnergyRow[];
   depotVisits?: DepotVisit[];
+  flexEvents?: FlexEvent[];
 }
 
 export function emptyData(): MemoryData {
-  return { fleets: [], members: [], invites: [], admins: [], brand: null, vehicles: [], drivers: [], partners: [], objects: [], bookings: [], events: [], logs: [], sim: {}, settings: {}, audit: [], apiKeys: [], webhooks: [], energy: [], depotVisits: [] };
+  return { fleets: [], members: [], invites: [], admins: [], brand: null, vehicles: [], drivers: [], partners: [], objects: [], bookings: [], events: [], logs: [], sim: {}, settings: {}, audit: [], apiKeys: [], webhooks: [], energy: [], depotVisits: [], flexEvents: [] };
 }
 
 const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
@@ -106,6 +108,7 @@ export class MemoryStore implements Store {
     this.data.events = this.data.events.filter((e) => e.fleet_id !== id);
     this.data.energy = (this.data.energy ?? []).filter((e) => e.fleet_id !== id);
     this.data.depotVisits = (this.data.depotVisits ?? []).filter((v) => v.fleet_id !== id);
+    this.data.flexEvents = (this.data.flexEvents ?? []).filter((e) => e.fleet_id !== id);
     for (const l of this.data.logs) if (l.booking_id && bookingIds.has(l.booking_id)) l.booking_id = null;
     this.changed();
   }
@@ -197,6 +200,22 @@ export class MemoryStore implements Store {
     if (i >= 0) list[i] = clone(v); else list.push(clone(v));
     this.changed();
     return clone(v);
+  }
+  async listFlexEvents(fleetId: string, fromIso: string) {
+    return clone((this.data.flexEvents ?? []).filter((e) => e.fleet_id === fleetId && e.end_at >= fromIso).sort((a, b) => a.start_at.localeCompare(b.start_at)));
+  }
+  async getFlexEvent(id: string) {
+    return clone((this.data.flexEvents ?? []).find((e) => e.id === id) ?? null);
+  }
+  async findFlexEventByProvider(fleetId: string, providerEventId: string) {
+    return clone((this.data.flexEvents ?? []).find((e) => e.fleet_id === fleetId && e.provider_event_id === providerEventId) ?? null);
+  }
+  async upsertFlexEvent(e: FlexEvent) {
+    const list = (this.data.flexEvents ??= []);
+    const i = list.findIndex((x) => x.id === e.id);
+    if (i >= 0) list[i] = clone(e); else list.push(clone(e));
+    this.changed();
+    return clone(e);
   }
   async deleteDepotVisit(id: string) {
     this.data.depotVisits = (this.data.depotVisits ?? []).filter((v) => v.id !== id);

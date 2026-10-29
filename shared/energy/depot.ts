@@ -2,6 +2,7 @@
 // tariff and how the chargers are controlled. Stored per fleet (fleet_energy.config).
 import type { Tariff } from "../ocpi/types";
 import { uuid } from "../util";
+import { DEFAULT_DEPOT_FLEX, DEFAULT_PROVIDER, cleanDepotFlex, cleanProvider, type DepotFlex, type FlexProvider } from "./flex";
 
 export type DepotGoal = "cost" | "balanced" | "carbon";
 
@@ -51,10 +52,14 @@ export interface Depot {
   control: DepotControl;
   /** Re-plan and send schedules to the chargers automatically every 15 minutes. */
   auto_dispatch: boolean;
+  /** Grid flexibility (turn down / turn up events). */
+  flex: DepotFlex;
 }
 
 export interface EnergyConfig {
   depots: Depot[];
+  /** Who sends grid flexibility events (an aggregator, or the simulator). */
+  flex_provider: FlexProvider;
 }
 
 export type VisitStatus = "planned" | "plugged_in" | "done" | "cancelled";
@@ -77,14 +82,14 @@ export interface DepotVisit {
   updated_at: string;
 }
 
-export const EMPTY_ENERGY: EnergyConfig = { depots: [] };
+export const EMPTY_ENERGY: EnergyConfig = { depots: [], flex_provider: DEFAULT_PROVIDER };
 
 export const DEFAULT_TARIFF: DepotTariff = { kind: "tou", standard: 0.26, rates: [{ price: 0.15, start: "00:30", end: "07:30" }] };
 
 export function newDepot(name = "Main depot"): Depot {
   return {
     id: uuid(), name, postcode: "", import_limit_kw: 500, site_load_kw: 50, tariff: { ...DEFAULT_TARIFF, rates: [...DEFAULT_TARIFF.rates] },
-    goal: "balanced", chargers: [], control: { kind: "simulated" }, auto_dispatch: false,
+    goal: "balanced", chargers: [], control: { kind: "simulated" }, auto_dispatch: false, flex: { ...DEFAULT_DEPOT_FLEX },
   };
 }
 
@@ -100,6 +105,7 @@ const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice
 export function cleanEnergy(x: unknown): EnergyConfig {
   const depots = Array.isArray((x as EnergyConfig)?.depots) ? (x as EnergyConfig).depots : [];
   return {
+    flex_provider: cleanProvider((x as EnergyConfig)?.flex_provider),
     depots: depots.slice(0, 20).map((d): Depot => {
       const t = (d?.tariff ?? {}) as Partial<DepotTariff>;
       const kind = t.kind === "flat" || t.kind === "agile" ? t.kind : "tou";
@@ -133,6 +139,7 @@ export function cleanEnergy(x: unknown): EnergyConfig {
         })),
         control,
         auto_dispatch: d?.auto_dispatch === true,
+        flex: cleanDepotFlex(d?.flex),
       };
     }),
   };
