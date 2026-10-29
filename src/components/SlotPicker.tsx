@@ -10,7 +10,10 @@ import { Icon } from "../ui/ui";
 
 const HOUR = 60 * MINUTE;
 
-export function SlotPicker({ bl, dayStart, now, start, duration, onChange, tz, ignoreBusy, hours = 12 }: {
+/** A shaded half-hour under the track: carbon or price, 0 = best (darkest) … 4 = worst. */
+export interface EnergyCell { start: number; end: number; level: 0 | 1 | 2 | 3 | 4; title: string }
+
+export function SlotPicker({ bl, dayStart, now, start, duration, onChange, tz, ignoreBusy, hours = 12, energy, onRange }: {
   bl: BookingLocation;
   /** Anchor for the booking increments (local midnight of the calendar). */
   dayStart: Date;
@@ -22,6 +25,10 @@ export function SlotPicker({ bl, dayStart, now, start, duration, onChange, tz, i
   /** For changes: the booking's own time doesn't count as busy. */
   ignoreBusy?: { start: Date; end: Date } | null;
   hours?: number;
+  /** Optional carbon or price strip under the track. */
+  energy?: { kind: "carbon" | "price"; cells: EnergyCell[] } | null;
+  /** Tells the parent which range is on screen, so it can fetch data for it. */
+  onRange?(from: Date, to: Date): void;
 }) {
   const track = useRef<HTMLDivElement>(null);
   const span = hours * HOUR;
@@ -36,6 +43,8 @@ export function SlotPicker({ bl, dayStart, now, start, duration, onChange, tz, i
     if (s < from || s + duration * MINUTE > to) setFrom(centre(s));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [start?.getTime(), duration]);
+
+  useEffect(() => { onRange?.(new Date(from), new Date(to)); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [from, to]);
 
   const pct = (t: number) => ((t - from) / span) * 100;
   const windows = useMemo(() => {
@@ -134,6 +143,14 @@ export function SlotPicker({ bl, dayStart, now, start, duration, onChange, tz, i
           </div>
         )}
       </div>
+      {energy && energy.cells.length > 0 && (
+        <div className={`picker-energy ${energy.kind}`} aria-hidden="true">
+          {energy.cells.filter((c) => c.end > from && c.start < to).map((c) => (
+            <span key={c.start} className={`l${c.level}`} title={c.title} style={{ left: `${Math.max(0, pct(c.start))}%`, width: `${Math.min(100, pct(c.end)) - Math.max(0, pct(c.start))}%` }} />
+          ))}
+          {start && end && end.getTime() > from && start.getTime() < to && <i className="picker-energy-sel" style={{ left: `${Math.max(0, pct(start.getTime()))}%`, width: `${Math.min(100, pct(end.getTime())) - Math.max(0, pct(start.getTime()))}%` }} />}
+        </div>
+      )}
       <div className="picker-axis" aria-hidden="true">
         {ticks.map((t) => {
           const p = pct(t.t);

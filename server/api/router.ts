@@ -19,6 +19,7 @@ import { complianceReport, saveTick } from "./compliance";
 import { sampleDrivers, sampleVehicles } from "./samples";
 import { notifyChannels, notifyDriver } from "../notify";
 import { redactPath, reportError, scrub } from "../alerts";
+import { carbonFor } from "../energy";
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify({ data }), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
@@ -77,6 +78,7 @@ async function apiKeyUser(ctx: Ctx, req: Request): Promise<AuthUser | "invalid" 
 /** What an API key may reach: the network, and its own fleet's vehicles, drivers and bookings. */
 function apiKeyAllows(key: NonNullable<AuthUser["apiKey"]>, method: string, seg: string[]): boolean {
   if (seg[0] === "network" && seg.length === 1 && method === "GET") return true;
+  if (seg[0] === "energy" && seg[1] === "carbon" && method === "GET") return true;
   if (seg[0] !== "fleets" || seg[1] !== key.fleet_id) return false;
   if (seg.length === 2) return method === "GET";
   return ["vehicles", "drivers", "bookings"].includes(seg[2]);
@@ -147,6 +149,9 @@ export async function handleApi(req: Request, ctx: Ctx): Promise<Response> {
     // `return await` so errors thrown in the sub-routers reach the catch below.
     if (seg[0] === "fleets" && seg[1]) return await fleetRoutes(req, ctx, user, seg[1], seg.slice(2), url);
     if (seg[0] === "network" && req.method === "GET") return json(await network(ctx));
+    if (seg[0] === "energy" && seg[1] === "carbon" && !seg[2] && req.method === "GET") {
+      return json(await carbonFor(ctx, url.searchParams.get("postcode"), url.searchParams.get("from"), url.searchParams.get("to")));
+    }
     if (seg[0] === "admin") {
       if (!(await ctx.store.isPlatformAdmin(user.id))) return err(403, "Platform admins only", "FORBIDDEN");
       if (adminMfaRequired(ctx) && user.aal !== "aal2") return err(403, `Platform admin actions need two-step verification. ${MFA_HELP}`, "MFA_REQUIRED");

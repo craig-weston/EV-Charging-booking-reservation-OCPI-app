@@ -42,6 +42,8 @@ interface BayGroup {
   green?: [number, number]; // local hours with green energy
 }
 
+export interface TimedEnergyRate { price: number; start: string; end: string; days?: string[] }
+
 interface SiteDef {
   id: string;
   party: string;
@@ -57,6 +59,8 @@ interface SiteDef {
   directions: string;
   terms: Partial<BookingTerms>;
   energyPrice: number;
+  /** Time-of-use energy rates that override energyPrice in their hours (listed first in the tariff). */
+  rates?: TimedEnergyRate[];
   booking: { flat: number; perHour: number; noShow: number; cancel: number; overtimePerHour: number };
   policyRequired?: boolean;
   bays: BayGroup[];
@@ -208,6 +212,17 @@ export const SITES: SiteDef[] = [
   },
 ];
 
+// Time-of-use pricing so cheaper and pricier hours show up in planning: VoltHaul has a night rate,
+// Kestrel a weekday evening peak, DepotShare an overnight depot rate.
+const WEEKDAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"];
+const r2 = (n: number) => Math.round(n * 100) / 100;
+for (const site of SITES) {
+  if (site.rates) continue;
+  if (site.party === "VHL") site.rates = [{ price: r2(site.energyPrice - 0.14), start: "22:00", end: "06:00" }];
+  if (site.party === "KCH") site.rates = [{ price: r2(site.energyPrice + 0.12), start: "16:00", end: "19:00", days: WEEKDAYS }];
+  if (site.party === "DSN") site.rates = [{ price: r2(site.energyPrice - 0.1), start: "00:00", end: "07:00" }];
+}
+
 export const SEED_TIMESTAMP = "2026-09-01T08:00:00Z";
 const T = SEED_TIMESTAMP;
 
@@ -270,8 +285,11 @@ export function buildTariffs(site: SiteDef): Tariff[] {
   return [
     {
       ...base, id: `${site.party}-ENERGY-${site.id}`, type: "REGULAR",
-      tariff_alt_text: [{ language: "en", text: `£${site.energyPrice.toFixed(2)} per kWh + VAT` }],
-      elements: [{ price_components: [{ type: "ENERGY", price: site.energyPrice, vat: 20, step_size: 1 }] }],
+      tariff_alt_text: [{ language: "en", text: `£${site.energyPrice.toFixed(2)} per kWh + VAT${(site.rates ?? []).map((r) => `, £${r.price.toFixed(2)} ${r.start}–${r.end}${r.days ? " weekdays" : ""}`).join("")}` }],
+      elements: [
+        ...(site.rates ?? []).map((r) => ({ price_components: [{ type: "ENERGY" as const, price: r.price, vat: 20, step_size: 1 }], restrictions: { start_time: r.start, end_time: r.end, ...(r.days ? { day_of_week: r.days } : {}) } })),
+        { price_components: [{ type: "ENERGY", price: site.energyPrice, vat: 20, step_size: 1 }] },
+      ],
     },
     {
       ...base, id: `${site.party}-BOOKING-${site.id}`,
