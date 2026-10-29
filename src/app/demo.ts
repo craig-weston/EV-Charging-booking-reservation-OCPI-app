@@ -297,12 +297,14 @@ async function seedHistory(api: Api, clock: DemoClock, flush: () => Promise<void
 /** The fleet's own yard: four 150 kW chargers on a 400 kW connection, five trucks overnight. */
 async function seedDepot(api: Api, now: Date, fleet: Fleet, vehicles: Vehicle[], store: MemoryStore) {
   const depotId = "demo-yard";
-  const ch = (n: number) => ({ id: `bay-${n}`, name: `Bay ${n}`, station_id: `YARD-CP0${n}`, evse_id: 1, max_kw: 150 });
+  const ch = (n: number) => ({ id: `bay-${n}`, name: `Bay ${n}`, station_id: `YARD-CP0${n}`, evse_id: 1, max_kw: 150, ...(n === 4 ? { bidirectional: true } : {}) });
+  const v = (name: string) => vehicles.find((x) => x.name === name)!.id;
   await api("PUT", `/fleets/${fleet.id}/energy`, { config: { depots: [{
     id: depotId, name: "Northampton yard", postcode: "NN4 7AB", import_limit_kw: 400, site_load_kw: 60, goal: "balanced",
     tariff: { kind: "tou", standard: 0.24, rates: [{ price: 0.13, start: "00:30", end: "07:30" }, { price: 0.34, start: "16:00", end: "19:00", days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"] }] },
     chargers: [ch(1), ch(2), ch(3), ch(4)], control: { kind: "simulated" }, auto_dispatch: false,
     flex: { enabled: true, programmes: ["DFS", "DNO"], auto_accept: true, min_price_mwh: 100 },
+    v2g: { enabled: true, vehicle_ids: [v("Rigid 03")], min_soc: 35, max_discharge_kw: 100, mode: "behind_meter", export_limit_kw: 0, wear_per_kwh: 0.06, warranty_confirmed: true },
   }], flex_provider: { kind: "simulated", name: "Simulated aggregator", report_url: null } } });
   const tz = "Europe/London";
   const today = startOfLocalDay(now, tz);
@@ -314,9 +316,9 @@ async function seedDepot(api: Api, now: Date, fleet: Fleet, vehicles: Vehicle[],
   const evening = at(0, 17, 30);
   const shift = now.getTime() > evening.getTime() - 30 * MINUTE ? now.getTime() - evening.getTime() + 20 * MINUTE : 0;
   const t = (d: Date) => new Date(d.getTime() + shift).toISOString();
-  const v = (name: string) => vehicles.find((x) => x.name === name)!.id;
   const visits = [
-    { vehicle: "Rigid 03", charger: "bay-4", arrive: at(0, 17, 45), depart: at(1, 7, 0), soc: [38, 100] },
+    // The V2G pilot truck: back from local deliveries early with charge to spare.
+    { vehicle: "Rigid 03", charger: "bay-4", arrive: at(0, 15, 45), depart: at(1, 7, 0), soc: [72, 100] },
     { vehicle: "Tractor 01", charger: "bay-1", arrive: at(0, 18, 30), depart: at(1, 5, 15), soc: [21, 90] },
     { vehicle: "Reefer 04", charger: "bay-2", arrive: at(0, 19, 10), depart: at(1, 4, 30), soc: [34, 95] },
     { vehicle: "Tanker 05", charger: "bay-3", arrive: at(0, 20, 15), depart: at(1, 6, 0), soc: [17, 85] },

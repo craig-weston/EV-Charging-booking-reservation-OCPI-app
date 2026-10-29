@@ -2,6 +2,7 @@
 // tariff and how the chargers are controlled. Stored per fleet (fleet_energy.config).
 import type { Tariff } from "../ocpi/types";
 import { uuid } from "../util";
+import { DEFAULT_V2G, cleanV2g, type V2gPilot } from "./v2g";
 import { DEFAULT_DEPOT_FLEX, DEFAULT_PROVIDER, cleanDepotFlex, cleanProvider, type DepotFlex, type FlexProvider } from "./flex";
 
 export type DepotGoal = "cost" | "balanced" | "carbon";
@@ -54,6 +55,8 @@ export interface Depot {
   auto_dispatch: boolean;
   /** Grid flexibility (turn down / turn up events). */
   flex: DepotFlex;
+  /** Vehicle-to-grid pilot. */
+  v2g: V2gPilot;
 }
 
 export interface EnergyConfig {
@@ -89,7 +92,7 @@ export const DEFAULT_TARIFF: DepotTariff = { kind: "tou", standard: 0.26, rates:
 export function newDepot(name = "Main depot"): Depot {
   return {
     id: uuid(), name, postcode: "", import_limit_kw: 500, site_load_kw: 50, tariff: { ...DEFAULT_TARIFF, rates: [...DEFAULT_TARIFF.rates] },
-    goal: "balanced", chargers: [], control: { kind: "simulated" }, auto_dispatch: false, flex: { ...DEFAULT_DEPOT_FLEX },
+    goal: "balanced", chargers: [], control: { kind: "simulated" }, auto_dispatch: false, flex: { ...DEFAULT_DEPOT_FLEX }, v2g: { ...DEFAULT_V2G },
   };
 }
 
@@ -140,6 +143,7 @@ export function cleanEnergy(x: unknown): EnergyConfig {
         control,
         auto_dispatch: d?.auto_dispatch === true,
         flex: cleanDepotFlex(d?.flex),
+        v2g: cleanV2g(d?.v2g),
       };
     }),
   };
