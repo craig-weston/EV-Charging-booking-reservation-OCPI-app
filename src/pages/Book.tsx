@@ -5,6 +5,10 @@ import { ACCESS_LABEL, START_METHOD_LABEL, VEHICLE_TYPE_LABEL, connectorLabel } 
 import { MIN_BOOKING_DAYS, bookableDays, availableWindows, checkSlot, durationLimits, suggestSlots } from "../../shared/booking/slots";
 import { deadlines } from "../../shared/booking/terms";
 import { estimateCost } from "../../shared/booking/tariffs";
+import { averageEnergyPrice, energyPriceAt, hasTimeOfUse } from "../../shared/energy/price";
+import { HALF_HOUR, carbonBand } from "../../shared/energy/carbon";
+import { slotEnergy, smartPicks } from "../../shared/energy/timing";
+import { SOURCE_NOTE, useCarbon } from "../app/energy";
 import { MINUTE, ceilToStep, localDateKey, localToUtc, startOfLocalDay } from "../../shared/util";
 import { CITIES } from "../map/ukmap";
 import { useApp } from "../app/state";
@@ -12,7 +16,7 @@ import { DEFAULT_TZ, fmtDateTime, fmtDay, fmtDuration, fmtKw, fmtMiles, fmtMoney
 import { rankSites, type Site, type SiteOption } from "../app/network";
 import { href, navigate, useRoute } from "../app/router";
 import { NetworkMap, type MapPin } from "../components/NetworkMap";
-import { SlotPicker } from "../components/SlotPicker";
+import { SlotPicker, type EnergyCell } from "../components/SlotPicker";
 import { ApiFailure } from "../app/backend";
 import { Empty, Icon, Plate, Seg, Spinner, StatusBadge, Switch } from "../ui/ui";
 import { PassShare } from "./PassShare";
@@ -21,6 +25,7 @@ import { TruckArt } from "../components/art/Mini";
 import { accessKindOf, truckKindOf } from "../components/art/scene";
 
 const TZ = DEFAULT_TZ;
+const N0 = new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 });
 const DURATIONS = [30, 45, 60, 90, 120, 180, 240, 360, 480, 600];
 
 function localTimeOf(d: Date) {
@@ -140,7 +145,8 @@ export function BookPage() {
   const check = bl && start && end ? checkSlot(bl, start, end, now) : null;
   const terms = bl?.booking_terms ?? null;
   const dl = start && end ? deadlines(terms, start, end) : null;
-  const cost = option && start ? estimateCost(option.tariff, duration, power ?? option.assessment.usableKw, vehicle?.battery_kwh) : null;
+  const slotPrice = option && start && end ? averageEnergyPrice(option.tariffs, start, end, TZ) : null;
+  const cost = option && start ? estimateCost(option.tariff, duration, power ?? option.assessment.usableKw, vehicle?.battery_kwh, slotPrice) : null;
   const result = resultId ? bookings.find((b) => b.id === resultId) ?? null : null;
 
   const submit = async () => {
@@ -424,6 +430,42 @@ function SitePanel(props: {
   const t = bl.booking_terms;
   const tariff = option.tariff;
 
+  // Price and carbon: fetch the grid carbon for what's on screen plus the suggestion horizon.
+  const [view, setView] = useState<{ from: number; to: number } | null>(null);
+  const SIX_H = 6 * 60 * MINUTE;
+  const rangeFrom = Math.max(Math.floor((now.getTime() - HALF_HOUR) / SIX_H) * SIX_H, Math.floor(Math.min(view?.from ?? Infinity, props.desired.getTime() - 12 * 60 * MINUTE) / SIX_H) * SIX_H);
+  const rangeTo = Math.ceil(Math.max(view?.to ?? 0, props.desired.getTime() + (12 * 60 + duration) * MINUTE) / SIX_H) * SIX_H;
+  const carbon = useCarbon(site.location.postal_code, new Date(rangeFrom), new Date(rangeTo));
+  const tou = hasTimeOfUse(option.tariffs);
+  const [energyKind, setEnergyKind] = useState<"carbon" | "price">("carbon");
+  const kind = tou && (energyKind === "price" || !carbon) ? "price" : carbon ? "carbon" : null;
+  const cells = useMemo<EnergyCell[]>(() => {
+    if (kind === "carbon" && carbon) {
+      return carbon.points.map((p) => {
+        const s0 = new Date(p.from).getTime(), b = carbonBand(p.intensity);
+        return { start: s0, end: s0 + HALF_HOUR, level: b.level, title: `${fmtTime(new Date(s0))}: ${p.intensity} g CO₂/kWh, ${b.label.toLowerCase()}${p.modelled ? " (modelled)" : ""}` };
+      });
+    }
+    if (kind === "price") {
+      const out: { start: number; price: number }[] = [];
+      for (let x = rangeFrom; x < rangeTo; x += HALF_HOUR) {
+        const pr = energyPriceAt(option.tariffs, new Date(x + HALF_HOUR / 2), TZ);
+        if (pr != null) out.push({ start: x, price: pr });
+      }
+      const lo = Math.min(...out.map((o) => o.price)), hi = Math.max(...out.map((o) => o.price));
+      return out.map((o) => ({ start: o.start, end: o.start + HALF_HOUR, level: (hi > lo ? Math.round(((o.price - lo) / (hi - lo)) * 4) : 0) as EnergyCell["level"], title: `${fmtTime(new Date(o.start))}: ${fmtMoney(o.price, tariff?.currency)} per kWh` }));
+    }
+    return [];
+  }, [kind, carbon, option.tariffs, rangeFrom, rangeTo, tariff?.currency]);
+
+  // Cheapest and greenest feasible starts within 12 hours of when the truck wanted to charge.
+  const candidates = useMemo(() => suggestSlots(bl, props.desired, duration, now, { count: 400, horizonMin: 12 * 60, spacingMin: props.lim.step }), [bl, props.desired, duration, now, props.lim.step]);
+  const askedSlot = useMemo(() => [...candidates].sort((a, b) => Math.abs(a.deltaMin) - Math.abs(b.deltaMin) || b.deltaMin - a.deltaMin)[0] ?? null, [candidates]);
+  const picks = useMemo(() => smartPicks(candidates, askedSlot?.start ?? null, cost?.kwh ?? null, option.tariffs, carbon, TZ), [candidates, askedSlot, cost?.kwh, option.tariffs, carbon]);
+  const chosen = start && end ? slotEnergy(start, end, cost?.kwh ?? null, option.tariffs, carbon, TZ) : null;
+  const chosenBand = chosen?.intensity != null ? carbonBand(chosen.intensity) : null;
+  const both = picks.cheapest && picks.greenest && picks.cheapest.start.getTime() === picks.greenest.start.getTime();
+
   if (result) return <BookingResult result={result} site={site} vehicle={vehicle} onBack={props.onBack} now={now} />;
 
   return (
@@ -469,9 +511,43 @@ function SitePanel(props: {
         <div className="divider" style={{ margin: 0 }} />
         <div className="stack gap-8">
           <h3>When</h3>
-          <SlotPicker bl={bl} dayStart={props.pickerDay} now={now} start={start} duration={duration} onChange={props.setStart} tz={TZ} />
+          <SlotPicker bl={bl} dayStart={props.pickerDay} now={now} start={start} duration={duration} onChange={props.setStart} tz={TZ}
+            energy={kind ? { kind, cells } : null} onRange={(f, to) => setView((v) => (v && v.from === f.getTime() && v.to === to.getTime() ? v : { from: f.getTime(), to: to.getTime() }))} />
           <div className="legend"><span><i className="free" />Free</span><span><i className="busy" />Unavailable</span><span><i className="sel" />Your slot</span><span><i className="green" />Green energy</span></div>
+          {kind && (
+            <div className="energy-note">
+              <span className={`energy-key ${kind}`} aria-hidden="true"><i className="l0" /><i className="l1" /><i className="l2" /><i className="l3" /><i className="l4" /></span>
+              <span className="xs muted grow">{kind === "carbon" ? <>Strip shows grid carbon: darker is cleaner. {carbon ? `${SOURCE_NOTE[carbon.source]}${carbon.region ? `, ${carbon.region}` : ""}.` : ""}</> : <>Strip shows the operator's energy price: darker is cheaper.</>}</span>
+              {tou && carbon && <Seg<"carbon" | "price"> label="Strip shows" value={kind} onChange={setEnergyKind} options={[{ value: "carbon", label: "Carbon" }, { value: "price", label: "Price" }]} />}
+            </div>
+          )}
         </div>
+
+        {!picks.cheapest && !picks.greenest && carbon && askedSlot && start?.getTime() === askedSlot.start.getTime() && (
+          <div className="good-timing"><Icon name="circleCheck" size="sm" />Good timing: no other time within 12 hours is meaningfully cheaper or cleaner.</div>
+        )}
+        {(picks.cheapest || picks.greenest) && (
+          <div className="smart-picks" role="group" aria-label="Cheaper and greener times">
+            {picks.cheapest && (
+              <button type="button" className="smart-pick cheap" aria-pressed={start?.getTime() === picks.cheapest.start.getTime()} onClick={() => props.setStart(picks.cheapest!.start)}>
+                <span className="sp-icon"><Icon name={both ? "leaf" : "poundSterling"} /></span>
+                <span className="grow">
+                  <b>{both ? "Cheapest and greenest" : "Cheapest"}: {fmtDay(picks.cheapest.start, now) === fmtDay(start ?? now, now) ? "" : `${fmtDay(picks.cheapest.start, now)} `}{fmtTime(picks.cheapest.start)}</b>
+                  <span className="sub">Saves about {fmtMoney(picks.cheapest.saves, tariff?.currency)}{both && picks.greenest ? ` and ${Math.round(picks.greenest.lowerPct * 100)}% less CO₂` : ""} vs {askedSlot ? fmtTime(askedSlot.start) : "the time asked"}</span>
+                </span>
+              </button>
+            )}
+            {picks.greenest && !both && (
+              <button type="button" className="smart-pick green" aria-pressed={start?.getTime() === picks.greenest.start.getTime()} onClick={() => props.setStart(picks.greenest!.start)}>
+                <span className="sp-icon"><Icon name="leaf" /></span>
+                <span className="grow">
+                  <b>Greenest: {fmtDay(picks.greenest.start, now) === fmtDay(start ?? now, now) ? "" : `${fmtDay(picks.greenest.start, now)} `}{fmtTime(picks.greenest.start)}</b>
+                  <span className="sub">{Math.round(picks.greenest.lowerPct * 100)}% less CO₂{picks.greenest.kgLess > 0 ? `, about ${picks.greenest.kgLess} kg` : ""} vs {askedSlot ? fmtTime(askedSlot.start) : "the time asked"}</span>
+                </span>
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="two" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div className="field">
@@ -527,7 +603,7 @@ function SitePanel(props: {
             <dt>Arrive</dt><dd>From {fmtTime(dl.arriveFrom)}{dl.noShowAt ? `. Released at ${fmtTime(dl.noShowAt)} if the truck hasn't arrived` : ""}</dd>
             <dt>Free cancellation</dt><dd>Until {fmtDateTime(dl.cancelFreeUntil, now)}{tariff?.cancelFee ? `, then ${fmtMoney(tariff.cancelFee, tariff.currency)}` : ""}</dd>
             <dt>Changes</dt><dd>{dl.changeUntil ? `Until ${fmtDateTime(dl.changeUntil, now)}` : "Not allowed"}</dd>
-            {tariff && <><dt>Prices</dt><dd>{tariff.energyPerKwh != null ? `${fmtMoney(tariff.energyPerKwh, tariff.currency)} per kWh` : ""}{tariff.noShowFee ? `, no-show ${fmtMoney(tariff.noShowFee, tariff.currency)}` : ""}{tariff.overtimePerHour ? `, overstay ${fmtMoney(tariff.overtimePerHour / 60, tariff.currency)} per min` : ""}{tariff.taxIncluded === "NO" ? ", plus VAT" : ""}</dd></>}
+            {tariff && <><dt>Prices</dt><dd>{tariff.energyPerKwh != null ? `${fmtMoney(tariff.energyPerKwh, tariff.currency)} per kWh` : ""}{tariff.timedRates.map((r) => `, ${fmtMoney(r.price, tariff.currency)} ${r.start_time}–${r.end_time}${r.days ? (r.days.length === 5 && !r.days.includes("SATURDAY") ? " weekdays" : ` ${r.days.map((d) => d.slice(0, 3).toLowerCase()).join(", ")}`) : ""}`).join("")}{tariff.noShowFee ? `, no-show ${fmtMoney(tariff.noShowFee, tariff.currency)}` : ""}{tariff.overtimePerHour ? `, overstay ${fmtMoney(tariff.overtimePerHour / 60, tariff.currency)} per min` : ""}{tariff.taxIncluded === "NO" ? ", plus VAT" : ""}</dd></>}
             {t?.booking_terms && <><dt>Terms</dt><dd><a href={t.booking_terms} target="_blank" rel="noreferrer">Operator booking terms</a></dd></>}
           </dl>
         )}
@@ -538,7 +614,7 @@ function SitePanel(props: {
           {start && end ? (
             <>
               <div style={{ fontWeight: 650 }} className="num">{fmtDay(start, now)}, {fmtRange(start, end)}</div>
-              <div className="xs muted">{cost ? `${fmtMoney(cost.booking, tariff?.currency)} booking${cost.total != null ? `, about ${fmtMoney(cost.total, tariff?.currency)} with ${cost.kwh} kWh` : ""}` : ""}</div>
+              <div className="xs muted">{cost ? `${fmtMoney(cost.booking, tariff?.currency)} booking${cost.total != null ? `, about ${fmtMoney(cost.total, tariff?.currency)} with ${cost.kwh} kWh` : ""}` : ""}{chosen?.kg != null && chosenBand ? <span className={`carbon-inline l${chosenBand.level}`}><Icon name="leaf" size="sm" />{N0.format(chosen.kg)} kg CO₂, {chosenBand.label.toLowerCase()}</span> : null}</div>
             </>
           ) : <span className="muted small">Choose a time</span>}
         </div>

@@ -10,6 +10,8 @@ export interface SiteOption {
   bl: BookingLocation;
   assessment: Assessment;
   tariff: TariffSummary | null;
+  /** The OCPI tariffs behind `tariff`, for time-of-use pricing. */
+  tariffs: Tariff[];
   best: Suggestion | null;
   alternatives: Suggestion[];
   ratio: number;
@@ -93,7 +95,8 @@ export function rankSites(net: NetworkSnapshot, q: PlanQuery): Site[] {
       const dur = Math.min(Math.max(q.durationMin, lim.min), lim.max);
       const sug = a.ok ? suggestSlots(bl, q.desired, dur, q.now, { count: 3, horizonMin: 10 * 60 }) : [];
       const best = [...sug].sort((x, y) => Math.abs(x.deltaMin) - Math.abs(y.deltaMin))[0] ?? null;
-      return { bl, assessment: a, tariff: summarizeTariffs(tariffsFor(net, bl)), best, alternatives: sug, ratio: availabilityRatio(bl, dayFrom, dayTo) };
+      const tariffs = tariffsFor(net, bl);
+      return { bl, assessment: a, tariff: summarizeTariffs(tariffs), tariffs, best, alternatives: sug, ratio: availabilityRatio(bl, dayFrom, dayTo) };
     });
     const compatible = options.filter((o) => o.assessment.ok);
     const ranked = [...compatible].sort((x, y) =>

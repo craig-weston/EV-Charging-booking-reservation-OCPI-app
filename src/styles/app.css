@@ -487,6 +487,42 @@ p { margin: 0; }
 .legend .sel { background: var(--brand); border-color: var(--brand); }
 .legend .green { background: var(--surface); border-bottom: 3px solid color-mix(in oklab, var(--ok) 55%, var(--surface)); }
 
+/* price / carbon strip under the picker: one hue each, darker = better (cleaner or cheaper) */
+.picker-energy { position: relative; height: 10px; margin-top: 6px; border-radius: 5px; overflow: hidden; background: var(--surface-3); }
+.picker-energy span { position: absolute; top: 0; bottom: 0; box-shadow: inset -1px 0 0 var(--surface); }
+.picker-energy-sel { position: absolute; top: 0; bottom: 0; border: 2px solid var(--brand); border-radius: 5px; pointer-events: none; }
+.carbon .l0, .energy-key.carbon .l0 { background: color-mix(in oklab, var(--ok) 88%, var(--surface)); }
+.carbon .l1, .energy-key.carbon .l1 { background: color-mix(in oklab, var(--ok) 64%, var(--surface)); }
+.carbon .l2, .energy-key.carbon .l2 { background: color-mix(in oklab, var(--ok) 40%, var(--surface)); }
+.carbon .l3, .energy-key.carbon .l3 { background: color-mix(in oklab, var(--ok) 20%, var(--surface)); }
+.carbon .l4, .energy-key.carbon .l4 { background: color-mix(in oklab, var(--ok) 7%, var(--surface-3)); }
+.price .l0, .energy-key.price .l0 { background: color-mix(in oklab, var(--brand) 85%, var(--surface)); }
+.price .l1, .energy-key.price .l1 { background: color-mix(in oklab, var(--brand) 62%, var(--surface)); }
+.price .l2, .energy-key.price .l2 { background: color-mix(in oklab, var(--brand) 40%, var(--surface)); }
+.price .l3, .energy-key.price .l3 { background: color-mix(in oklab, var(--brand) 20%, var(--surface)); }
+.price .l4, .energy-key.price .l4 { background: color-mix(in oklab, var(--brand) 7%, var(--surface-3)); }
+.energy-note { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; }
+.energy-note > .grow { flex: 1 1 0; min-width: 200px; }
+.energy-key { display: inline-flex; gap: 2px; flex: none; }
+.energy-key i { display: block; width: 12px; height: 10px; border-radius: 2px; }
+.energy-key i:first-child { border-radius: 3px 2px 2px 3px; }
+.smart-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; }
+.smart-pick {
+  display: flex; gap: 10px; align-items: flex-start; text-align: left; padding: 10px 12px; border-radius: var(--r-md);
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; font: inherit;
+}
+.smart-pick:hover { border-color: var(--faint); }
+.smart-pick b { display: block; font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
+.smart-pick .sub { display: block; font-size: var(--fs-xs); color: var(--muted); margin-top: 2px; }
+.smart-pick .sp-icon { flex: none; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; }
+.smart-pick.green .sp-icon { background: var(--ok-bg); color: var(--ok); }
+.smart-pick.cheap .sp-icon { background: var(--brand-soft); color: var(--brand-text); }
+.smart-pick.green[aria-pressed="true"] { border-color: var(--ok); background: color-mix(in oklab, var(--ok) 7%, var(--surface)); }
+.smart-pick.cheap[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-softer); }
+.carbon-inline { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; white-space: nowrap; }
+.carbon-inline.l0, .carbon-inline.l1 { color: var(--ok); }
+.carbon-inline svg { width: 12px; height: 12px; }
+
 /* mini availability strip in site lists */
 .strip { position: relative; height: 6px; border-radius: 3px; overflow: hidden; background: repeating-linear-gradient(135deg, var(--hatch-line) 0 1px, transparent 1px 3px), var(--surface-3); }
 .strip span { position: absolute; top: 0; bottom: 0; background: color-mix(in oklab, var(--ok) 55%, var(--surface)); }
@@ -1407,3 +1443,10 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
   .seg button { min-height: 36px; }
   .check input, input[type="checkbox"] { width: 20px; height: 20px; }
 }
+
+/* Savings → charging at cleaner, cheaper times */
+.timing-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.timing-tiles .kpi { background: var(--surface-2); border: 1px solid var(--line); box-shadow: none; }
+@media (max-width: 900px) { .timing-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .timing-tiles { grid-template-columns: minmax(0, 1fr); } }
+.good-timing { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--ok); background: var(--ok-bg); border-radius: var(--r-sm); padding: 7px 10px; }

@@ -6,6 +6,7 @@
 //   /sim/cpo/2.3.0/locations | tariffs                      Sender interfaces (GET, paginated)
 //   /sim/cpo/2.3.0/bookings/booking_locations[/{id}[/{cal}]] Bookings Sender: BookingLocations & Calendars
 //   /sim/cpo/2.3.0/bookings                                 Bookings Sender: GET list, POST BookingRequest
+import { averageEnergyPrice, standardEnergyPrice } from "../../shared/energy/price";
 import type {
   AuthorizationInfo, Booking, BookingLocation, BookingRequest, BookingRequestStatus, CDR, Calendar, CanceledReason,
   ChargingPeriod, Credentials, Endpoint, Session, Timeslot, Version, VersionDetails,
@@ -687,7 +688,8 @@ async function finishSession(ctx: Ctx, state: SimState, sb: SimBooking, now: Dat
   const start = new Date(sb.session.start_date_time);
   const hours = Math.max(0.1, (now.getTime() - start.getTime()) / 3_600_000);
   const tariffs = buildTariffs(o.site);
-  const energyPrice = tariffs[0].elements[0].price_components[0].price;
+  // Time-of-use: price each part of the charge at the rate in force then.
+  const energyPrice = averageEnergyPrice([tariffs[0]], start, now) ?? site0Price(tariffs[0]);
   const bookingEl = tariffs[1].elements.find((e) => e.restrictions?.booking === "BOOKING")!;
   const bookedH = (new Date(b.period.end_date_time).getTime() - new Date(b.period.start_date_time).getTime()) / 3_600_000;
   const bookingCost = bookingEl.price_components.reduce((s, p) => s + (p.type === "FLAT" ? p.price : p.price * bookedH), 0);
@@ -740,4 +742,8 @@ export async function simStatus(ctx: Ctx) {
     active_sessions: state.bookings.filter((b) => b.session?.status === "ACTIVE").length,
     sites: SITES.length,
   };
+}
+
+function site0Price(t: import("../../shared/ocpi/types").Tariff): number {
+  return standardEnergyPrice([t]) ?? 0;
 }

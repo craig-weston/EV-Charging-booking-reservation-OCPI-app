@@ -1,12 +1,16 @@
 // Human-readable summary of the Tariffs attached to a BookingLocation (incl. the Bookings-module
 // restrictions BOOKING, BOOKING_EXPIRES, BOOKING_CANCELLATION_FEES, BOOKING_OVERTIME).
 import type { PriceComponent, Tariff, TariffElement } from "../ocpi/types";
+import { standardEnergyPrice, timedRates, type TimedRate } from "../energy/price";
 
 export interface TariffSummary {
   currency: string;
   taxIncluded: Tariff["tax_included"];
   vat: number | null;
+  /** The all-day energy rate. */
   energyPerKwh: number | null;
+  /** Time-of-use energy rates that apply in their hours instead. */
+  timedRates: TimedRate[];
   bookingFlat: number | null;
   bookingPerHour: number | null;
   noShowFee: number | null;
@@ -23,7 +27,7 @@ export function summarizeTariffs(tariffs: Tariff[]): TariffSummary | null {
   const elements = tariffs.flatMap((t) => t.elements);
   const plain = elements.filter((e) => !e.restrictions?.booking && !e.restrictions?.reservation);
   const byBooking = (k: string) => elements.find((e) => e.restrictions?.booking === k);
-  const energy = plain.map((e) => comp(e, "ENERGY")).find(Boolean);
+  const standard = standardEnergyPrice(tariffs);
   const parking = plain.map((e) => comp(e, "PARKING_TIME")).find(Boolean);
   const booking = byBooking("BOOKING");
   const expires = byBooking("BOOKING_EXPIRES");
@@ -34,7 +38,8 @@ export function summarizeTariffs(tariffs: Tariff[]): TariffSummary | null {
     currency: tariffs[0].currency,
     taxIncluded: tariffs[0].tax_included,
     vat: anyVat,
-    energyPerKwh: energy?.price ?? null,
+    energyPerKwh: standard ?? plain.map((e) => comp(e, "ENERGY")).find(Boolean)?.price ?? null,
+    timedRates: timedRates(tariffs),
     bookingFlat: comp(booking, "FLAT")?.price ?? null,
     bookingPerHour: comp(booking, "TIME")?.price ?? null,
     noShowFee: comp(expires, "FLAT")?.price ?? null,
@@ -52,14 +57,16 @@ export interface CostEstimate {
   kwh: number | null;
 }
 
-/** Rough pre-booking estimate: booking fee for the slot + energy at the usable power (85% average). */
-export function estimateCost(summary: TariffSummary | null, durationMin: number, usableKw: number | null, batteryKwh?: number | null): CostEstimate {
+/** Rough pre-booking estimate: booking fee for the slot + energy at the usable power (85% average).
+ *  `energyPerKwh` overrides the all-day rate, e.g. with the time-of-use average for the chosen slot. */
+export function estimateCost(summary: TariffSummary | null, durationMin: number, usableKw: number | null, batteryKwh?: number | null, energyPerKwh?: number | null): CostEstimate {
   if (!summary) return { booking: 0, energy: null, total: null, kwh: null };
   const hours = durationMin / 60;
   const booking = (summary.bookingFlat ?? 0) + (summary.bookingPerHour ?? 0) * hours;
   let kwh = usableKw != null ? usableKw * hours * 0.85 : null;
   if (kwh != null && batteryKwh) kwh = Math.min(kwh, batteryKwh * 0.8);
-  const energy = kwh != null && summary.energyPerKwh != null ? kwh * summary.energyPerKwh : null;
+  const rate = energyPerKwh ?? summary.energyPerKwh;
+  const energy = kwh != null && rate != null ? kwh * rate : null;
   return { booking: round2(booking), energy: energy != null ? round2(energy) : null, total: energy != null ? round2(booking + energy) : null, kwh: kwh != null ? Math.round(kwh) : null };
 }
 
