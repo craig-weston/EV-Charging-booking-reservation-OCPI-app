@@ -20,6 +20,7 @@ import { BODY_LIMITS, BodyTooLarge, readLimited, sha256Hex } from "../security";
 import { addEvents, applyBookingUpdate, bookingForArrival, linkCdr, linkSession } from "../emsp/service";
 import { logBody } from "./client";
 import { OcpiHttpError, ocpiError, ocpiResponse, pageHeaders, pageParams, requestFrom, segmentsAfter, tokenCandidates, type Routing } from "./http";
+import { receiveActiveProfile, receiveProfileResult } from "../emsp/smart";
 import { acceptRegistration, ourCredentials, ourEndpoints, updateRegistration } from "./registration";
 
 interface Call {
@@ -136,6 +137,7 @@ async function route(c: Call): Promise<Response> {
     case "sessions": return sessions(c, rest);
     case "cdrs": return cdrs(c, rest);
     case "tokens": return tokens(c, rest);
+    case "chargingprofiles": return chargingProfiles(c, rest);
     default: return ocpiError(c.req, 404, OCPI_STATUS.CLIENT_ERROR, `Module '${mod}' not implemented`);
   }
 }
@@ -507,6 +509,19 @@ async function tokens(c: Call, rest: string[]): Promise<Response> {
       return ok(c, { allowed: "NOT_ALLOWED", token, location: refs, info: { language: "en", text: "No booking for this vehicle here" } } satisfies AuthorizationInfo);
     }
     return ok(c, { allowed: "ALLOWED", token, authorization_reference: shortId("HA-", 16), ...(refs ? { location: refs } : {}) } satisfies AuthorizationInfo);
+  }
+  return methodNotAllowed(c);
+}
+
+// ChargingProfiles, Sender interface: results at our response_url, and the CPO's active-profile updates.
+async function chargingProfiles(c: Call, rest: string[]): Promise<Response> {
+  if (c.req.method === "POST" && rest[0] === "results" && rest[1] && rest[2]) {
+    const ok2 = await receiveProfileResult(c.ctx, c.partner, rest[1], rest[2], requireBody(c));
+    return ok2 ? ok(c) : fail(c, 404, OCPI_STATUS.CLIENT_ERROR, "Unknown result address");
+  }
+  if (c.req.method === "PUT" && rest[0] && !rest[1]) {
+    const found = await receiveActiveProfile(c.ctx, c.partner, rest[0], requireBody(c));
+    return found ? ok(c) : fail(c, 404, OCPI_STATUS.CLIENT_ERROR, "Unknown session");
   }
   return methodNotAllowed(c);
 }

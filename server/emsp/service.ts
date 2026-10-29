@@ -227,6 +227,11 @@ export async function linkSession(ctx: Ctx, s: Session) {
     ...(s.evse_uid && s.evse_uid !== "#NA" && !row.evse_uid ? { evse_uid: s.evse_uid } : {}),
   });
   await addEvents(ctx, row, events);
+  if (s.status === "ACTIVE" && prev?.status !== "ACTIVE" && row.smart_charging?.status === "waiting") {
+    const vehicle = row.vehicle_id ? await ctx.store.getVehicle(row.vehicle_id) : null;
+    const { onSessionStarted } = await import("./smart");
+    ctx.waitUntil(onSessionStarted(ctx, row.id, vehicle));
+  }
 }
 
 export async function linkCdr(ctx: Ctx, cdr: CDR) {

@@ -15,13 +15,14 @@ import { CopyRow, InviteDialog, type AdminPartner } from "./Network";
 type StepId = "ready" | "find" | "check" | "confirm" | "book" | "live";
 
 /** What we need from an operator, in the order the guide explains it. */
-const MODULES: { id: string; role: "SENDER" | "RECEIVER"; label: string; why: string; required: boolean }[] = [
+const MODULES: { id: string; role: "SENDER" | "RECEIVER"; label: string; why: string; required: boolean; theirs?: boolean }[] = [
   { id: "credentials", role: "SENDER", label: "Credentials", why: "Registration and token exchange", required: true },
   { id: "locations", role: "SENDER", label: "Locations", why: "Sites, bays and connectors", required: true },
   { id: "bookings", role: "SENDER", label: "Bookings", why: "Booking requests, bookable bays and calendars", required: true },
   { id: "tariffs", role: "SENDER", label: "Tariffs", why: "Prices shown before booking", required: false },
   { id: "sessions", role: "RECEIVER", label: "Sessions", why: "Live charging progress (they push to us)", required: false },
   { id: "cdrs", role: "RECEIVER", label: "CDRs", why: "Charge records for billing (they push to us)", required: false },
+  { id: "chargingprofiles", role: "RECEIVER", theirs: true, label: "Smart charging", why: "ChargingProfiles: fleets can charge at the cheapest or greenest times", required: false },
 ];
 
 export function OperatorGuidePage() {
@@ -317,11 +318,11 @@ function PartnerCheck({ p, sites, onSynced }: { p: AdminPartner; sites: number; 
       <ul className="guide-modules">
         {MODULES.map((m) => {
           // Sessions and CDRs are pushed to our endpoints, so their side doesn't list them.
-          const ok = m.role === "RECEIVER" ? true : has(m.id, m.role) || (m.id === "credentials" && has("credentials", "RECEIVER"));
+          const ok = m.theirs ? has(m.id, m.role) : m.role === "RECEIVER" ? true : has(m.id, m.role) || (m.id === "credentials" && has("credentials", "RECEIVER"));
           return (
             <li key={m.id} className={ok ? "ok" : m.required ? "bad" : "warn"}>
               <Icon name={ok ? "check" : m.required ? "circleX" : "alert"} size="sm" />
-              <span><b>{m.label}</b> <span className="xs muted">{m.role === "RECEIVER" ? "They send these to us when charging happens" : m.why}</span></span>
+              <span><b>{m.label}</b> <span className="xs muted">{m.role === "RECEIVER" && !m.theirs ? "They send these to us when charging happens" : m.why}</span></span>
             </li>
           );
         })}

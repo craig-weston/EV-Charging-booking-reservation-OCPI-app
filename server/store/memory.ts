@@ -368,6 +368,9 @@ export class MemoryStore implements Store {
   async findBookingByAuthRef(authRef: string) {
     return clone(this.data.bookings.find((b) => b.authorization_reference === authRef) ?? null);
   }
+  async findBookingBySession(cc: string, pid: string, sessionId: string) {
+    return clone(this.data.bookings.find((b) => b.session?.id === sessionId && b.cpo_country_code.toUpperCase() === cc.toUpperCase() && b.cpo_party_id.toUpperCase() === pid.toUpperCase()) ?? null);
+  }
   async findBookingByPassToken(token: string) {
     return clone(this.data.bookings.find((b) => b.pass_token === token) ?? null);
   }

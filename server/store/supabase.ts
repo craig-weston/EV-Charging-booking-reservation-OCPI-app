@@ -403,6 +403,9 @@ export class SupabaseStore implements Store {
   async findBookingByAuthRef(authRef: string) {
     return this.openBooking(await this.rest.one<BookingRow>("bookings", `select=*&authorization_reference=eq.${enc(authRef)}`));
   }
+  async findBookingBySession(cc: string, pid: string, sessionId: string) {
+    return this.openBooking(await this.rest.one<BookingRow>("bookings", `select=*&cpo_country_code=eq.${enc(cc.toUpperCase())}&cpo_party_id=eq.${enc(pid.toUpperCase())}&session->>id=eq.${enc(sessionId)}`));
+  }
   async findBookingByPassToken(token: string) {
     return this.openBooking(await this.rest.one<BookingRow>("bookings", `select=*&pass_token_hash=eq.${await sha256Hex(token)}`));
   }

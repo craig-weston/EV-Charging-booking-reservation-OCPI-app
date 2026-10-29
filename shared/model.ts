@@ -182,6 +182,8 @@ export interface BookingRow {
   session: SessionSummary | null;
   cdr: CdrSummary | null;
   pass_token: string;
+  /** Smart charging at a public site over OCPI ChargingProfiles (server/emsp/smart.ts). */
+  smart_charging?: SmartCharging | null;
   /** What the driver was last messaged about (see server/notify.ts), so nothing is sent twice. */
   driver_notified?: string | null;
   notes: string | null;
@@ -480,4 +482,31 @@ export interface FleetEnergyRow {
   secrets: Record<string, string>;
   state: EnergyState;
   updated_at: string;
+}
+
+// ---- Smart charging at public sites (OCPI ChargingProfiles) ---------------------------------
+
+export type SmartMode = "cheapest" | "greenest" | "cap";
+export type SmartStatus =
+  | "waiting" // set up before the charge starts: sent when the session begins
+  | "sent" // the operator took the request; waiting for the charger's answer
+  | "active" // the charger is following the profile
+  | "rejected" | "not_supported" | "too_often" | "unknown_session" | "failed"
+  | "cleared";
+
+export interface SmartCharging {
+  mode: SmartMode;
+  /** For mode "cap": maximum power, kW. */
+  cap_kw?: number | null;
+  /** Charge wanted by the end of the booking, %. */
+  target_soc: number;
+  status: SmartStatus;
+  message: string;
+  updated_at: string;
+  /** The profile we sent (OCPI ChargingProfile, watts). */
+  profile?: import("./ocpi/types").ChargingProfile | null;
+  /** What the operator reports the charger is actually doing. */
+  active?: import("./ocpi/types").ActiveChargingProfile | null;
+  /** Expected outcome vs charging at full power straight away. */
+  estimate?: { ready_at: string | null; kwh: number; cost: number; kg: number; baseline_cost: number; baseline_kg: number; short_kwh: number } | null;
 }

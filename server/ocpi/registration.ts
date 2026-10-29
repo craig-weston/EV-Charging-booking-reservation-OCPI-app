@@ -61,6 +61,8 @@ export function ourEndpoints(ctx: Ctx): Endpoint[] {
     { identifier: "cdrs", role: "RECEIVER", url: u.module("cdrs") },
     { identifier: "tokens", role: "SENDER", url: u.module("tokens") },
     { identifier: "bookings", role: "RECEIVER", url: u.module("bookings") },
+    // Smart charging: we send charging profiles (as SCSP) and receive results and active profiles.
+    { identifier: "chargingprofiles", role: "SENDER", url: u.module("chargingprofiles") },
     // mod_bookings.asciidoc names the module identifier "Booking"; listed too for peers that match it literally.
     { identifier: "Booking", role: "RECEIVER", url: u.module("bookings") },
   ];

@@ -21,6 +21,8 @@ import { notifyChannels, notifyDriver } from "../notify";
 import { redactPath, reportError, scrub } from "../alerts";
 import { carbonFor } from "../energy";
 import { depotPlan, dispatchDepot, energyRow } from "../depot";
+import { SMART_MODES, clearSmartCharging, requestSmartCharging } from "../emsp/smart";
+import type { SmartMode } from "../../shared/model";
 import { cleanEnergy, type DepotVisit } from "../../shared/energy/depot";
 
 const json = (data: unknown, status = 200) =>
@@ -514,6 +516,16 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
       return json(saved);
     }
     const vehicle = row.vehicle_id ? await ctx.store.getVehicle(row.vehicle_id) : null;
+    if (action === "smart-charging" && m === "POST") {
+      const b = await body<{ mode?: string; cap_kw?: number; target_soc?: number }>(req);
+      if (!SMART_MODES.includes(b.mode as SmartMode)) throw new ApiError(400, `Mode must be one of: ${SMART_MODES.join(", ")}`);
+      const target = b.target_soc == null ? 90 : Math.round(Number(b.target_soc));
+      if (!(target > 0 && target <= 100)) throw new ApiError(400, "Target charge must be between 1 and 100%");
+      const saved = await requestSmartCharging(ctx, row, vehicle, b.mode as SmartMode, b.cap_kw != null ? Number(b.cap_kw) : null, target);
+      await audit(ctx, req, user, { fleet_id: fleetId, action: "booking.smart_charging", target: row.plate, data: { booking_id: row.id, mode: b.mode, status: saved.smart_charging?.status } });
+      return json(saved);
+    }
+    if (action === "smart-charging" && m === "DELETE") return json(await clearSmartCharging(ctx, row));
     if (m === "POST" && action === "change") {
       if (!vehicle) throw new ApiError(409, "The vehicle for this booking was deleted");
       const b = await body<{ start_at: string; end_at: string; power_required_kw?: number | null }>(req);

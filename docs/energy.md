@@ -54,3 +54,35 @@ The slot picker draws a carbon (or price) strip under the bay availability, dark
 
 The headline CO₂e on the Savings page still uses the government's annual grid factor, as carbon
 reporting standards expect. The half-hourly figures are for operational decisions.
+
+## Smart charging at public sites (OCPI ChargingProfiles)
+
+For a booked public charge, a planner can choose one of three modes in the booking drawer:
+
+- **Cheapest:** reach a target charge by the end of the booking, in the cheapest half-hours.
+- **Greenest:** reach the target in the cleanest half-hours.
+- **Limit power:** cap the power.
+
+The schedule goes to the operator over the OCPI **ChargingProfiles** module. We're the Sender
+(smart charging service provider) and the operator is the Receiver.
+
+| Message | |
+|---|---|
+| `PUT {cpo chargingprofiles}/{session_id}` | `SetChargingProfile { charging_profile (W, periods in seconds), response_url }` |
+| `DELETE {cpo chargingprofiles}/{session_id}?response_url=…` | Switch it off (back to full power) |
+| `POST {our response_url}` | `ChargingProfileResult` / `ClearProfileResult`: the charger's own answer |
+| `PUT {our chargingprofiles}/{session_id}` | `ActiveChargingProfile`: what the charger is actually doing |
+
+How it behaves:
+
+- **Before arrival:** set up before the truck arrives, the profile waits and is sent (re-planned
+  from the real start and state of charge) when the session starts.
+- **Operator answers:** the synchronous answer (`ACCEPTED`, `NOT_SUPPORTED`, `REJECTED`,
+  `TOO_OFTEN`, `UNKNOWN_SESSION`) and the charger's result are shown on the booking.
+- **No support:** operators whose endpoint list has no `chargingprofiles` module are never
+  called, and the booking says the truck will charge at full power.
+- **Operator guide:** shows whether each connected operator offers the module.
+
+In the simulator, VoltHaul and DepotShare apply profiles (the session's energy follows them minute
+by minute) and Kestrel answers `NOT_SUPPORTED`. The column is `bookings.smart_charging`
+(migration `20261103000000_smart_charging.sql`).
