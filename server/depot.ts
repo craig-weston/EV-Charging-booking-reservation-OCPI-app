@@ -17,6 +17,7 @@ import { intensityAt, HALF_HOUR, floorHalfHour, type CarbonSeries } from "../sha
 import { buildSlots, planDepot, schedulePeriods, type DepotPlan } from "../shared/energy/optimise";
 import { carbonFor } from "./energy";
 import type { FlexEvent } from "../shared/energy/flex";
+import { v2gPass, type V2gVisit } from "../shared/energy/v2g";
 import { openSecret } from "./security";
 import { signature } from "./webhooks";
 import { iso } from "../shared/util";
@@ -58,6 +59,7 @@ export interface DepotPlanView {
   price_source: "tariff" | "agile" | "agile-modelled";
   /** Grid flexibility events affecting this plan (accepted) or waiting for a decision (offered). */
   events: FlexEvent[];
+  v2g: DepotPlan["v2g"];
 }
 
 // --- Octopus Agile (public, no key): half-hourly unit rates by region ---------------------------
@@ -145,15 +147,34 @@ export function applyEvents(slots: DepotPlan["slots"], events: Pick<FlexEvent, "
   });
 }
 
+/** Trucks that can give power back now: pilot trucks on bidirectional chargers, with the warranty confirmed. */
+export function v2gPilots(i: PlanInputs): V2gVisit[] {
+  const cfg = i.depot.v2g;
+  if (!cfg?.enabled || !cfg.warranty_confirmed) return [];
+  const out: V2gVisit[] = [];
+  i.rows.forEach((r, index) => {
+    const ch = i.depot.chargers.find((c) => c.id === r.v.charger_id);
+    if (!ch?.bidirectional || !r.battery || !cfg.vehicle_ids.includes(r.v.vehicle_id)) return;
+    out.push({ index, from: Math.max(i.now, new Date(r.v.arrive_at).getTime()), to: new Date(r.v.depart_at).getTime(), batteryKwh: r.battery, socStart: r.v.soc_start, maxChargeKw: r.maxKw, maxDischargeKw: Math.min(ch.max_kw, cfg.max_discharge_kw) });
+  });
+  return out;
+}
+
 export function planFromInputs(i: PlanInputs, events: FlexEvent[] = []): DepotPlan {
   const mine = events.filter((e) => e.depot_id === i.depot.id && e.status === "accepted");
   const slots = applyEvents(i.slots, mine);
   const plan = planDepot(slots, i.rows.map((r) => ({ id: r.v.id, chargerId: r.v.charger_id, from: Math.max(i.now, new Date(r.v.arrive_at).getTime()), to: new Date(r.v.depart_at).getTime(), needKwh: r.need, maxKw: r.maxKw })), i.chargers, i.depot.goal);
+  const pilots = v2gPilots(i);
+  plan.v2g = pilots.length ? v2gPass(plan, slots, pilots, i.depot.v2g, i.depot.site_load_kw) : null;
   // Report real prices (a turn-up incentive is income, not a cheaper tariff).
   const real = i.slots;
   const cost = plan.visits.reduce((a, v) => a + v.kw.reduce((b, kw, j) => b + kw * ((real[j].end - real[j].start) / 3_600_000) * real[j].price, 0), 0);
-  plan.visits.forEach((v) => { v.cost = v.kw.reduce((b, kw, j) => b + kw * ((real[j].end - real[j].start) / 3_600_000) * real[j].price, 0); });
-  return { ...plan, slots: plan.slots.map((s, j) => ({ ...s, price: real[j].price })), cost };
+  plan.visits.forEach((v) => {
+    v.cost = v.kw.reduce((b, kw, j) => b + kw * ((real[j].end - real[j].start) / 3_600_000) * real[j].price, 0);
+    v.kg = v.kw.reduce((b, kw, j) => b + (real[j].carbon != null ? (kw * ((real[j].end - real[j].start) / 3_600_000) * real[j].carbon!) / 1000 : 0), 0);
+  });
+  const kg = plan.visits.reduce((a, v) => a + v.kg, 0);
+  return { ...plan, slots: plan.slots.map((s, j) => ({ ...s, price: real[j].price })), cost, kg };
 }
 
 export function viewFromPlan(i: PlanInputs, plan: DepotPlan, events: FlexEvent[] = []): DepotPlanView {
@@ -173,6 +194,7 @@ export function viewFromPlan(i: PlanInputs, plan: DepotPlan, events: FlexEvent[]
     }),
     cost: plan.cost, kg: plan.kg, peak_kw: plan.peakKw, headroom_kw: i.headroom, baseline: plan.baseline,
     carbon_source: i.carbonSource, price_source: i.priceSource,
+    v2g: plan.v2g ?? null,
     events: events.filter((e) => e.depot_id === i.depot.id && Date.parse(e.end_at) > i.now && (e.status === "accepted" || e.status === "offered")),
   };
 }
@@ -210,7 +232,10 @@ export function chargingProfiles(depot: Depot, view: DepotPlanView): { charger: 
             startSchedule: new Date(start).toISOString(),
             duration: Math.round((end - start) / 1000),
             chargingRateUnit: "W",
-            chargingSchedulePeriod: schedulePeriods(view.slots, kw, start),
+            // Giving power back (V2G) needs OCPP 2.1: a negative setpoint in CentralSetpoint mode.
+            chargingSchedulePeriod: ch.bidirectional && kw.some((x) => x < -0.05)
+              ? schedulePeriods(view.slots, kw, start).map((p) => (p.limit < 0 ? { startPeriod: p.startPeriod, limit: 0, operationMode: "CentralSetpoint", setpoint: p.limit } : { ...p, operationMode: "ChargingOnly" }))
+              : schedulePeriods(view.slots, kw, start),
           }],
         },
       },
@@ -234,7 +259,8 @@ export async function dispatchDepot(ctx: Ctx, row: FleetEnergyRow, depot: Depot,
     try {
       let res: Response;
       if (c.kind === "citrineos") {
-        const url = `${c.base_url}/ocpp/2.0.1/smartcharging/setChargingProfile?identifier=${encodeURIComponent(charger.station_id)}&tenantId=${encodeURIComponent(c.tenant_id)}`;
+        const v21 = JSON.stringify(request).includes("CentralSetpoint");
+        const url = `${c.base_url}/ocpp/${v21 ? "2.1" : "2.0.1"}/smartcharging/setChargingProfile?identifier=${encodeURIComponent(charger.station_id)}&tenantId=${encodeURIComponent(c.tenant_id)}`;
         res = await ctx.transport(new Request(url, { method: "POST", signal: ctl.signal, headers: { "Content-Type": "application/json", ...(secret ? { Authorization: `Bearer ${secret}` } : {}) }, body: JSON.stringify(request) }));
       } else {
         const body = JSON.stringify({ type: "ocpp.set_charging_profile", station_id: charger.station_id, depot_id: depot.id, charger_id: charger.id, request });
