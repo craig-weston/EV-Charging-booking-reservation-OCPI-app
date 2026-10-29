@@ -11,8 +11,8 @@ import { MemoryStore, type MemoryData } from "../../server/store/memory";
 import { tick } from "../../server/sim/cpo";
 import { ApiFailure, type Backend } from "./backend";
 
-const STORAGE_KEY = "depotcharge.demo.v1";
-const SEEDED_KEY = "depotcharge.demo.seeded";
+const STORAGE_KEY = "depotcharge.demo.v2";
+const SEEDED_KEY = "depotcharge.demo.seeded.v2";
 /** Sample history is relative to the day it was made; after this long it's rebuilt so "today" stays today. */
 const FRESH_FOR_MS = 18 * 60 * 60 * 1000;
 const TRY_FLAG = "depotcharge.try-demo";
@@ -178,10 +178,7 @@ async function seed(api: Api, clock: DemoClock, flush: () => Promise<void>, stor
   await book("Tractor 01", "VHL-DAV-MCS", new Date(now.getTime() + 3 * 60 * MINUTE), 45, 1);
   await book("Rigid 03", "DSN-NTH-CCS", at(today, 21, 0), 180, 2);
   await book("Tanker 05", "VHL-FXT-MCS", at(tomorrow, 7, 30), 60);
-  const lut = await book("Reefer 04", "VHL-LUT-CCS", at(tomorrow, 11, 0), 60);
-  if (lut) {
-    try { await api("POST", "/admin/simulator/action", { action: "cpo_cancel", booking_id: lut.id, reason: "BROKEN_CHARGER" }); await flush(); } catch { /* ignore */ }
-  }
+  await book("Reefer 04", "VHL-LUT-CCS", at(tomorrow, 11, 0), 60);
   await tickNow().catch(() => undefined); // the live session's first meter reading
 }
 

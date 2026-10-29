@@ -287,7 +287,7 @@ function Cookies({ c }: { c: Ctx }) {
           <tr><td><code>depotcharge.fleet</code></td><td>Remembers which fleet you were looking at</td><td>Your choice</td><td>Until you clear it</td></tr>
           <tr><td><code>depotcharge.theme</code></td><td>Remembers light or dark appearance</td><td>Your choice</td><td>Until you clear it</td></tr>
           <tr><td><code>depotcharge.dismissed</code></td><td>Remembers alerts you dismissed on the dashboard</td><td>Your choice</td><td>Until you clear it</td></tr>
-          <tr><td><code>depotcharge.demo.v1</code></td><td>Demo mode only: the demo's data, kept in your browser</td><td>Strictly necessary</td><td>Until you reset the demo</td></tr>
+          <tr><td><code>depotcharge.demo.v2</code></td><td>Demo mode only: the demo's data, kept in your browser</td><td>Strictly necessary</td><td>Until you reset the demo</td></tr>
         </tbody>
       </table>
       <p>Our hosting provider, Cloudflare, may set security cookies (such as <code>__cf_bm</code> or <code>cf_clearance</code>) to tell people from bots and protect the service. They are strictly necessary and contain no information about what you do in {n}.</p>
