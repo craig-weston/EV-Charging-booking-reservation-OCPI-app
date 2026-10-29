@@ -242,14 +242,14 @@ function HourBars({ share }: { share: number[] }) {
   const hh = (i: number) => String(i).padStart(2, "0");
   return (
     <div className="month-bars">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Share of charging energy by hour: ${share.map((v, i) => `${hh(i)}:00 ${Math.round(v * 100)}%`).join(", ")}`}>
+      <svg viewBox={`0 0 ${W} ${H}`} role="group" aria-label={`Share of charging energy by hour: ${share.map((v, i) => `${hh(i)}:00 ${Math.round(v * 100)}%`).join(", ")}`}>
         <line x1="0" x2={W} y1={H - PADB} y2={H - PADB} className="mb-axis" />
         {share.map((v, i) => {
           const x = i * bw + bw * 0.18, w = bw * 0.64 - 2, top = y(v), h = H - PADB - top;
           const r = Math.min(4, w / 2, h);
           const path = h > 0.5 ? `M${x},${H - PADB} V${top + r} Q${x},${top} ${x + r},${top} H${x + w - r} Q${x + w},${top} ${x + w},${top + r} V${H - PADB} Z` : "";
           return (
-            <g key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(i)} onBlur={() => setHover(null)} tabIndex={0} aria-label={`${hh(i)}:00 to ${hh((i + 1) % 24)}:00: ${Math.round(v * 100)}% of energy`}>
+            <g key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(i)} onBlur={() => setHover(null)} tabIndex={0} role="img" aria-label={`${hh(i)}:00 to ${hh((i + 1) % 24)}:00: ${Math.round(v * 100)}% of energy`}>
               <rect x={i * bw} y={0} width={bw} height={H} fill="transparent" />
               {path && <path d={path} className={`mb-bar ${hover === i ? "on" : ""}`} />}
               {i === peak && v > 0 && <text x={x + w / 2} y={top - 5} textAnchor="middle" className="mb-val">{Math.round(v * 100)}%</text>}
@@ -285,14 +285,14 @@ function MonthBars({ data }: { data: { month: string; kg: number }[] }) {
   const last = data.length - 1;
   return (
     <div className="month-bars">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`CO2e avoided per month: ${data.map((d) => `${mName(d.month)} ${N0.format(d.kg)} kg`).join(", ")}`}>
+      <svg viewBox={`0 0 ${W} ${H}`} role="group" aria-label={`CO2e avoided per month: ${data.map((d) => `${mName(d.month)} ${N0.format(d.kg)} kg`).join(", ")}`}>
         <line x1="0" x2={W} y1={H - PADB} y2={H - PADB} className="mb-axis" />
         {data.map((d, i) => {
           const x = i * bw + bw * 0.22, w = bw * 0.56 - gap, top = y(d.kg), h = H - PADB - top;
           const r = Math.min(4, w / 2, h);
           const path = h > 0 ? `M${x},${H - PADB} V${top + r} Q${x},${top} ${x + r},${top} H${x + w - r} Q${x + w},${top} ${x + w},${top + r} V${H - PADB} Z` : "";
           return (
-            <g key={d.month} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(i)} onBlur={() => setHover(null)} tabIndex={0} aria-label={`${mName(d.month, true)}: ${N0.format(d.kg)} kg`}>
+            <g key={d.month} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(i)} onBlur={() => setHover(null)} tabIndex={0} role="img" aria-label={`${mName(d.month, true)}: ${N0.format(d.kg)} kg`}>
               <rect x={i * bw} y={PADT - 10} width={bw} height={H - PADT + 10} fill="transparent" />
               {path && <path d={path} className={`mb-bar ${hover === i ? "on" : ""}`} />}
               {(i === peak || i === last) && d.kg > 0 && <text x={x + w / 2} y={top - 6} textAnchor="middle" className="mb-val">{N0.format(d.kg)}</text>}
