@@ -1518,3 +1518,8 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
 .energy .panel-head { flex-wrap: wrap; row-gap: 8px; }
 .energy .panel-head .right { flex-wrap: wrap; }
 @media (max-width: 560px) { .energy .panel-head .right { margin-left: 0; width: 100%; justify-content: space-between; } }
+.smart-card .panel-head h3 { display: flex; align-items: center; gap: 6px; }
+.smart-est { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.smart-est > div { display: flex; flex-direction: column; gap: 2px; background: var(--surface-2); border-radius: var(--r-sm); padding: 8px 10px; }
+.smart-est b { font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
+.ok-text { color: var(--ok); }

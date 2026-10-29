@@ -112,6 +112,8 @@ export interface Store {
   findBookingByRequestId(requestId: string): Promise<BookingRow | null>;
   findBookingByCpoRef(cc: string, pid: string, ref: string): Promise<BookingRow | null>; // ocpi_id or request_id
   findBookingByAuthRef(authRef: string): Promise<BookingRow | null>;
+  /** The booking whose charging session (from this operator) has this id. */
+  findBookingBySession(cc: string, pid: string, sessionId: string): Promise<BookingRow | null>;
   findBookingByPassToken(token: string): Promise<BookingRow | null>;
   listBookings(fleetId: string, opts?: { from?: string; to?: string; limit?: number }): Promise<BookingRow[]>;
   listVehicleBookings(vehicleId: string, locationId: string): Promise<BookingRow[]>;

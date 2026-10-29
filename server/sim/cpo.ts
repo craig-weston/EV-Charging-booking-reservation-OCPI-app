@@ -34,6 +34,8 @@ interface SimRegistration {
   emsp_party: { country_code: string; party_id: string } | null;
 }
 
+interface SimProfile { start: string; periods: { start_period: number; limit: number }[]; unit: "W" | "A" }
+
 interface SimBooking {
   booking: Booking;
   bl_id: string;
@@ -45,6 +47,9 @@ interface SimBooking {
   soc_start?: number;
   cap_kwh?: number;
   full_at?: string;
+  /** Charging profiles from the eMSP (ChargingProfiles module), oldest first; each applies from its
+   *  start until the next. An entry with no periods means the profile was cleared (full power). */
+  profiles?: SimProfile[];
 }
 
 export interface SimState {
@@ -254,6 +259,8 @@ function simEndpoints(ctx: Ctx): Endpoint[] {
     { identifier: "locations", role: "SENDER", url: u.module("locations") },
     { identifier: "tariffs", role: "SENDER", url: u.module("tariffs") },
     { identifier: "bookings", role: "SENDER", url: u.module("bookings") },
+    // Smart charging: VoltHaul and DepotShare apply charging profiles; Kestrel answers NOT_SUPPORTED.
+    { identifier: "chargingprofiles", role: "RECEIVER", url: u.module("chargingprofiles") },
   ];
 }
 
@@ -311,6 +318,7 @@ export async function handleSim(req: Request, ctx: Ctx): Promise<Response> {
     const routing: Routing = { from: { country_code: SIM_PARTIES[0].country_code, party_id: SIM_PARTIES[0].party_id }, to: requestFrom(req) };
     if (req.method === "GET" && mod === "locations" && !rest.length) return paged(req, url, SITES.map(buildLocation), routing);
     if (req.method === "GET" && mod === "tariffs" && !rest.length) return paged(req, url, SITES.flatMap(buildTariffs), routing);
+    if (mod === "chargingprofiles" && rest[0]) return await simChargingProfiles(req, ctx, state, decodeURIComponent(rest[0]), url, routing);
     if (mod === "bookings") {
       if (req.method === "GET" && rest[0] === "booking_locations") {
         const now = ctx.now();
@@ -541,7 +549,8 @@ export async function tick(ctx: Ctx) {
  * Energy so far on a simple charge curve: full power up to 80% state of charge, then 45% of it
  * until the battery is full (power drops to 0).
  */
-export function sessionEnergy(sb: Pick<SimBooking, "bl_id" | "booking" | "session" | "soc_start" | "cap_kwh">, now: Date): { kwh: number; soc: number; kw: number } {
+export function sessionEnergy(sb: Pick<SimBooking, "bl_id" | "booking" | "session" | "soc_start" | "cap_kwh" | "profiles">, now: Date): { kwh: number; soc: number; kw: number } {
+  if (sb.profiles?.length && sb.session) return profiledEnergy(sb, now);
   const o = optionById(sb.bl_id);
   const s0 = Math.min(1, Math.max(0, (sb.soc_start ?? 25) / 100));
   if (!sb.session || !o) return { kwh: 0, soc: Math.round(s0 * 1000) / 10, kw: 0 };
@@ -746,4 +755,81 @@ export async function simStatus(ctx: Ctx) {
 
 function site0Price(t: import("../../shared/ocpi/types").Tariff): number {
   return standardEnergyPrice([t]) ?? 0;
+}
+
+/** The limit (kW) the profiles set at time t, or null for no limit. */
+function profileLimitKw(list: SimProfile[], t: number): number | null {
+  let p: SimProfile | null = null;
+  for (const x of list) if (new Date(x.start).getTime() <= t) p = x;
+  if (!p || !p.periods.length) return null;
+  const sec = (t - new Date(p.start).getTime()) / 1000;
+  let lim: number | null = null;
+  for (const x of p.periods) if (x.start_period <= sec) lim = x.limit;
+  if (lim == null) return null;
+  return p.unit === "A" ? (lim * 400 * Math.sqrt(3)) / 1000 : lim / 1000; // A: three-phase 400 V
+}
+
+/** Energy with charging profiles: the normal curve up to the first profile, then minute by minute under the limits. */
+function profiledEnergy(sb: Pick<SimBooking, "bl_id" | "booking" | "session" | "soc_start" | "cap_kwh" | "profiles">, now: Date): { kwh: number; soc: number; kw: number } {
+  const list = sb.profiles!;
+  const pStart = Math.max(new Date(sb.session!.start_date_time).getTime(), new Date(list[0].start).getTime());
+  const before = sessionEnergy({ ...sb, profiles: undefined }, new Date(Math.min(now.getTime(), pStart)));
+  if (now.getTime() <= pStart) return before;
+  const o = optionById(sb.bl_id);
+  const cap = sb.cap_kwh ?? 540;
+  const s0 = (sb.soc_start ?? 25) / 100;
+  const req = sb.booking.booking_requests[0]?.booking_request.power_required;
+  const full = Math.max(1, Math.min(o?.bay.kw ?? 150, req ?? 375) * 0.92);
+  let kwh = before.kwh, kw = 0;
+  const step = 60_000;
+  for (let t = pStart; t < now.getTime(); t += step) {
+    const soc = s0 + kwh / cap;
+    if (soc >= 1) { kw = 0; break; }
+    const curve = soc < 0.8 ? full : full * 0.45;
+    const lim = profileLimitKw(list, t);
+    kw = Math.max(0, Math.min(curve, lim ?? curve));
+    kwh += (kw * Math.min(step, now.getTime() - t)) / 3_600_000;
+  }
+  kwh = Math.min(kwh, (1 - s0) * cap);
+  return { kwh: Math.round(kwh * 10) / 10, soc: Math.round(Math.min(100, (s0 + kwh / cap) * 100) * 10) / 10, kw: Math.round(kw) };
+}
+
+// ChargingProfiles, Receiver interface (the CPO side).
+async function simChargingProfiles(req: Request, ctx: Ctx, state: SimState, sessionId: string, url: URL, routing: Routing): Promise<Response> {
+  const sb = state.bookings.find((b) => b.session?.id === sessionId);
+  const reply = (result: string) => ocpiResponse(req, { result, timeout: 30 }, { routing });
+  if (!sb || sb.session?.status !== "ACTIVE") return reply("UNKNOWN_SESSION");
+  if (sb.booking.party_id === "KCH") return reply("NOT_SUPPORTED");
+  const later = (responseUrl: string | null | undefined, body: unknown) => {
+    if (!responseUrl || !state.reg.emsp_token) return;
+    ctx.waitUntil((async () => {
+      if (ctx.simDelayMs) await new Promise((r) => setTimeout(r, Math.min(ctx.simDelayMs, 1500)));
+      await ocpiCall(ctx, { method: "POST", url: responseUrl, token: state.reg.emsp_token!, body, routing: routingFor(state, sb.booking), log: false });
+    })());
+  };
+  if (req.method === "PUT") {
+    let body: { charging_profile?: { start_date_time?: string; charging_rate_unit?: "W" | "A"; charging_profile_period?: { start_period: number; limit: number }[] }; response_url?: string };
+    try { body = JSON.parse(await req.text()); } catch { return ocpiError(req, 400, OCPI_STATUS.INVALID_PARAMS, "Invalid JSON", routing); }
+    const cp = body.charging_profile;
+    if (!cp || (cp.charging_rate_unit !== "W" && cp.charging_rate_unit !== "A") || !Array.isArray(cp.charging_profile_period) || !body.response_url) return ocpiError(req, 200, OCPI_STATUS.INVALID_PARAMS, "charging_profile (with charging_rate_unit and periods) and response_url are required", routing);
+    // The new profile takes over from now; times in it count from its own start_date_time.
+    const now = ctx.now();
+    const start = cp.start_date_time && !Number.isNaN(Date.parse(cp.start_date_time)) ? new Date(cp.start_date_time) : now;
+    (sb.profiles ??= []).push({ start: iso(new Date(Math.max(start.getTime(), now.getTime()))), unit: cp.charging_rate_unit, periods: cp.charging_profile_period.map((x) => ({ start_period: Math.max(0, x.start_period - Math.max(0, (now.getTime() - start.getTime()) / 1000)), limit: x.limit })) });
+    await save(ctx, state);
+    later(body.response_url, { result: "ACCEPTED" });
+    return reply("ACCEPTED");
+  }
+  if (req.method === "DELETE") {
+    (sb.profiles ??= []).push({ start: iso(ctx.now()), unit: "W", periods: [] });
+    await save(ctx, state);
+    later(url.searchParams.get("response_url"), { result: "ACCEPTED" });
+    return reply("ACCEPTED");
+  }
+  if (req.method === "GET") {
+    const p = sb.profiles?.length ? sb.profiles[sb.profiles.length - 1] : null;
+    later(url.searchParams.get("response_url"), { result: "ACCEPTED", ...(p && p.periods.length ? { profile: { start_date_time: p.start, charging_profile: { start_date_time: p.start, charging_rate_unit: p.unit, charging_profile_period: p.periods } } } : {}) });
+    return reply("ACCEPTED");
+  }
+  return ocpiError(req, 405, OCPI_STATUS.CLIENT_ERROR, "Method not allowed", routing);
 }

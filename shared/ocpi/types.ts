@@ -585,3 +585,28 @@ export const FINAL_RESERVATION_STATUSES: ReservationStatus[] = ["CANCELED", "NO_
 
 /** The "not available" marker OCPI uses for ids that are not assigned yet. */
 export const NOT_AVAILABLE = "#NA";
+
+// ---- ChargingProfiles module (OCPI 2.2.1 / 2.3.0 mod_charging_profiles) --------------------
+// The eMSP (as smart charging service provider) is the Sender; the CPO is the Receiver.
+export interface ChargingProfilePeriod {
+  /** Seconds from the profile's start. */
+  start_period: number;
+  /** In charging_rate_unit (W or A). */
+  limit: number;
+}
+export interface ChargingProfile {
+  start_date_time?: DateTime;
+  /** Seconds. */
+  duration?: number;
+  charging_rate_unit: "W" | "A";
+  min_charging_rate?: number;
+  charging_profile_period?: ChargingProfilePeriod[];
+}
+export interface SetChargingProfile { charging_profile: ChargingProfile; response_url: URL }
+export type ChargingProfileResponseType = "ACCEPTED" | "NOT_SUPPORTED" | "REJECTED" | "TOO_OFTEN" | "UNKNOWN_SESSION";
+export interface ChargingProfileResponse { result: ChargingProfileResponseType; timeout: number }
+export type ChargingProfileResultType = "ACCEPTED" | "REJECTED" | "UNKNOWN";
+export interface ChargingProfileResult { result: ChargingProfileResultType }
+export interface ClearProfileResult { result: ChargingProfileResultType }
+export interface ActiveChargingProfile { start_date_time: DateTime; charging_profile: ChargingProfile }
+export interface ActiveChargingProfileResult { result: ChargingProfileResultType; profile?: ActiveChargingProfile }

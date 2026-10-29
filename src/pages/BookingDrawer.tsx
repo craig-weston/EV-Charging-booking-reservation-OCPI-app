@@ -15,6 +15,7 @@ import { SlotPicker } from "../components/SlotPicker";
 import { Drawer, Icon, Json, Plate, Seg, Spinner, StatusBadge } from "../ui/ui";
 import { PassShare } from "./PassShare";
 import { RebookSuggestion } from "../components/RebookSuggestion";
+import { SmartChargingCard } from "../components/SmartCharging";
 import { navigate } from "../app/router";
 import { ChargeStory } from "../components/art/ChargeStory";
 import { ChargingMini } from "../components/art/Mini";
@@ -160,6 +161,8 @@ export function BookingDrawer({ id, onClose }: { id: string; onClose(): void }) 
             </div>
           </div>
         )}
+
+        {(open || b.reservation_status === "FULFILLED" || b.smart_charging) && <SmartChargingCard booking={b} tz={tz} onChange={(r) => upsertBooking(r)} />}
 
         <dl className="kv">
           <dt>Truck</dt>
