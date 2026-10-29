@@ -144,7 +144,7 @@ async function seed(api: Api, clock: DemoClock, flush: () => Promise<void>, stor
   await seedHistory(api, clock, flush, store, fleet, vehicles, drivers).catch((e) => console.warn("demo history skipped", e));
   await seedChargingNow(api, clock, flush, store, fleet, vehicles, drivers).catch((e) => console.warn("demo session skipped", e));
   clock.set(null);
-  await seedDepot(api, clock.now(), fleet, vehicles).catch((e) => console.warn("demo depot skipped", e));
+  await seedDepot(api, clock.now(), fleet, vehicles, store).catch((e) => console.warn("demo depot skipped", e));
   const now = clock.now();
   await api("POST", "/admin/simulator/connect");
   const net = await api<NetworkSnapshot>("GET", "/network");
@@ -295,14 +295,15 @@ async function seedHistory(api: Api, clock: DemoClock, flush: () => Promise<void
 }
 
 /** The fleet's own yard: four 150 kW chargers on a 400 kW connection, five trucks overnight. */
-async function seedDepot(api: Api, now: Date, fleet: Fleet, vehicles: Vehicle[]) {
+async function seedDepot(api: Api, now: Date, fleet: Fleet, vehicles: Vehicle[], store: MemoryStore) {
   const depotId = "demo-yard";
   const ch = (n: number) => ({ id: `bay-${n}`, name: `Bay ${n}`, station_id: `YARD-CP0${n}`, evse_id: 1, max_kw: 150 });
   await api("PUT", `/fleets/${fleet.id}/energy`, { config: { depots: [{
     id: depotId, name: "Northampton yard", postcode: "NN4 7AB", import_limit_kw: 400, site_load_kw: 60, goal: "balanced",
     tariff: { kind: "tou", standard: 0.24, rates: [{ price: 0.13, start: "00:30", end: "07:30" }, { price: 0.34, start: "16:00", end: "19:00", days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"] }] },
     chargers: [ch(1), ch(2), ch(3), ch(4)], control: { kind: "simulated" }, auto_dispatch: false,
-  }] } });
+    flex: { enabled: true, programmes: ["DFS", "DNO"], auto_accept: true, min_price_mwh: 100 },
+  }], flex_provider: { kind: "simulated", name: "Simulated aggregator", report_url: null } } });
   const tz = "Europe/London";
   const today = startOfLocalDay(now, tz);
   const at = (dayOffset: number, hh: number, mm = 0) => {
@@ -324,4 +325,23 @@ async function seedDepot(api: Api, now: Date, fleet: Fleet, vehicles: Vehicle[])
   for (const x of visits) {
     await api("POST", `/fleets/${fleet.id}/depot-visits`, { depot_id: depotId, vehicle_id: v(x.vehicle), charger_id: x.charger, arrive_at: t(x.arrive), depart_at: t(x.depart), soc_start: x.soc[0], soc_target: x.soc[1] });
   }
+  // Grid flexibility: a local network constraint tonight (accepted automatically) and a NESO
+  // turn-up event waiting for a decision.
+  await api("POST", `/fleets/${fleet.id}/flex/simulate`, { depot_id: depotId, kind: "dno" }).catch(() => undefined);
+  await api("POST", `/fleets/${fleet.id}/flex/simulate`, { depot_id: depotId, kind: "dfs-up", accept: false }).catch(() => undefined);
+  // Two events earlier this month, already paid, so the statement shows credits.
+  const past = (daysAgo: number, hh: number, hours: number, programme: "DFS" | "DNO", kw: number, price: number, paid: number) => {
+    const start = at(-daysAgo, hh, 30);
+    const end = new Date(start.getTime() + hours * 3_600_000);
+    const kwh = kw * hours;
+    return {
+      id: `demo-flex-${daysAgo}`, fleet_id: fleet.id, depot_id: depotId, provider_event_id: `SIM-PAST-${daysAgo}`, programme, direction: "down" as const,
+      start_at: start.toISOString(), end_at: end.toISOString(), price_per_mwh: price, requested_kw: null, status: "settled" as const, reason: null,
+      committed_kw: kw, cap_kw: 0, baseline_kw: kw, delivered_kwh: kwh, payment_gbp: paid, fleet_share_pct: 80, fleet_credit_gbp: Math.round(paid * 80) / 100,
+      estimated: false, decided_by: "auto", source: "simulated" as const, created_at: start.toISOString(), updated_at: end.toISOString(),
+    };
+  };
+  const day = Number(localDateKey(now, tz).slice(8, 10));
+  if (day > 3) await store.upsertFlexEvent(past(Math.min(day - 1, 9), 17, 1.5, "DFS", 180, 900, 243));
+  if (day > 6) await store.upsertFlexEvent(past(Math.min(day - 1, 4), 0, 1, "DNO", 210, 600, 126));
 }

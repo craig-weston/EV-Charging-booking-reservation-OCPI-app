@@ -2,6 +2,7 @@
 //  - SupabaseStore (Postgres via PostgREST) for production on Cloudflare Pages
 //  - MemoryStore for the in-browser demo and the test-suite
 import type { DepotVisit } from "../../shared/energy/depot";
+import type { FlexEvent } from "../../shared/energy/flex";
 import type {
   ApiKey, ApiKeyRow, FleetWebhookRow, FleetEnergyRow, AuditEntry, Brand, BookingEvent, BookingRow, Driver, Fleet, FleetInvite, Member, Membership, MemberRole, OcpiLogEntry, OcpiModule,
   Partner, StoredObject, Vehicle,
@@ -83,6 +84,11 @@ export interface Store {
   listDepotVisits(fleetId: string, fromIso: string): Promise<DepotVisit[]>;
   upsertDepotVisit(v: DepotVisit): Promise<DepotVisit>;
   deleteDepotVisit(id: string): Promise<void>;
+  /** Grid flexibility events that end at or after `fromIso`, earliest first. */
+  listFlexEvents(fleetId: string, fromIso: string): Promise<FlexEvent[]>;
+  getFlexEvent(id: string): Promise<FlexEvent | null>;
+  findFlexEventByProvider(fleetId: string, providerEventId: string): Promise<FlexEvent | null>;
+  upsertFlexEvent(e: FlexEvent): Promise<FlexEvent>;
 
   listDrivers(fleetId: string): Promise<Driver[]>;
   getDriver(id: string): Promise<Driver | null>;

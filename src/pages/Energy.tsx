@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { DepotDispatch, EnergyState } from "../../shared/model";
 import { cleanEnergy, newDepot, type Depot, type DepotGoal, type DepotRate, type DepotVisit, type EnergyConfig } from "../../shared/energy/depot";
 import { carbonBand } from "../../shared/energy/carbon";
+import { PROGRAMME_LABEL, type FlexEvent, type FlexProgramme } from "../../shared/energy/flex";
 import type { DepotPlanView } from "../../server/depot";
 import { useApp } from "../app/state";
 import { ApiFailure } from "../app/backend";
@@ -32,6 +33,7 @@ export function EnergyPage() {
   const [depotId, setDepotId] = useState<string | null>(null);
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [visits, setVisits] = useState<DepotVisit[]>([]);
+  const [flex, setFlex] = useState<FlexEvent[]>([]);
   const [editVisit, setEditVisit] = useState<DepotVisit | "new" | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sending, setSending] = useState(false);
@@ -40,8 +42,8 @@ export function EnergyPage() {
   const load = useCallback(async () => {
     if (!fleetId) return;
     try {
-      const [e, v] = await Promise.all([api<EnergyView>("GET", `/fleets/${fleetId}/energy`), api<DepotVisit[]>("GET", `/fleets/${fleetId}/depot-visits`)]);
-      setEnergy(e); setVisits(v);
+      const [e, v, f] = await Promise.all([api<EnergyView>("GET", `/fleets/${fleetId}/energy`), api<DepotVisit[]>("GET", `/fleets/${fleetId}/depot-visits`), api<FlexEvent[]>("GET", `/fleets/${fleetId}/flex/events`).catch(() => [] as FlexEvent[])]);
+      setEnergy(e); setVisits(v); setFlex(f);
       const id = depotId && e.config.depots.some((d) => d.id === depotId) ? depotId : e.config.depots[0]?.id ?? null;
       setDepotId(id);
       if (id) setPlan(await api<PlanResponse>("GET", `/fleets/${fleetId}/depots/${encodeURIComponent(id)}/plan`));
@@ -111,6 +113,7 @@ export function EnergyPage() {
             <div className="panel-head"><h2>Trucks</h2><span className="right xs muted">{depot.chargers.length} charger{depot.chargers.length === 1 ? "" : "s"}, plan from now</span></div>
             <TruckList plan={plan} depot={depot} now={now} canEdit={canPlan} onEdit={(v) => setEditVisit(v)} />
           </section>
+          <FlexPanel depot={depot} events={flex.filter((x) => x.depot_id === depot.id)} provider={energy.config.flex_provider} now={now} canDecide={canPlan} isOwner={role === "owner"} onSettings={() => setSettingsOpen(true)} onChanged={load} />
           <DispatchPanel depot={depot} plan={plan} canSend={canPlan} sending={sending} onSend={send} isOwner={role === "owner"} onSettings={() => setSettingsOpen(true)} />
         </>
       )}
@@ -186,9 +189,22 @@ function LoadChart({ plan, now }: { plan: PlanResponse; now: Date }) {
       <div className="lc-legend" aria-hidden="true">
         {plan.visits.map((v, i) => <span key={v.visit.id}><i className={`sw s${(i % SERIES) + 1}`} />{v.plate}</span>)}
         <span><i className="sw limit" />Charging limit</span>
+        {(plan.events ?? []).length > 0 && <span><i className="sw ev-down" />Grid event</span>}
       </div>
       <div className="lc-scroll" ref={scroller}>
         <svg viewBox={`0 0 ${W} ${H}`} style={{ minWidth: Math.max(620, W > 900 ? W * 0.9 : 0) }} role="group" aria-label={`Planned charging power by half-hour, peak ${N0.format(plan.peak_kw)} kW against a ${N0.format(plan.headroom_kw)} kW limit`}>
+          {(plan.events ?? []).map((e) => {
+            const t0 = plan.slots[0]?.start ?? 0, t1 = plan.slots[S - 1]?.end ?? 1;
+            const a = Math.max(t0, Date.parse(e.start_at)), b = Math.min(t1, Date.parse(e.end_at));
+            if (b <= a) return null;
+            const x0 = ((a - t0) / (t1 - t0)) * W, x1 = ((b - t0) / (t1 - t0)) * W;
+            return (
+              <g key={e.id} className={`lc-event ${e.direction} ${e.status}`}>
+                <rect x={x0} y={PADT - 10} width={x1 - x0} height={base - PADT + 10} />
+                <text x={x0 + 4} y={PADT + 2} className="mb-x">{e.direction === "down" ? "Turn down" : "Turn up"}{e.status === "offered" ? "?" : ""}</text>
+              </g>
+            );
+          })}
           <line x1="0" x2={W} y1={base} y2={base} className="mb-axis" />
           {plan.slots.map((s, j) => {
             let acc = 0;
@@ -380,6 +396,7 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
   const [cfg, setCfg] = useState<EnergyConfig>(() => (energy.config.depots.length ? structuredClone(energy.config) : { depots: [newDepot("Main depot")] }));
   const [id, setId] = useState(depotId ?? cfg.depots[0].id);
   const [secret, setSecret] = useState("");
+  const [flexSecret, setFlexSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const d = cfg.depots.find((x) => x.id === id) ?? cfg.depots[0];
@@ -391,7 +408,10 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
     setBusy(true); setErr(null);
     try {
       const clean = cleanEnergy(cfg);
-      const e = await api<EnergyView>("PUT", `/fleets/${fleetId}/energy`, { config: clean, secrets: secret ? { [d.id]: secret } : undefined });
+      const secrets: Record<string, string> = {};
+      if (secret) secrets[d.id] = secret;
+      if (flexSecret) secrets.flex = flexSecret;
+      const e = await api<EnergyView>("PUT", `/fleets/${fleetId}/energy`, { config: clean, secrets: Object.keys(secrets).length ? secrets : undefined });
       toast("Depot settings saved");
       onSaved(e, d.id);
     } catch (x) { setErr(x instanceof ApiFailure ? x.message : "Couldn't save"); } finally { setBusy(false); }
@@ -483,6 +503,40 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
           )}
           {d.control.kind !== "simulated" && <Switch checked={d.auto_dispatch} onChange={(v) => set({ auto_dispatch: v })}>Send updated schedules automatically every 15 minutes</Switch>}
         </div>
+        <div className="stack gap-12">
+          <h3>Grid flexibility</h3>
+          <Switch checked={d.flex.enabled} onChange={(v) => set({ flex: { ...d.flex, enabled: v } })}>Take part in grid flexibility at this depot</Switch>
+          {d.flex.enabled && (
+            <>
+              <div className="field">
+                <span className="label">Schemes</span>
+                {(["DFS", "DNO", "BM"] as FlexProgramme[]).map((p) => (
+                  <label key={p} className="small row gap-6"><input type="checkbox" checked={d.flex.programmes.includes(p)} onChange={(e) => set({ flex: { ...d.flex, programmes: e.target.checked ? [...d.flex.programmes, p] : d.flex.programmes.filter((x) => x !== p) } })} />{PROGRAMME_LABEL[p]}</label>
+                ))}
+              </div>
+              <div className="two" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <Field label="Lowest payment to accept, £/MWh">{(fid) => <input id={fid} className="input" inputMode="decimal" value={d.flex.min_price_mwh} onChange={(e) => set({ flex: { ...d.flex, min_price_mwh: Number(e.target.value) || 0 } })} />}</Field>
+                <div className="field"><span className="label">Decisions</span><Switch checked={d.flex.auto_accept} onChange={(v) => set({ flex: { ...d.flex, auto_accept: v } })}>Accept automatically when every truck can still be ready</Switch></div>
+              </div>
+            </>
+          )}
+          <div className="field">
+            <span className="label">Events come from (all depots)</span>
+            <Seg<"simulated" | "aggregator"> label="Flexibility provider" full value={cfg.flex_provider.kind} onChange={(k) => setCfg({ ...cfg, flex_provider: { ...cfg.flex_provider, kind: k, name: k === "aggregator" ? (cfg.flex_provider.kind === "aggregator" ? cfg.flex_provider.name : "") : "Simulated aggregator" } })}
+              options={[{ value: "simulated", label: "Simulated (try it out)" }, { value: "aggregator", label: "Your aggregator" }]} />
+          </div>
+          {cfg.flex_provider.kind === "aggregator" && (
+            <>
+              <p className="small muted" style={{ margin: 0 }}>Your flexibility aggregator holds the scheme registrations and sends events here. Give them the address below and agree a signing secret. We send our commitments and delivery reports to their address.</p>
+              <div className="field"><span className="label">Your event address (for the aggregator)</span><code className="copyable">{typeof location !== "undefined" ? location.origin : ""}/api/flex/{fleetId}/events</code></div>
+              <div className="two" style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12 }}>
+                <Field label="Aggregator">{(fid) => <input id={fid} className="input" placeholder="e.g. Axle Energy" value={cfg.flex_provider.name} onChange={(e) => setCfg({ ...cfg, flex_provider: { ...cfg.flex_provider, name: e.target.value } })} />}</Field>
+                <Field label="Their report address">{(fid) => <input id={fid} className="input" placeholder="https://aggregator.example/reports" value={cfg.flex_provider.report_url ?? ""} onChange={(e) => setCfg({ ...cfg, flex_provider: { ...cfg.flex_provider, report_url: e.target.value } })} />}</Field>
+              </div>
+              <Field label="Signing secret" hint={energy.has_secret.flex ? `Saved (ending ${cfg.flex_provider.secret_hint ?? "…"}). Type a new one to replace it.` : "Both sides sign with it (HMAC-SHA256). Stored encrypted."}>{(fid) => <input id={fid} className="input" type="password" autoComplete="off" value={flexSecret} onChange={(e) => setFlexSecret(e.target.value)} />}</Field>
+            </>
+          )}
+        </div>
         {err && <div className="error-text" role="alert">{err}</div>}
         <button className="btn sm ghost" style={{ alignSelf: "flex-start" }} onClick={() => { const nd = newDepot(`Depot ${cfg.depots.length + 1}`); setCfg({ depots: [...cfg.depots, nd] }); setId(nd.id); }}><Icon name="plus" size="sm" />Add another depot</button>
       </div>
@@ -490,3 +544,116 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
   );
 }
 
+
+// ---- grid flexibility -------------------------------------------------------------------------
+
+const STATUS_LABEL: Record<FlexEvent["status"], { label: string; tone: "" | "ok" | "warn" | "bad" }> = {
+  offered: { label: "Waiting for you", tone: "warn" },
+  accepted: { label: "Accepted", tone: "ok" },
+  declined: { label: "Declined", tone: "" },
+  delivered: { label: "Delivered", tone: "ok" },
+  settled: { label: "Paid", tone: "ok" },
+  cancelled: { label: "Missed", tone: "" },
+};
+
+function FlexPanel({ depot, events, provider, now, canDecide, isOwner, onSettings, onChanged }: {
+  depot: Depot; events: FlexEvent[]; provider: EnergyConfig["flex_provider"]; now: Date; canDecide: boolean; isOwner: boolean; onSettings(): void; onChanged(): Promise<void>;
+}) {
+  const { api, fleetId, toast } = useApp();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [kind, setKind] = useState<"dno" | "dfs-down" | "dfs-up">("dno");
+  const upcoming = events.filter((e) => Date.parse(e.end_at) > now.getTime() && (e.status === "offered" || e.status === "accepted"));
+  const past = events.filter((e) => !upcoming.includes(e)).sort((a, b) => b.start_at.localeCompare(a.start_at)).slice(0, 8);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const earned = events.filter((e) => (e.status === "delivered" || e.status === "settled") && Date.parse(e.end_at) >= monthStart).reduce((a, e) => a + (e.fleet_credit_gbp ?? 0), 0);
+  const act = async (e: FlexEvent, accept: boolean) => {
+    setBusy(e.id);
+    try {
+      const r = await api<FlexEvent>("POST", `/fleets/${fleetId}/flex/${e.id}/${accept ? "accept" : "decline"}`);
+      toast(r.status === "accepted" ? `Accepted: ${r.direction === "down" ? "charging eased off by" : "extra"} ${N0.format(r.committed_kw ?? 0)} kW, every truck still ready` : r.reason ?? "Declined", r.status === "accepted" ? undefined : "bad");
+      await onChanged();
+    } catch (x) { toast(x instanceof ApiFailure ? x.message : "Couldn't save", "bad"); } finally { setBusy(null); }
+  };
+  const simulate = async () => {
+    setBusy("sim");
+    try {
+      const r = await api<FlexEvent>("POST", `/fleets/${fleetId}/flex/simulate`, { depot_id: depot.id, kind });
+      toast(r.status === "accepted" ? "Event accepted and the plan updated" : r.status === "offered" ? "New event: accept or decline it below" : r.reason ?? "Event declined", r.status === "declined" ? "bad" : undefined);
+      await onChanged();
+    } catch (x) { toast(x instanceof ApiFailure ? x.message : "Couldn't create an event", "bad"); } finally { setBusy(null); }
+  };
+  return (
+    <section className="panel section flex-panel">
+      <div className="panel-head">
+        <h2>Grid flexibility</h2>
+        <span className="right row gap-8">
+          {depot.flex.enabled && <span className="tag">{provider.name}</span>}
+          {earned > 0 && <span className="tag ok">{fmtMoney(earned)} earned this month</span>}
+        </span>
+      </div>
+      <div className="panel-body stack gap-12">
+        {!depot.flex.enabled ? (
+          <>
+            <p className="small" style={{ margin: 0 }}>Get paid for easing off charging when the grid is stretched, or soaking up spare power when there's too much, through NESO's Demand Flexibility Service and local network (DNO) schemes. We only commit what this depot can do <b>without any truck leaving short</b>, and your share of the payment is credited on your monthly statement.</p>
+            {isOwner ? <div><button className="btn sm" onClick={onSettings}><Icon name="zap" size="sm" />Switch on in depot settings</button></div> : <p className="xs muted" style={{ margin: 0 }}>A fleet owner can switch this on in depot settings.</p>}
+          </>
+        ) : (
+          <>
+            {upcoming.length === 0 && <p className="small muted" style={{ margin: 0 }}>No events coming up. {depot.flex.auto_accept ? "Events this depot can deliver are accepted automatically." : "You'll be asked to accept or decline each event."}</p>}
+            {upcoming.length > 0 && <ul className="flex-list">{upcoming.map((e) => <FlexRow key={e.id} e={e} now={now} busy={busy === e.id} canDecide={canDecide} onAct={act} />)}</ul>}
+            {provider.kind === "simulated" && canDecide && (
+              <div className="flex-sim">
+                <select className="select" aria-label="Kind of event" value={kind} onChange={(x) => setKind(x.target.value as typeof kind)}>
+                  <option value="dno">Local network: turn down as the off-peak rush starts (00:30)</option>
+                  <option value="dfs-down">NESO DFS: turn down at the evening peak (17:30)</option>
+                  <option value="dfs-up">NESO DFS: turn up when wind is plentiful (21:00)</option>
+                </select>
+                <button className="btn sm" disabled={busy === "sim"} onClick={simulate}>{busy === "sim" ? <Spinner label="Creating" /> : <Icon name="play" size="sm" />}Try an event</button>
+              </div>
+            )}
+            {past.length > 0 && (
+              <details className="flex-past">
+                <summary className="small">Earlier events ({past.length})</summary>
+                <ul className="flex-list">{past.map((e) => <FlexRow key={e.id} e={e} now={now} busy={false} canDecide={false} onAct={act} />)}</ul>
+              </details>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function FlexRow({ e, now, busy, canDecide, onAct }: { e: FlexEvent; now: Date; busy: boolean; canDecide: boolean; onAct(e: FlexEvent, accept: boolean): void }) {
+  const st = STATUS_LABEL[e.status];
+  const a = new Date(e.start_at), b = new Date(e.end_at);
+  const hours = (b.getTime() - a.getTime()) / 3_600_000;
+  const estPay = e.committed_kw ? (e.committed_kw * hours / 1000) * e.price_per_mwh : null;
+  return (
+    <li className={`flex-row ${e.direction}`}>
+      <span className="fr-icon" aria-hidden="true"><Icon name={e.direction === "down" ? "trendDown" : "trendUp"} /></span>
+      <div className="fr-main">
+        <div><b>{e.direction === "down" ? "Turn down" : "Turn up"}</b> · {fmtDay(a, now, TZ)} {fmtTime(a, TZ)}–{fmtTime(b, TZ)} <span className="muted small">· {PROGRAMME_LABEL[e.programme as FlexProgramme]}</span></div>
+        <div className="xs muted">
+          £{N0.format(e.price_per_mwh)}/MWh
+          {e.committed_kw ? ` · ${e.direction === "down" ? `ease off by ${N0.format(e.committed_kw)} kW (from ${N0.format(e.baseline_kw ?? 0)} kW)` : `${N0.format(e.committed_kw)} kW extra`}, every truck still ready` : ""}
+          {e.status === "offered" ? " · decide before it starts" : ""}
+          {e.reason ? ` · ${e.reason}` : ""}
+        </div>
+      </div>
+      <div className="fr-money">
+        {e.fleet_credit_gbp != null ? <><b>{fmtMoney(e.fleet_credit_gbp)}</b><span className="xs muted">{e.estimated ? "your share, estimated" : "your share, paid"}</span></>
+          : estPay != null ? <><b>~{fmtMoney(estPay)}</b><span className="xs muted">expected payment</span></> : null}
+      </div>
+      <div className="fr-status">
+        <span className={`tag ${st.tone}`}>{st.label}</span>
+        {e.status === "offered" && canDecide && (
+          <span className="row gap-6">
+            <button className="btn sm primary" disabled={busy} onClick={() => onAct(e, true)}>Accept</button>
+            <button className="btn sm ghost" disabled={busy} onClick={() => onAct(e, false)}>Decline</button>
+          </span>
+        )}
+      </div>
+    </li>
+  );
+}

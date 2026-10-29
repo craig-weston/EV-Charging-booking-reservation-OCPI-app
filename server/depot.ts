@@ -16,6 +16,7 @@ import { energyPriceAt } from "../shared/energy/price";
 import { intensityAt, HALF_HOUR, floorHalfHour, type CarbonSeries } from "../shared/energy/carbon";
 import { buildSlots, planDepot, schedulePeriods, type DepotPlan } from "../shared/energy/optimise";
 import { carbonFor } from "./energy";
+import type { FlexEvent } from "../shared/energy/flex";
 import { openSecret } from "./security";
 import { signature } from "./webhooks";
 import { iso } from "../shared/util";
@@ -55,6 +56,8 @@ export interface DepotPlanView {
   baseline: DepotPlan["baseline"];
   carbon_source: CarbonSeries["source"] | null;
   price_source: "tariff" | "agile" | "agile-modelled";
+  /** Grid flexibility events affecting this plan (accepted) or waiting for a decision (offered). */
+  events: FlexEvent[];
 }
 
 // --- Octopus Agile (public, no key): half-hourly unit rates by region ---------------------------
@@ -82,7 +85,19 @@ async function agilePrices(ctx: Ctx, product: string, region: string, from: numb
   return value;
 }
 
-export async function depotPlan(ctx: Ctx, depot: Depot, visits: DepotVisit[], vehicles: Vehicle[]): Promise<DepotPlanView> {
+export interface PlanInputs {
+  depot: Depot;
+  now: number;
+  slots: DepotPlan["slots"];
+  rows: { v: DepotVisit; veh: Vehicle | null; battery: number | null; maxKw: number; need: number }[];
+  chargers: { id: string; maxKw: number }[];
+  headroom: number;
+  carbonSource: CarbonSeries["source"] | null;
+  priceSource: DepotPlanView["price_source"];
+}
+
+/** Everything the planner needs for a depot right now (prices, carbon, trucks). */
+export async function depotInputs(ctx: Ctx, depot: Depot, visits: DepotVisit[], vehicles: Vehicle[]): Promise<PlanInputs> {
   const now = ctx.now().getTime();
   const active = visits.filter((v) => v.depot_id === depot.id && (v.status === "planned" || v.status === "plugged_in") && new Date(v.depart_at).getTime() > now);
   const horizonEnd = Math.min(now + MAX_HORIZON_MS, Math.max(now + 12 * 3_600_000, ...active.map((v) => new Date(v.depart_at).getTime())));
@@ -104,7 +119,6 @@ export async function depotPlan(ctx: Ctx, depot: Depot, visits: DepotVisit[], ve
   }
   const headroom = Math.max(0, depot.import_limit_kw - depot.site_load_kw);
   const slots = buildSlots(now, horizonEnd, priceAt, (t) => intensityAt(carbon, new Date(t)), headroom);
-  const chargers = depot.chargers.map((c) => ({ id: c.id, maxKw: c.max_kw }));
   const rows = active.map((v) => {
     const veh = vehicles.find((x) => x.id === v.vehicle_id) ?? null;
     const ch = depot.chargers.find((c) => c.id === v.charger_id) ?? null;
@@ -113,14 +127,43 @@ export async function depotPlan(ctx: Ctx, depot: Depot, visits: DepotVisit[], ve
     const needBattery = battery ? Math.max(0, ((v.soc_target - v.soc_start) / 100) * battery) : 0;
     return { v, veh, battery, maxKw, need: needBattery / EFFICIENCY };
   });
-  const plan = planDepot(slots, rows.map((r) => ({ id: r.v.id, chargerId: r.v.charger_id, from: Math.max(now, new Date(r.v.arrive_at).getTime()), to: new Date(r.v.depart_at).getTime(), needKwh: r.need, maxKw: r.maxKw })), chargers, depot.goal);
+  return { depot, now, slots, rows, chargers: depot.chargers.map((c) => ({ id: c.id, maxKw: c.max_kw })), headroom, carbonSource: carbon.source, priceSource };
+}
+
+/** Event windows applied to the slots: turn-down caps charging power, turn-up makes power cheaper
+ *  (the payment per kWh), so the optimiser moves charging into it. */
+export function applyEvents(slots: DepotPlan["slots"], events: Pick<FlexEvent, "start_at" | "end_at" | "direction" | "cap_kw" | "price_per_mwh">[]): DepotPlan["slots"] {
+  return slots.map((s) => {
+    let out = s;
+    for (const e of events) {
+      const a = Date.parse(e.start_at), b = Date.parse(e.end_at);
+      if (!(s.start < b && s.end > a)) continue;
+      if (e.direction === "down" && e.cap_kw != null) out = { ...out, headroomKw: Math.min(out.headroomKw, Math.max(0, e.cap_kw)) };
+      if (e.direction === "up") out = { ...out, price: out.price - e.price_per_mwh / 1000 };
+    }
+    return out;
+  });
+}
+
+export function planFromInputs(i: PlanInputs, events: FlexEvent[] = []): DepotPlan {
+  const mine = events.filter((e) => e.depot_id === i.depot.id && e.status === "accepted");
+  const slots = applyEvents(i.slots, mine);
+  const plan = planDepot(slots, i.rows.map((r) => ({ id: r.v.id, chargerId: r.v.charger_id, from: Math.max(i.now, new Date(r.v.arrive_at).getTime()), to: new Date(r.v.depart_at).getTime(), needKwh: r.need, maxKw: r.maxKw })), i.chargers, i.depot.goal);
+  // Report real prices (a turn-up incentive is income, not a cheaper tariff).
+  const real = i.slots;
+  const cost = plan.visits.reduce((a, v) => a + v.kw.reduce((b, kw, j) => b + kw * ((real[j].end - real[j].start) / 3_600_000) * real[j].price, 0), 0);
+  plan.visits.forEach((v) => { v.cost = v.kw.reduce((b, kw, j) => b + kw * ((real[j].end - real[j].start) / 3_600_000) * real[j].price, 0); });
+  return { ...plan, slots: plan.slots.map((s, j) => ({ ...s, price: real[j].price })), cost };
+}
+
+export function viewFromPlan(i: PlanInputs, plan: DepotPlan, events: FlexEvent[] = []): DepotPlanView {
   return {
-    depot_id: depot.id,
-    generated_at: iso(ctx.now()),
+    depot_id: i.depot.id,
+    generated_at: new Date(i.now).toISOString(),
     slots: plan.slots,
     total_kw: plan.totalKw,
-    visits: rows.map((r, i) => {
-      const p = plan.visits[i];
+    visits: i.rows.map((r, j) => {
+      const p = plan.visits[j];
       const socReady = r.battery ? Math.min(100, r.v.soc_start + ((p.deliveredKwh * EFFICIENCY) / r.battery) * 100) : r.v.soc_start;
       return {
         visit: r.v, plate: r.veh?.plate ?? "?", name: r.veh?.name ?? null, battery_kwh: r.battery, max_kw: r.maxKw,
@@ -128,9 +171,15 @@ export async function depotPlan(ctx: Ctx, depot: Depot, visits: DepotVisit[], ve
         outcome: r.need <= 0.05 ? "idle" : p.shortfallKwh > 0 ? "short" : "ready",
       };
     }),
-    cost: plan.cost, kg: plan.kg, peak_kw: plan.peakKw, headroom_kw: headroom, baseline: plan.baseline,
-    carbon_source: carbon.source, price_source: priceSource,
+    cost: plan.cost, kg: plan.kg, peak_kw: plan.peakKw, headroom_kw: i.headroom, baseline: plan.baseline,
+    carbon_source: i.carbonSource, price_source: i.priceSource,
+    events: events.filter((e) => e.depot_id === i.depot.id && Date.parse(e.end_at) > i.now && (e.status === "accepted" || e.status === "offered")),
   };
+}
+
+export async function depotPlan(ctx: Ctx, depot: Depot, visits: DepotVisit[], vehicles: Vehicle[], events: FlexEvent[] = []): Promise<DepotPlanView> {
+  const inputs = await depotInputs(ctx, depot, visits, vehicles);
+  return viewFromPlan(inputs, planFromInputs(inputs, events), events);
 }
 
 /** OCPP 2.0.1 SetChargingProfileRequest per charger with planned charging. */
@@ -211,10 +260,10 @@ export async function runDepotDispatch(ctx: Ctx): Promise<number> {
   for (const row of await ctx.store.listEnergy()) {
     const auto = (row.config as EnergyConfig).depots.filter((d) => d.auto_dispatch && d.control.kind !== "simulated");
     if (!auto.length) continue;
-    const [visits, vehicles] = await Promise.all([ctx.store.listDepotVisits(row.fleet_id, iso(ctx.now())), ctx.store.listVehicles(row.fleet_id)]);
+    const [visits, vehicles, events] = await Promise.all([ctx.store.listDepotVisits(row.fleet_id, iso(ctx.now())), ctx.store.listVehicles(row.fleet_id), ctx.store.listFlexEvents(row.fleet_id, iso(ctx.now()))]);
     for (const depot of auto) {
       try {
-        const view = await depotPlan(ctx, depot, visits, vehicles);
+        const view = await depotPlan(ctx, depot, visits, vehicles, events);
         await dispatchDepot(ctx, row, depot, view, "auto");
         sent++;
       } catch (e) {

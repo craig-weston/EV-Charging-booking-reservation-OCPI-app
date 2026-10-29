@@ -23,7 +23,7 @@ test("priceLine: operator price plus margin, to the penny", () => {
 });
 
 test("cleanBilling: margin kept between 0 and 100, VAT defaults to 20%", () => {
-  assert.deepEqual(cleanBilling({ margin_percent: 12.345 }), { margin_percent: 12.35, vat_rate: 0.2, history: [] });
+  assert.deepEqual(cleanBilling({ margin_percent: 12.345 }), { margin_percent: 12.35, vat_rate: 0.2, history: [], flex_fleet_share: 80 });
   assert.equal(cleanBilling({ margin_percent: -5 }).margin_percent, 0);
   assert.equal(cleanBilling({ margin_percent: 500 }).margin_percent, 100);
   assert.equal(cleanBilling({ margin_percent: "abc" as unknown as number }).margin_percent, 0);

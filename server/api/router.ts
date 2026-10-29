@@ -21,6 +21,8 @@ import { notifyChannels, notifyDriver } from "../notify";
 import { redactPath, reportError, scrub } from "../alerts";
 import { carbonFor } from "../energy";
 import { depotPlan, dispatchDepot, energyRow } from "../depot";
+import { closeEndedEvents, decide, handleFlexInbound, simulateEvent } from "../flex";
+import { PROGRAMME_LABEL } from "../../shared/energy/flex";
 import { SMART_MODES, clearSmartCharging, requestSmartCharging } from "../emsp/smart";
 import type { SmartMode } from "../../shared/model";
 import { cleanEnergy, type DepotVisit } from "../../shared/energy/depot";
@@ -110,6 +112,13 @@ export async function handleApi(req: Request, ctx: Ctx): Promise<Response> {
     if (seg[0] === "health") return json({ ok: true, mode: ctx.mode, time: iso(ctx.now()) });
     // Errors from the app in people's browsers (src/app/errors.ts). Rate limited in server/live.ts.
     if (seg[0] === "client-errors" && req.method === "POST") return json(await clientError(ctx, req), 202);
+    // Grid flexibility aggregators push events here, authenticated by an HMAC signature (server/flex.ts).
+    if (seg[0] === "flex" && seg[1] && seg[2] === "events" && req.method === "POST") {
+      let text: string;
+      try { text = await readLimited(req, BODY_LIMITS.api); } catch { return err(413, "Body too large"); }
+      const r = await handleFlexInbound(ctx, req, seg[1], seg.slice(3), text);
+      return new Response(JSON.stringify(r.data), { status: r.status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
     // Invite preview works signed out too, so the sign-in screen can say what you're joining.
     if (seg[0] === "invites" && seg[1] && !seg[2] && req.method === "GET") {
       return json(await invitePreview(ctx, seg[1], await ctx.verifyUser(req).catch(() => null)));
@@ -349,16 +358,18 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
     const row = await energyRow(ctx, fleetId);
     const depot = row.config.depots.find((d) => d.id === id);
     if (!depot) throw new ApiError(404, "Depot not found");
-    const [visits, vehicles] = await Promise.all([ctx.store.listDepotVisits(fleetId, iso(ctx.now())), ctx.store.listVehicles(fleetId)]);
-    return json({ ...(await depotPlan(ctx, depot, visits, vehicles)), dispatch: row.state?.dispatch?.[depot.id] ?? null });
+    await closeEndedEvents(ctx, fleetId);
+    const [visits, vehicles, events] = await Promise.all([ctx.store.listDepotVisits(fleetId, iso(ctx.now())), ctx.store.listVehicles(fleetId), ctx.store.listFlexEvents(fleetId, iso(ctx.now()))]);
+    return json({ ...(await depotPlan(ctx, depot, visits, vehicles, events)), dispatch: row.state?.dispatch?.[depot.id] ?? null });
   }
+  if (res === "flex") return flexRoutes(req, ctx, user, fleetId, id, action);
   if (res === "depots" && id && action === "dispatch" && m === "POST") {
     const row = await energyRow(ctx, fleetId);
     const depot = row.config.depots.find((d) => d.id === id);
     if (!depot) throw new ApiError(404, "Depot not found");
     if (!depot.chargers.length) throw new ApiError(409, "Add the depot's chargers first");
-    const [visits, vehicles] = await Promise.all([ctx.store.listDepotVisits(fleetId, iso(ctx.now())), ctx.store.listVehicles(fleetId)]);
-    const view = await depotPlan(ctx, depot, visits, vehicles);
+    const [visits, vehicles, events] = await Promise.all([ctx.store.listDepotVisits(fleetId, iso(ctx.now())), ctx.store.listVehicles(fleetId), ctx.store.listFlexEvents(fleetId, iso(ctx.now()))]);
+    const view = await depotPlan(ctx, depot, visits, vehicles, events);
     const d = await dispatchDepot(ctx, row, depot, view, "manual");
     await audit(ctx, req, user, { fleet_id: fleetId, action: "depot.dispatch", target: depot.name, data: { depot_id: depot.id, ok: d.ok, chargers: d.results.length } });
     return json(d);
@@ -655,7 +666,15 @@ async function energyRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: str
   }
   const secrets: Record<string, string> = {};
   for (const d of config.depots) if (row.secrets?.[d.id]) secrets[d.id] = row.secrets[d.id];
+  if (row.secrets?.flex && config.flex_provider.kind === "aggregator") { secrets.flex = row.secrets.flex; config.flex_provider.secret_hint = row.config.flex_provider?.secret_hint; }
+  if (config.flex_provider.kind === "aggregator" && config.flex_provider.report_url) checkOperatorUrl(config.flex_provider.report_url, ctx, "The aggregator's report address", "https://aggregator.example/depotcharge/reports");
+  if (b.secrets && "flex" in b.secrets) {
+    const v = (b.secrets.flex ?? "").toString().trim().slice(0, 500);
+    if (v) { secrets.flex = (await sealSecret(v, ctx.env.DATA_ENCRYPTION_KEY))!; config.flex_provider.secret_hint = hint(v) ?? ""; }
+    else { delete secrets.flex; delete config.flex_provider.secret_hint; }
+  }
   for (const [depotId, value] of Object.entries(b.secrets ?? {})) {
+    if (depotId === "flex") continue;
     const d = config.depots.find((x) => x.id === depotId);
     if (!d) continue;
     if (value === null || value === "") { delete secrets[depotId]; if (d.control.kind === "citrineos") delete d.control.token_hint; if (d.control.kind === "webhook") delete d.control.secret_hint; continue; }
@@ -675,6 +694,34 @@ async function energyRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: str
   await ctx.store.saveEnergy(row);
   await audit(ctx, req, user, { fleet_id: fleetId, action: "energy.update", target: null, data: { depots: config.depots.map((d) => ({ id: d.id, name: d.name, chargers: d.chargers.length, control: d.control.kind, auto: d.auto_dispatch })) } });
   return json(view());
+}
+
+async function flexRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: string, id: string | undefined, action: string | undefined): Promise<Response> {
+  const m = req.method;
+  if (id === "events" && !action && m === "GET") {
+    await closeEndedEvents(ctx, fleetId);
+    const url = new URL(req.url);
+    const from = url.searchParams.get("from");
+    return json(await ctx.store.listFlexEvents(fleetId, from && !Number.isNaN(Date.parse(from)) ? new Date(from).toISOString() : new Date(ctx.now().getTime() - 62 * 864e5).toISOString()));
+  }
+  const row = await energyRow(ctx, fleetId);
+  if (id === "simulate" && m === "POST") {
+    const b = await body<{ depot_id?: string; kind?: string; accept?: boolean }>(req);
+    if (row.config.flex_provider.kind !== "simulated") throw new ApiError(409, "Events come from your aggregator. Switch the provider to Simulated to try one.");
+    const depot = row.config.depots.find((d) => d.id === b.depot_id);
+    if (!depot) throw new ApiError(400, "Choose one of your depots");
+    if (!depot.flex.enabled) throw new ApiError(409, "Switch on grid flexibility for this depot first (Depot settings)");
+    const kind = b.kind === "dfs-down" || b.kind === "dfs-up" ? b.kind : "dno";
+    return json(await simulateEvent(ctx, row, depot, kind, b.accept), 201);
+  }
+  if (id && (action === "accept" || action === "decline") && m === "POST") {
+    const ev = await ctx.store.getFlexEvent(id);
+    if (!ev || ev.fleet_id !== fleetId) throw new ApiError(404, "Event not found");
+    const saved = await decide(ctx, row, ev, action === "accept", user.email ?? user.id);
+    await audit(ctx, req, user, { fleet_id: fleetId, action: `flex.${action}`, target: ev.programme, data: { event_id: ev.id, status: saved.status, committed_kw: saved.committed_kw } });
+    return json(saved);
+  }
+  return err(404, "Not found");
 }
 
 async function visitRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: string, id: string | undefined): Promise<Response> {
@@ -933,10 +980,13 @@ async function fleetStatement(ctx: Ctx, fleet: Fleet, month: string): Promise<Fl
     if (!locs.has(k)) locs.set(k, (await ctx.store.getObject<Location>("locations", b.cpo_country_code, b.cpo_party_id, b.location_id).catch(() => null))?.data ?? null);
   }
   const loc = (b: BookingRow) => locs.get(`${b.cpo_country_code}*${b.cpo_party_id}*${b.location_id}`) ?? null;
+  const energy = await ctx.store.getEnergy(fleet.id).catch(() => null);
+  const flex = energy ? (await ctx.store.listFlexEvents(fleet.id, from.toISOString()).catch(() => [])).filter((e) => (e.status === "delivered" || e.status === "settled") && Date.parse(e.end_at) < to.getTime() && (e.fleet_credit_gbp ?? 0) > 0) : [];
   const statement = buildStatement({
     month,
     bookings,
     billing,
+    credits: flex.map((e) => ({ event_id: e.provider_event_id ?? e.id, at: e.end_at, depot: energy?.config.depots.find((d) => d.id === e.depot_id)?.name ?? e.depot_id, programme: PROGRAMME_LABEL[e.programme], direction: e.direction, kwh: e.delivered_kwh ?? 0, amount: e.fleet_credit_gbp ?? 0, estimated: e.estimated })),
     site: (b) => loc(b)?.name ?? b.location_id,
     operator: (b) => operatorName(partners.find((p) => p.id === b.partner_id) ?? null, b.cpo_country_code, b.cpo_party_id, loc(b)),
     vehicleName: (b) => vehicles.find((v) => v.id === b.vehicle_id)?.name ?? null,
@@ -1054,13 +1104,21 @@ async function adminRoutes(req: Request, ctx: Ctx, user: AuthUser, seg: string[]
   if (res === "billing") {
     if (m === "GET") return json(await billingSettings(ctx));
     if (m === "PUT") {
-      const b = await body<{ margin_percent?: number }>(req);
+      const b = await body<{ margin_percent?: number; flex_fleet_share?: number }>(req);
       const before = await billingSettings(ctx);
-      const margin = cleanMargin(b.margin_percent);
-      if (margin === null) throw new ApiError(400, "Enter the margin as a number from 0 to 100");
-      const next = withMargin(before, margin, ctx.now());
+      let next = before;
+      if (b.margin_percent !== undefined) {
+        const margin = cleanMargin(b.margin_percent);
+        if (margin === null) throw new ApiError(400, "Enter the margin as a number from 0 to 100");
+        next = withMargin(before, margin, ctx.now());
+      }
+      if (b.flex_fleet_share !== undefined) {
+        const f = Number(b.flex_fleet_share);
+        if (!Number.isFinite(f) || f < 0 || f > 100) throw new ApiError(400, "Enter the fleet's share as a number from 0 to 100");
+        next = cleanBilling({ ...next, flex_fleet_share: f });
+      }
       await ctx.store.setSetting("billing", next);
-      await audit(ctx, req, user, { action: "billing.update", data: { margin_percent: next.margin_percent, vat_rate: next.vat_rate, previous_margin_percent: before.margin_percent } });
+      await audit(ctx, req, user, { action: "billing.update", data: { margin_percent: next.margin_percent, vat_rate: next.vat_rate, previous_margin_percent: before.margin_percent, flex_fleet_share: next.flex_fleet_share } });
       return json(next);
     }
   }

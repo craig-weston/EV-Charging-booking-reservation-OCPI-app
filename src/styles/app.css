@@ -1523,3 +1523,23 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
 .smart-est > div { display: flex; flex-direction: column; gap: 2px; background: var(--surface-2); border-radius: var(--r-sm); padding: 8px 10px; }
 .smart-est b { font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
 .ok-text { color: var(--ok); }
+/* grid flexibility */
+.lc-event rect { fill: color-mix(in oklab, var(--bad) 9%, transparent); stroke: color-mix(in oklab, var(--bad) 45%, transparent); stroke-dasharray: 4 3; }
+.lc-event.up rect { fill: color-mix(in oklab, var(--ok) 10%, transparent); stroke: color-mix(in oklab, var(--ok) 50%, transparent); }
+.lc-event.offered rect { stroke-dasharray: 2 4; }
+.lc-event text { fill: var(--ink-2); font-weight: 600; }
+.sw.ev-down { background: color-mix(in oklab, var(--bad) 12%, var(--surface)); border: 1px dashed color-mix(in oklab, var(--bad) 50%, transparent); }
+.flex-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.flex-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+.fr-icon { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: var(--bad-bg); color: var(--bad); }
+.flex-row.up .fr-icon { background: var(--ok-bg); color: var(--ok); }
+.fr-money { display: flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; }
+.fr-status { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.flex-sim { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.flex-sim .select { flex: 1 1 260px; max-width: 460px; }
+.flex-past summary { cursor: pointer; color: var(--muted); margin-bottom: 8px; }
+@media (max-width: 640px) {
+  .flex-row { grid-template-columns: 32px minmax(0, 1fr); }
+  .fr-money, .fr-status { grid-column: 2; align-items: flex-start; }
+}
+.copyable { display: block; padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); font-size: var(--fs-sm); word-break: break-all; user-select: all; }

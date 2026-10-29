@@ -92,8 +92,8 @@ export function StatementsPage() {
               <div className="small muted">{monthName(s.month)}</div>
             </div>
             <div className="stmt-total">
-              <div className="xs muted label-caps">Total incl. VAT</div>
-              <div className="stmt-big num">{fmtMoney(s.totals.gross, s.currency)}</div>
+              <div className="xs muted label-caps">{s.totals.credits ? "Amount due" : "Total incl. VAT"}</div>
+              <div className="stmt-big num">{fmtMoney(s.totals.credits ? s.totals.due : s.totals.gross, s.currency)}</div>
               <div className="xs muted">{s.totals.charges} {s.totals.charges === 1 ? "charge" : "charges"}, {KWH.format(s.totals.kwh)} kWh</div>
             </div>
           </section>
@@ -156,9 +156,35 @@ export function StatementsPage() {
               </div>
             </section>
           )}
+          {(s.credits ?? []).length > 0 && (
+            <section className="panel section">
+              <div className="panel-head"><h2>Grid flexibility credits</h2><span className="right xs muted">Your share of payments for easing off or soaking up power</span></div>
+              <div className="table-scroll">
+                <table className="stmt-table">
+                  <thead><tr><th scope="col">Event ended</th><th scope="col">Depot</th><th scope="col">Scheme</th><th scope="col" className="num">kWh shifted</th><th scope="col" className="num">Credit</th></tr></thead>
+                  <tbody>
+                    {s.credits.map((c) => (
+                      <tr key={c.event_id}>
+                        <td className="nowrap">{DAY.format(new Date(c.at))}</td>
+                        <td>{c.depot}</td>
+                        <td><div>{c.programme}</div><div className="xs muted">{c.direction === "down" ? "Turn down" : "Turn up"}{c.estimated ? ", estimated until the aggregator settles" : ""}</div></td>
+                        <td className="num">{KWH.format(c.kwh)}</td>
+                        <td className="num ok-text"><b>−{fmtMoney(c.amount, s.currency)}</b></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr><th scope="row" colSpan={4}>Charges incl. VAT</th><td className="num">{fmtMoney(s.totals.gross, s.currency)}</td></tr>
+                    <tr><th scope="row" colSpan={4}>Credits (no VAT applied)</th><td className="num ok-text">−{fmtMoney(s.totals.credits, s.currency)}</td></tr>
+                    <tr className="grand"><th scope="row" colSpan={4}>Amount due</th><td className="num"><b>{fmtMoney(s.totals.due, s.currency)}</b></td></tr>
+                  </tfoot>
+                </table>
+              </div>
+            </section>
+          )}
           <p className="xs muted stmt-note">
             {isInvoice ? "" : "This is a statement of charges, not a VAT invoice. "}
-            Operator prices come from each operator's charge record and include any booking fee. {s.other_currencies.length > 0 && `Charges in ${s.other_currencies.join(", ")} are left out. `}
+            Operator prices come from each operator's charge record and include any booking fee.{(s.credits ?? []).length > 0 ? " Flexibility credits are shown without VAT; check their VAT treatment with your accountant." : ""} {s.other_currencies.length > 0 && `Charges in ${s.other_currencies.join(", ")} are left out. `}
             Questions about a charge: {s.issuer.contact_email || "contact your platform"}.
           </p>
         </>

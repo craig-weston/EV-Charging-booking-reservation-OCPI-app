@@ -316,8 +316,25 @@ function PricingPanel() {
         </div>
         {!valid && value !== "" && <div className="error-text" role="alert">Enter a number from 0 to 100</div>}
         {saved && saved.history.length > 0 && <p className="xs muted">Changes: {saved.history.slice(-4).reverse().map((h) => `${h.margin_percent}% from ${fmtDateTime(h.from, new Date())}`).join(" · ")}</p>}
+        <FlexShare />
         {example != null && <p className="small pricing-example">A charge the operator prices at £100.00 ex VAT costs a fleet <b>£{example.toFixed(2)}</b> ex VAT, £{(example * (1 + (saved?.vat_rate ?? 0.2))).toFixed(2)} with VAT.</p>}
       </div>
     </section>
+  );
+}
+
+/** Fleets' share of grid flexibility payments (the rest is the platform's fee). */
+function FlexShare() {
+  const { api, toast } = useApp();
+  const [v, setV] = useState<string>("");
+  const [saved, setSaved] = useState<number | null>(null);
+  useEffect(() => { void api<{ flex_fleet_share: number }>("GET", "/admin/billing").then((b) => { setSaved(b.flex_fleet_share); setV(String(b.flex_fleet_share)); }).catch(() => undefined); }, [api]);
+  const n = Number(v);
+  const ok = v !== "" && Number.isFinite(n) && n >= 0 && n <= 100;
+  return (
+    <div className="row gap-8 wrap" style={{ alignItems: "flex-end" }}>
+      <label className="field" style={{ maxWidth: 260 }}><span className="label">Fleets' share of grid flexibility payments, %</span><input className="input" inputMode="decimal" value={v} onChange={(e) => setV(e.target.value)} /></label>
+      <button className="btn" disabled={!ok || n === saved} onClick={async () => { try { const b = await api<{ flex_fleet_share: number }>("PUT", "/admin/billing", { flex_fleet_share: n }); setSaved(b.flex_fleet_share); toast(`Fleets now get ${b.flex_fleet_share}% of flexibility payments`); } catch { toast("Couldn't save", "bad"); } }}>Save share</button>
+    </div>
   );
 }
