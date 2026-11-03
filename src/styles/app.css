@@ -1705,6 +1705,30 @@ details[open] > summary .en-chev { transform: rotate(180deg); }
 .en-adv[open] > summary { border-bottom: 1px solid var(--line); border-radius: var(--r-md) var(--r-md) 0 0; }
 .en-adv > div { padding: 14px; }
 
+/* change things where you see them */
+.en-goal { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 16px; }
+.en-goal-label { font-size: var(--fs-sm); font-weight: 620; color: var(--ink-2); }
+.en-goal .en-fine { flex-basis: 100%; }
+.en-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 4px; }
+.en-chip { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); font: inherit; font-size: var(--fs-xs); color: var(--ink-2); text-align: left; }
+.en-chip > .icon { color: var(--muted); }
+.en-chip .en-live { margin-right: 2px; }
+.en-chip.editable { cursor: pointer; }
+.en-chip.editable:hover { border-color: var(--brand-line); background: var(--brand-softer); color: var(--ink); }
+.en-chip.editable:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.en-chip-edit { display: inline-grid; color: var(--muted); opacity: 0.55; }
+.en-chip.editable:hover .en-chip-edit { opacity: 1; color: var(--brand-text); }
+.en-truck { position: relative; }
+.en-row-chev { position: absolute; right: -18px; top: 50%; transform: translateY(-50%); color: var(--faint); opacity: 0; transition: opacity 0.12s; }
+button.en-truck:hover .en-row-chev, button.en-truck:focus-visible .en-row-chev { opacity: 1; }
+.en-daytime { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.en-daytime .input { width: auto; }
+.en-time-input { min-width: 110px; }
+.en-presets { display: flex; gap: 6px; margin-top: 6px; }
+.en-preset { min-height: 28px; padding: 2px 12px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--surface); font: inherit; font-size: var(--fs-xs); font-weight: 600; color: var(--ink-2); cursor: pointer; }
+.en-preset:hover { border-color: var(--faint); }
+.en-preset.on { background: var(--brand-soft); border-color: var(--brand-line); color: var(--brand-strong); }
+
 @media (max-width: 760px) {
   .en-story { padding: 20px; gap: 0 14px; }
   .en-story h2 { font-size: var(--fs-xl); }
@@ -1724,6 +1748,7 @@ details[open] > summary .en-chev { transform: rotate(180deg); }
   .en-truck .en-status .en-sub { display: none; }
   .en-load .en-status { display: none; }
   .en-more-body { padding: 2px 16px 18px; }
+  .en-row-chev { display: none; }
   .en-more-row > summary { padding: 14px 16px; }
   .en-setup { padding: 22px 20px; }
 }
