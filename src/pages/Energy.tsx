@@ -49,7 +49,8 @@ export function EnergyPage() {
   const [visits, setVisits] = useState<DepotVisit[]>([]);
   const [flex, setFlex] = useState<FlexEvent[]>([]);
   const [editVisit, setEditVisit] = useState<DepotVisit | "new" | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState<SettingsFocus | null>(null);
+  const [goalBusy, setGoalBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [deciding, setDeciding] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +88,15 @@ export function EnergyPage() {
       toast(e instanceof ApiFailure ? e.message : "Couldn't send the plan", "bad");
     } finally { setSending(false); }
   };
+  const setGoal = async (goal: DepotGoal) => {
+    if (!energy || !depot || goal === depot.goal || !fleetId) return;
+    setGoalBusy(true);
+    try {
+      const config = { ...energy.config, depots: energy.config.depots.map((d) => (d.id === depot.id ? { ...d, goal } : d)) };
+      setEnergy(await api<EnergyView>("PUT", `/fleets/${fleetId}/energy`, { config }));
+      await load();
+    } catch (x) { toast(x instanceof ApiFailure ? x.message : "Couldn't change the plan", "bad"); } finally { setGoalBusy(false); }
+  };
   const decide = async (e: FlexEvent, accept: boolean) => {
     setDeciding(e.id);
     try {
@@ -114,20 +124,21 @@ export function EnergyPage() {
                 {energy.config.depots.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             )}
-            {isOwner && <button className="btn ghost" onClick={() => setSettingsOpen(true)}><Icon name="sliders" size="sm" />Settings</button>}
+            {isOwner && <button className="btn ghost" onClick={() => setSettingsOpen("top")}><Icon name="sliders" size="sm" />Settings</button>}
             {canPlan && <button className="btn primary" onClick={() => setEditVisit("new")}><Icon name="plus" size="sm" />Add truck</button>}
           </div>
         )}
       </div>
 
-      {!depot ? <SetupInvite isOwner={isOwner} onStart={() => setSettingsOpen(true)} />
+      {!depot ? <SetupInvite isOwner={isOwner} onStart={() => setSettingsOpen("top")} />
         : !plan ? <div className="panel panel-body"><Spinner label="Planning" /></div>
         : (
           <>
-            <PlanStory plan={plan} depot={depot} now={now} canPlan={canPlan} offered={offered} deciding={deciding} onDecide={decide} onEdit={(v) => setEditVisit(v)} onAdd={() => setEditVisit("new")} />
-            {plan.visits.length > 0 && <PlanTimeline plan={plan} depot={depot} now={now} canEdit={canPlan} onEdit={(v) => setEditVisit(v)} />}
+            <PlanStory plan={plan} depot={depot} now={now} canPlan={canPlan} offered={offered} deciding={deciding} onDecide={decide} onEdit={(v) => setEditVisit(v)} onAdd={() => setEditVisit("new")}
+              isOwner={isOwner} goalBusy={goalBusy} onGoal={setGoal} />
+            {plan.visits.length > 0 && <PlanTimeline plan={plan} depot={depot} now={now} canEdit={canPlan} onEdit={(v) => setEditVisit(v)} onSettings={isOwner ? (f) => setSettingsOpen(f) : undefined} />}
             <MoreFromDepot depot={depot} plan={plan} events={events} provider={energy.config.flex_provider} vehicles={vehicles} now={now} canPlan={canPlan} isOwner={isOwner}
-              sending={sending} onSend={send} onSettings={() => setSettingsOpen(true)} onChanged={load} deciding={deciding} onDecide={decide} />
+              sending={sending} onSend={send} onSettings={(f) => setSettingsOpen(f ?? "top")} onChanged={load} deciding={deciding} onDecide={decide} />
             <DataSources />
           </>
         )}
@@ -137,7 +148,7 @@ export function EnergyPage() {
           onSaved={async () => { setEditVisit(null); await load(); }} existing={visits} />
       )}
       {settingsOpen && (
-        <DepotSettings energy={energy} depotId={depotId} onClose={() => setSettingsOpen(false)} onSaved={async (e, id) => { setEnergy(e); setDepotId(id); setSettingsOpen(false); await load(); }} />
+        <DepotSettings energy={energy} depotId={depotId} focus={settingsOpen} onClose={() => setSettingsOpen(null)} onSaved={async (e, id) => { setEnergy(e); setDepotId(id); setSettingsOpen(null); await load(); }} />
       )}
     </div>
   );
@@ -162,9 +173,10 @@ function SetupInvite({ isOwner, onStart }: { isOwner: boolean; onStart(): void }
 
 // ---- the headline -------------------------------------------------------------------------------
 
-function PlanStory({ plan, depot, now, canPlan, offered, deciding, onDecide, onEdit, onAdd }: {
+function PlanStory({ plan, depot, now, canPlan, offered, deciding, onDecide, onEdit, onAdd, isOwner, goalBusy, onGoal }: {
   plan: PlanResponse; depot: Depot; now: Date; canPlan: boolean; offered: FlexEvent[]; deciding: string | null;
   onDecide(e: FlexEvent, accept: boolean): void; onEdit(v: DepotVisit): void; onAdd(): void;
+  isOwner: boolean; goalBusy: boolean; onGoal(g: DepotGoal): void;
 }) {
   const visits = plan.visits;
   if (!visits.length) {
@@ -193,8 +205,15 @@ function PlanStory({ plan, depot, now, canPlan, offered, deciding, onDecide, onE
           Charging will cost <b>{fmtMoney(plan.cost)}</b>
           {saved >= 0.5 ? <>, <b className="en-good">{fmtMoney(saved)} less</b> than plugging in on arrival</> : ", about the same as plugging in on arrival"}
           {kgCut >= 0.01 ? <>, with <b className="en-good">{N0.format(kgCut * 100)}% less CO₂</b></> : null}.
-          <span className="en-fine"> Ex VAT. {depot.goal === "carbon" ? "Planned for the lowest carbon." : depot.goal === "balanced" ? "Planned to balance cost and carbon." : "Planned for the lowest cost."}</span>
+          <span className="en-fine"> Ex VAT.</span>
         </p>
+        <div className="en-goal">
+          <span className="en-goal-label">Plan for</span>
+          {isOwner
+            ? <Seg<DepotGoal> label="Plan for" value={depot.goal} onChange={onGoal} options={GOALS.map((g) => ({ value: g.value, label: g.label }))} />
+            : <b>{GOALS.find((g) => g.value === depot.goal)?.label}</b>}
+          {goalBusy ? <Spinner label="Re-planning" /> : <span className="en-fine">{GOALS.find((g) => g.value === depot.goal)?.hint}</span>}
+        </div>
       </div>
       {(short.length > 0 || offered.length > 0) && (
         <ul className="en-asks">
@@ -226,6 +245,16 @@ function PlanStory({ plan, depot, now, canPlan, offered, deciding, onDecide, onE
   );
 }
 
+type SettingsFocus = "top" | "site" | "electricity" | "chargers" | "connect" | "flex" | "v2g";
+
+/** A setting shown as it is; for owners, tapping it opens that setting. */
+function Chip({ icon, onClick, label, children }: { icon: IconName; onClick?: () => void; label: string; children: ReactNode }) {
+  const body = <><Icon name={icon} size="sm" /><span className="en-chip-text">{children}</span>{onClick && <span className="en-chip-edit" aria-hidden="true"><Icon name="pencil" size="sm" /></span>}</>;
+  return onClick
+    ? <button type="button" className="en-chip editable" onClick={onClick} title={label}>{body}<span className="sr-only">: {label}</span></button>
+    : <span className="en-chip">{body}</span>;
+}
+
 // ---- one timeline: price, carbon, charging and every truck on the same clock -------------------
 
 interface Run { a: number; b: number; avg: number }
@@ -241,7 +270,7 @@ function runsOf(kw: number[], sign: 1 | -1): Run[] {
   return out;
 }
 
-function PlanTimeline({ plan, depot, now, canEdit, onEdit }: { plan: PlanResponse; depot: Depot; now: Date; canEdit: boolean; onEdit(v: DepotVisit): void }) {
+function PlanTimeline({ plan, depot, now, canEdit, onEdit, onSettings }: { plan: PlanResponse; depot: Depot; now: Date; canEdit: boolean; onEdit(v: DepotVisit): void; onSettings?(f: SettingsFocus): void }) {
   const S = plan.slots.length;
   const t0 = plan.slots[0].start, t1 = plan.slots[S - 1].end;
   const at = (t: number) => ((Math.min(Math.max(t, t0), t1) - t0) / (t1 - t0)) * 100;
@@ -321,11 +350,14 @@ function PlanTimeline({ plan, depot, now, canEdit, onEdit }: { plan: PlanRespons
       <div className="en-plan-head">
         <div className="grow">
           <h2 id="en-plan-h">Charging plan</h2>
-          <p className="en-src">
-            <span>{live && <span className="en-live" aria-hidden="true" />}{plan.price.label}{live ? (plan.price.estimated_from ? `, live; estimated after ${when(plan.price.estimated_from, now)}` : ", live") : ""}</span>
-            <span className="en-dot" aria-hidden="true">·</span>
-            <span>Grid CO₂: {carbonWords}</span>
-          </p>
+          <div className="en-chips">
+            <Chip icon="zap" onClick={onSettings && (() => onSettings("electricity"))} label="Change the electricity supplier">
+              {live && <span className="en-live" aria-hidden="true" />}{plan.price.label}{live ? (plan.price.estimated_from ? `, live (estimated after ${when(plan.price.estimated_from, now)})` : ", live") : ""}
+            </Chip>
+            <Chip icon="gauge" onClick={onSettings && (() => onSettings("site"))} label="Change the grid connection">{N0.format(plan.headroom_kw)} kW for charging</Chip>
+            <Chip icon="plug" onClick={onSettings && (() => onSettings("chargers"))} label="Change the chargers">{depot.chargers.length} charger{depot.chargers.length === 1 ? "" : "s"}</Chip>
+          </div>
+          <p className="en-src">Grid CO₂: {carbonWords}</p>
         </div>
         <ul className="en-legend" aria-label="Key">
           <li><i className="stay" />Plugged in, ready</li>
@@ -436,6 +468,7 @@ function TruckRow({ v, depot, S, at, t0, now, hoverBar, canEdit, onEdit }: {
         {hoverBar}
       </div>
       <div className="en-status">{status}</div>
+      {canEdit && <span className="en-row-chev" aria-hidden="true"><Icon name="chevronRight" size="sm" /></span>}
     </>
   );
   return canEdit
@@ -460,7 +493,7 @@ function MoreRow({ icon, title, summary, tone, children }: { icon: IconName; tit
 
 function MoreFromDepot({ depot, plan, events, provider, vehicles, now, canPlan, isOwner, sending, onSend, onSettings, onChanged, deciding, onDecide }: {
   depot: Depot; plan: PlanResponse; events: FlexEvent[]; provider: EnergyConfig["flex_provider"]; vehicles: { id: string; plate: string; name: string }[]; now: Date;
-  canPlan: boolean; isOwner: boolean; sending: boolean; onSend(): void; onSettings(): void; onChanged(): Promise<void>; deciding: string | null; onDecide(e: FlexEvent, accept: boolean): void;
+  canPlan: boolean; isOwner: boolean; sending: boolean; onSend(): void; onSettings(f?: SettingsFocus): void; onChanged(): Promise<void>; deciding: string | null; onDecide(e: FlexEvent, accept: boolean): void;
 }) {
   // Grid flexibility, in one line.
   const t = now.getTime();
@@ -489,13 +522,13 @@ function MoreFromDepot({ depot, plan, events, provider, vehicles, now, canPlan, 
   return (
     <section className="panel en-more" aria-label="More from this depot">
       <MoreRow icon="plug" title="Chargers" summary={chargerSummary} tone={failed ? "bad" : d && depot.control.kind !== "simulated" ? "ok" : undefined}>
-        <ChargersBody depot={depot} plan={plan} canSend={canPlan} sending={sending} onSend={onSend} isOwner={isOwner} onSettings={onSettings} now={now} />
+        <ChargersBody depot={depot} plan={plan} canSend={canPlan} sending={sending} onSend={onSend} isOwner={isOwner} onSettings={() => onSettings("connect")} now={now} />
       </MoreRow>
       <MoreRow icon="activity" title="Grid flexibility" summary={flexSummary} tone={waiting ? "warn" : earned > 0 ? "ok" : undefined}>
-        <FlexBody depot={depot} events={events} provider={provider} now={now} canDecide={canPlan} isOwner={isOwner} onSettings={onSettings} onChanged={onChanged} deciding={deciding} onDecide={onDecide} />
+        <FlexBody depot={depot} events={events} provider={provider} now={now} canDecide={canPlan} isOwner={isOwner} onSettings={() => onSettings("flex")} onChanged={onChanged} deciding={deciding} onDecide={onDecide} />
       </MoreRow>
       <MoreRow icon="swap" title="Vehicle-to-grid pilot" summary={v2gSummary}>
-        <V2gBody depot={depot} plan={plan} isOwner={isOwner} onSettings={onSettings} />
+        <V2gBody depot={depot} plan={plan} isOwner={isOwner} onSettings={() => onSettings("v2g")} />
       </MoreRow>
       {vehicles.length === 0 && <p className="xs muted" style={{ padding: "0 20px 14px", margin: 0 }}>Add your trucks in Fleet first.</p>}
     </section>
@@ -731,13 +764,15 @@ function VisitDrawer({ depot, visit, vehicles, now, onClose, onSaved, existing }
       </div>}>
       <div className="stack gap-16">
         <Field label="Truck">{(id) => <select id={id} className="select" value={f.vehicle_id} onChange={(e) => setF({ ...f, vehicle_id: e.target.value })}>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} · {v.name}</option>)}</select>}</Field>
-        <div className="two" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <Field label="Arrives">{(id) => <input id={id} className="input" type="datetime-local" value={f.arrive} onChange={(e) => setF({ ...f, arrive: e.target.value })} />}</Field>
-          <Field label="Leaves">{(id) => <input id={id} className="input" type="datetime-local" value={f.depart} onChange={(e) => setF({ ...f, depart: e.target.value })} />}</Field>
-        </div>
-        <div className="two" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <Field label={`Charge on arrival: ${f.soc_start}%`}>{(id) => <input id={id} className="range" type="range" min={0} max={100} step={1} value={f.soc_start} onChange={(e) => setF({ ...f, soc_start: Number(e.target.value) })} />}</Field>
-          <Field label={`Needed when it leaves: ${f.soc_target}%`}>{(id) => <input id={id} className="range" type="range" min={0} max={100} step={1} value={f.soc_target} onChange={(e) => setF({ ...f, soc_target: Number(e.target.value) })} />}</Field>
+        <DayTime label="Arrives" value={f.arrive} now={now} onChange={(v) => setF({ ...f, arrive: v })} />
+        <DayTime label="Leaves" value={f.depart} now={now} onChange={(v) => setF({ ...f, depart: v })} />
+        <div className="two" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <Field label={`Charge on arrival: ${f.soc_start}%`}>{(id) => <input id={id} className="range" type="range" min={0} max={100} step={5} value={f.soc_start} onChange={(e) => setF({ ...f, soc_start: Number(e.target.value) })} />}</Field>
+          <div className="field">
+            <label className="label" htmlFor="soc-need">Needed when it leaves: {f.soc_target}%</label>
+            <input id="soc-need" className="range" type="range" min={0} max={100} step={5} value={f.soc_target} onChange={(e) => setF({ ...f, soc_target: Number(e.target.value) })} />
+            <div className="en-presets">{[80, 90, 100].map((n) => <button key={n} type="button" className={`en-preset${f.soc_target === n ? " on" : ""}`} aria-pressed={f.soc_target === n} onClick={() => setF({ ...f, soc_target: n })}>{n}%</button>)}</div>
+          </div>
         </div>
         <Field label="Charger" hint="Trucks can share a charger, one after another.">{(id) => <select id={id} className="select" value={f.charger_id} onChange={(e) => setF({ ...f, charger_id: e.target.value })}><option value="">Not decided yet</option>{depot.chargers.map((c) => <option key={c.id} value={c.id}>{c.name} · {N0.format(c.max_kw)} kW</option>)}</select>}</Field>
         <div className="hint">{kwh != null ? `About ${N0.format(kwh)} kWh into the battery, at the cheapest, cleanest times before it leaves.` : "This truck has no battery size yet: add it in Fleet so it can be planned."}</div>
@@ -747,18 +782,40 @@ function VisitDrawer({ depot, visit, vehicles, now, onClose, onSaved, existing }
   );
 }
 
+/** Today, tomorrow or another day, and a time: quicker than a date-and-time picker. */
+function DayTime({ label, value, now, onChange }: { label: string; value: string; now: Date; onChange(v: string): void }) {
+  const today = localDateKey(now, TZ);
+  const tomorrow = localDateKey(new Date(now.getTime() + 24 * 3_600_000), TZ);
+  const [date, time] = value.split("T");
+  const which = date === today ? "today" : date === tomorrow ? "tomorrow" : "other";
+  const [other, setOther] = useState(which === "other");
+  const day = other ? "other" : which;
+  return (
+    <div className="field">
+      <span className="label">{label}</span>
+      <div className="en-daytime">
+        <Seg<"today" | "tomorrow" | "other"> label={`${label}: day`} value={day}
+          onChange={(v) => { if (v === "other") { setOther(true); return; } setOther(false); onChange(`${v === "today" ? today : tomorrow}T${time}`); }}
+          options={[{ value: "today", label: "Today" }, { value: "tomorrow", label: "Tomorrow" }, { value: "other", label: "Another day" }]} />
+        {other && <input className="input" type="date" aria-label={`${label}: date`} value={date} onChange={(e) => e.target.value && onChange(`${e.target.value}T${time}`)} />}
+        <input className="input en-time-input" type="time" step={900} aria-label={`${label}: time`} value={time} onChange={(e) => e.target.value && onChange(`${date}T${e.target.value}`)} />
+      </div>
+    </div>
+  );
+}
+
 // ---- depot settings (owners): three essentials, the rest folded away -------------------------------
 
-function Adv({ title, summary, children }: { title: string; summary: string; children: ReactNode }) {
+function Adv({ id, title, summary, open, children }: { id: string; title: string; summary: string; open?: boolean; children: ReactNode }) {
   return (
-    <details className="en-adv">
+    <details className="en-adv" id={id} open={open}>
       <summary><span className="grow"><b>{title}</b><span className="xs muted">{summary}</span></span><span className="en-chev" aria-hidden="true"><Icon name="chevronDown" size="sm" /></span></summary>
       <div className="stack gap-12">{children}</div>
     </details>
   );
 }
 
-function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyView; depotId: string | null; onClose(): void; onSaved(e: EnergyView, id: string): void }) {
+function DepotSettings({ energy, depotId, focus, onClose, onSaved }: { energy: EnergyView; depotId: string | null; focus: SettingsFocus; onClose(): void; onSaved(e: EnergyView, id: string): void }) {
   const { api, fleetId, toast, vehicles } = useApp();
   const setup = energy.config.depots.length === 0;
   const [cfg, setCfg] = useState<EnergyConfig>(() => (energy.config.depots.length ? structuredClone(energy.config) : { ...energy.config, depots: [newDepot("Main depot")] }));
@@ -790,6 +847,12 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
     } catch (x) { setErr(x instanceof ApiFailure ? x.message : "Couldn't save"); } finally { setBusy(false); }
   };
   const step = (n: number, title: string) => <h3 className="en-set-h">{setup && <span className="en-num">{n}</span>}{title}</h3>;
+  // Opened from a setting on the page: start at that section.
+  useEffect(() => {
+    if (focus === "top") return;
+    const t = setTimeout(() => document.getElementById(`set-${focus}`)?.scrollIntoView({ block: "start", behavior: "smooth" }), 120);
+    return () => clearTimeout(t);
+  }, [focus]);
   const flexOn = d.flex.enabled ? `On: ${d.flex.programmes.join(", ") || "no schemes chosen"}` : "Off";
 
   return (
@@ -798,7 +861,7 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
       <div className="stack gap-24">
         {cfg.depots.length > 1 && <Field label="Depot">{(fid) => <select id={fid} className="select" value={d.id} onChange={(e) => setId(e.target.value)}>{cfg.depots.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>}</Field>}
 
-        <section className="stack gap-12">
+        <section className="stack gap-12" id="set-site">
           {step(1, "Your site")}
           <div className="two" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
             <Field label="Name">{(fid) => <input id={fid} className="input" value={d.name} onChange={(e) => set({ name: e.target.value })} />}</Field>
@@ -810,13 +873,13 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
           </div>
         </section>
 
-        <section className="stack gap-12">
+        <section className="stack gap-12" id="set-electricity">
           {step(2, "Your electricity")}
           <SupplierPicker value={d.tariff} onChange={(tariff) => set({ tariff })} regionFromPostcode={region} />
           <div className="field"><span className="label">Plan for</span><Seg<DepotGoal> label="Plan for" full value={d.goal} onChange={(g) => set({ goal: g })} options={GOALS.map((g) => ({ value: g.value, label: g.label }))} /><span className="hint">{GOALS.find((g) => g.value === d.goal)?.hint}</span></div>
         </section>
 
-        <section className="stack gap-12">
+        <section className="stack gap-12" id="set-chargers">
           {step(3, "Your chargers")}
           {d.chargers.map((c, i) => (
             <div key={c.id} className="charger-row">
@@ -832,7 +895,7 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
 
         {!setup && (
           <div className="stack gap-8">
-            <Adv title="Connect the chargers" summary={CONTROL_LABEL[d.control.kind]}>
+            <Adv id="set-connect" open={focus === "connect"} title="Connect the chargers" summary={CONTROL_LABEL[d.control.kind]}>
               <Seg<"simulated" | "citrineos" | "webhook"> label="How the chargers are controlled" full value={d.control.kind}
                 onChange={(k) => set({ control: k === "citrineos" ? { kind: "citrineos", base_url: "", tenant_id: "1" } : k === "webhook" ? { kind: "webhook", url: "" } : { kind: "simulated" } })}
                 options={[{ value: "simulated", label: "Not yet" }, { value: "citrineos", label: "CitrineOS" }, { value: "webhook", label: "Operator's system" }]} />
@@ -866,7 +929,7 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
               )}
             </Adv>
 
-            <Adv title="Grid flexibility" summary={flexOn}>
+            <Adv id="set-flex" open={focus === "flex"} title="Grid flexibility" summary={flexOn}>
               <Switch checked={d.flex.enabled} onChange={(v) => set({ flex: { ...d.flex, enabled: v } })}>Take part in grid flexibility at this depot</Switch>
               {d.flex.enabled && (
                 <>
@@ -900,7 +963,7 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
               )}
             </Adv>
 
-            <Adv title="Vehicle-to-grid pilot" summary={d.v2g.enabled ? `On: ${d.v2g.mode === "behind_meter" ? "site only" : "export"}` : "Off"}>
+            <Adv id="set-v2g" open={focus === "v2g"} title="Vehicle-to-grid pilot" summary={d.v2g.enabled ? `On: ${d.v2g.mode === "behind_meter" ? "site only" : "export"}` : "Off"}>
               <Switch checked={d.v2g.enabled} onChange={(v) => set({ v2g: { ...d.v2g, enabled: v } })}>Run a V2G pilot at this depot</Switch>
               {d.v2g.enabled && (
                 <>
