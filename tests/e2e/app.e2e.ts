@@ -189,6 +189,11 @@ test("settings and team pages pass accessibility checks; keyboard reaches the ma
   await page.goto(`${base}/#/savings`);
   await page.getByRole("heading", { name: "Savings", level: 1 }).waitFor({ timeout: 15_000 });
   await axe(page, "savings");
+  await page.goto(`${base}/#/energy`);
+  await page.getByRole("heading", { name: "Charging plan" }).waitFor({ timeout: 15_000 });
+  await axe(page, "depot smart charging");
+  for (const t of ["Chargers", "Grid flexibility", "Vehicle-to-grid pilot"]) await page.locator("summary", { hasText: t }).first().click();
+  await axe(page, "depot smart charging, details open");
   await page.goto(`${base}/#/statements`);
   await page.getByRole("heading", { name: "Charging statement" }).waitFor({ timeout: 15_000 });
   await page.getByText("Total incl. VAT").first().waitFor({ timeout: 15_000 });

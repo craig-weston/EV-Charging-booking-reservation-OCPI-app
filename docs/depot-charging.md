@@ -4,9 +4,32 @@ The **Depot smart charging** page plans charging at a fleet's own depots. Every 
 in the cheapest and cleanest half-hours that still get it to the charge it needs before it leaves,
 without going over the site's grid connection.
 
+## The page
+
+The page is built to be understood at a glance, in this order:
+
+1. **The headline:** whether every truck will be ready on time, what charging will cost, and how
+   that compares with plugging in on arrival (money and CO₂). Anything that needs a decision sits
+   right under it: a truck that can't be filled in time (with **Change**), or a grid event
+   waiting to be accepted or declined.
+2. **One timeline:** the electricity price (a step line, with the highest and lowest half-hours
+   marked), grid CO₂ (a strip: stronger shading means more CO₂, with the cleanest half-hour
+   marked), the depot's total charging against its limit, and one row per truck. Each row shows
+   when the truck is plugged in (green outline), when it charges (blue) or gives power back
+   (teal), and when it will be ready. They share one clock, so it's easy to see that charging
+   follows the cheap, clean hours. Hover, tap or use the arrow keys on the time axis to read any
+   half-hour. Select a truck to change its stay.
+3. **One tap away:** chargers (connection and sending the plan), grid flexibility and the
+   vehicle-to-grid pilot, each summarised in one line until opened.
+
+Colours follow the app's charging key: green is ready to charge, blue is charging and red is a
+fault (for example, a charger that didn't accept the plan).
+
 ## Setting up (fleet owners)
 
-**Depot settings** holds, per depot:
+**Settings** asks for three things first (the site, the electricity and the chargers). A first
+setup shows only those. Charger connection, grid flexibility and the V2G pilot are folded
+underneath. Per depot:
 
 - **Site:** name, postcode (for regional grid carbon), grid connection in kW, and other site load
   to keep free (lighting, warehouse, reefers).
