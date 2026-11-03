@@ -1702,6 +1702,9 @@ details[open] > summary .more-chev { transform: rotate(180deg); }
 .more-body { padding: 2px 20px 20px 68px; }
 .more-body.flush { padding: 0 0 6px; border-top: 1px solid var(--line); }
 .more-body .month-bars { padding: 4px 0 8px; }
+.more-body .member-row { padding-left: 0; padding-right: 0; }
+.settings-more { margin-top: 0; }
+.log-filter { display: flex; justify-content: flex-end; padding: 10px 16px; border-bottom: 1px solid var(--line); overflow-x: auto; }
 .figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
 .figures > div { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--surface-2); }
 .figures b { font-size: var(--fs-xl); font-variant-numeric: tabular-nums; }

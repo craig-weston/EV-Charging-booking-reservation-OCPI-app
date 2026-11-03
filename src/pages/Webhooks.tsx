@@ -6,6 +6,7 @@ import { useApp } from "../app/state";
 import { ApiFailure } from "../app/backend";
 import { fmtRelative } from "../app/format";
 import { Field, Icon, Modal, Spinner, copyText } from "../ui/ui";
+import { MoreRow } from "../components/More";
 
 const EVENT_LABEL: Record<WebhookEvent, string> = {
   "booking.requested": "Booking requested",
@@ -47,21 +48,23 @@ export function WebhookSettings() {
     void run(`d-${h.id}`, () => api("DELETE", `/fleets/${fleetId}/webhooks/${h.id}`));
   };
 
+  const failing = (hooks ?? []).filter((h) => h.active && h.failures > 0).length;
+  const off = (hooks ?? []).filter((h) => !h.active).length;
+  const summary = hooks === null ? "Loading…"
+    : hooks.length ? [`${hooks.length} endpoint${hooks.length === 1 ? "" : "s"}`, failing ? `${failing} failing` : "", off ? `${off} off` : ""].filter(Boolean).join(" · ")
+    : "None yet. Tell your systems the moment a booking changes.";
   return (
-    <section className="panel" id="s-webhooks">
-      <div className="panel-head">
-        <h2>Webhooks</h2>
-        <button className="btn sm right" onClick={() => setAdding(true)} disabled={(hooks?.length ?? 0) >= 5}><Icon name="plus" size="sm" />Add webhook</button>
-      </div>
-      <div className="panel-body stack gap-12">
-        <p className="small muted">Tell your own systems, such as a TMS or dispatch board, the moment a booking is confirmed, moved, cancelled or charged, so nobody has to watch this screen. Each delivery is a signed JSON POST (see docs/webhooks.md).</p>
+    <MoreRow icon="arrowUpRight" title="Webhooks" summary={summary} tone={failing ? "warn" : undefined} id="s-webhooks">
+      <div className="stack gap-12">
+        <p className="small muted" style={{ margin: 0 }}>Tell your own systems, such as a TMS or dispatch board, the moment a booking is confirmed, moved, cancelled or charged, so nobody has to watch this screen. Each delivery is a signed JSON POST (see docs/webhooks.md).</p>
+        <div><button className="btn sm" onClick={() => setAdding(true)} disabled={(hooks?.length ?? 0) >= 5}><Icon name="plus" size="sm" />Add webhook</button></div>
       </div>
       {hooks === null ? (
-        <div className="panel-body"><div className="skeleton" style={{ height: 40 }} /></div>
+        <div className="skeleton" style={{ height: 40, marginTop: 12 }} />
       ) : hooks.length === 0 ? null : (
         <ul className="list">
           {hooks.map((h) => {
-            const failing = h.failures > 0;
+            const isFailing = h.failures > 0;
             return (
               <li key={h.id} className="member-row webhook-row">
                 <span className="avatar invite" aria-hidden="true"><Icon name="arrowUpRight" size="sm" /></span>
@@ -72,9 +75,9 @@ export function WebhookSettings() {
                     {h.events.length ? `${h.events.length} ${h.events.length === 1 ? "event" : "events"}` : "All events"} · secret <span style={{ fontFamily: "var(--mono)" }}>{h.secret_hint}</span>
                     {h.last_attempt_at ? ` · last delivery ${fmtRelative(h.last_attempt_at, now)}${h.last_status ? ` (HTTP ${h.last_status})` : ""}` : " · nothing sent yet"}
                   </div>
-                  {failing && h.last_error && <div className="xs" style={{ color: "var(--bad)" }}>{h.active ? `Failing: ${h.last_error} (${h.failures} in a row)` : `Switched off after ${h.failures} failed deliveries: ${h.last_error}`}</div>}
+                  {isFailing && h.last_error && <div className="xs" style={{ color: "var(--bad)" }}>{h.active ? `Failing: ${h.last_error} (${h.failures} in a row)` : `Switched off after ${h.failures} failed deliveries: ${h.last_error}`}</div>}
                 </div>
-                <span className={`tag ${!h.active ? "" : failing ? "warn" : "ok"}`}>{!h.active ? "Off" : failing ? "Failing" : "On"}</span>
+                <span className={`tag ${!h.active ? "" : isFailing ? "warn" : "ok"}`}>{!h.active ? "Off" : isFailing ? "Failing" : "On"}</span>
                 <div className="row gap-4 webhook-actions">
                   <button className="btn sm ghost" disabled={busy !== null || !h.active} onClick={() => void test(h)}>{busy === `t-${h.id}` ? <Spinner /> : null}Send test</button>
                   <button className="btn sm ghost" disabled={busy !== null} onClick={() => void toggle(h)}>{h.active ? "Turn off" : "Turn on"}</button>
@@ -86,7 +89,7 @@ export function WebhookSettings() {
         </ul>
       )}
       {adding && <AddWebhookDialog onClose={() => setAdding(false)} onAdded={load} />}
-    </section>
+    </MoreRow>
   );
 }
 

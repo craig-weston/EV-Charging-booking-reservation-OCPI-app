@@ -6,6 +6,7 @@ import { useApp } from "../app/state";
 import { ApiFailure } from "../app/backend";
 import { fmtRelative } from "../app/format";
 import { Field, Icon, Modal, Seg, Spinner, copyText } from "../ui/ui";
+import { MoreRow } from "../components/More";
 
 type KeyRole = ApiKey["role"];
 const ROLE_HINT: Record<KeyRole, string> = {
@@ -57,17 +58,18 @@ export function ApiKeySettings() {
   };
 
   const shown = (keys ?? []).filter((k) => !k.revoked_at);
+  const used = shown.map((k) => k.last_used_at).filter((x): x is string => !!x).sort().pop();
+  const summary = keys === null ? "Loading…"
+    : shown.length ? `${shown.length} key${shown.length === 1 ? "" : "s"} · ${used ? `last used ${fmtRelative(used, now)}` : "not used yet"}`
+    : "None yet. Let your TMS or dispatch system book through the API.";
   return (
-    <section className="panel" id="s-api">
-      <div className="panel-head">
-        <h2>API keys</h2>
-        <button className="btn sm right" onClick={() => setCreating(true)}><Icon name="plus" size="sm" />Create key</button>
-      </div>
-      <div className="panel-body stack gap-12">
-        <p className="small muted">Let your own systems, such as a TMS, telematics, dispatch or autonomous vehicle platform, find bays and book them through the API without anyone signing in. Each key works for this fleet only.</p>
+    <MoreRow icon="key" title="API keys" summary={summary} id="s-api">
+      <div className="stack gap-12">
+        <p className="small muted" style={{ margin: 0 }}>Let your own systems, such as a TMS, telematics, dispatch or autonomous vehicle platform, find bays and book them through the API without anyone signing in. Each key works for this fleet only.</p>
+        <div><button className="btn sm" onClick={() => setCreating(true)}><Icon name="plus" size="sm" />Create key</button></div>
       </div>
       {keys === null ? (
-        <div className="panel-body"><div className="skeleton" style={{ height: 40 }} /></div>
+        <div className="skeleton" style={{ height: 40, marginTop: 12 }} />
       ) : shown.length === 0 ? null : (
         <ul className="list">
           {shown.map((k) => {
@@ -92,7 +94,7 @@ export function ApiKeySettings() {
         </ul>
       )}
       {creating && <CreateKeyDialog onClose={() => setCreating(false)} onCreated={load} />}
-    </section>
+    </MoreRow>
   );
 }
 

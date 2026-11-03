@@ -168,6 +168,9 @@ test("settings and team pages pass accessibility checks; keyboard reaches the ma
   const { page, problems } = await open(ctx, "#/settings");
   await page.getByRole("button", { name: "Save fleet settings" }).waitFor({ timeout: 15_000 });
   await axe(page, "settings");
+  await page.evaluate(() => document.querySelectorAll("details.more-row").forEach((d) => ((d as HTMLDetailsElement).open = true)));
+  await page.getByRole("button", { name: "Save branding" }).waitFor({ timeout: 15_000 });
+  await axe(page, "settings, every row open");
   await page.goto(`${base}/#/team`);
   await page.waitForTimeout(1500);
   await axe(page, "team");
@@ -180,6 +183,9 @@ test("settings and team pages pass accessibility checks; keyboard reaches the ma
   await page.goto(`${base}/#/network`);
   await page.getByRole("heading", { name: "Network", level: 1 }).waitFor({ timeout: 15_000 });
   await axe(page, "network");
+  await page.evaluate(() => document.querySelectorAll("details.more-row").forEach((d) => ((d as HTMLDetailsElement).open = true)));
+  await page.getByText("Margin on operator prices (%)").waitFor({ timeout: 15_000 });
+  await axe(page, "network, every row open");
   await page.goto(`${base}/#/compliance`);
   await page.getByRole("heading", { name: "Security & compliance", level: 1 }).waitFor({ timeout: 15_000 });
   await page.getByText(/Cyber Essentials readiness/).waitFor({ timeout: 15_000 });

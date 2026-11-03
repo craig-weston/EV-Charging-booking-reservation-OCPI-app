@@ -12,6 +12,14 @@ import { WebhookSettings } from "./Webhooks";
 import { ChargingMini } from "../components/art/Mini";
 import { href } from "../app/router";
 import { LEGAL_DOCS } from "../legal/documents";
+import { MoreList, MoreRow } from "../components/More";
+
+/** Jump to a section; a one-tap row opens on the way. */
+function go(id: string) {
+  const el = document.getElementById(id);
+  if (el instanceof HTMLDetailsElement) el.open = true;
+  el?.scrollIntoView({ behavior: "smooth" });
+}
 
 export function SettingsPage() {
   const { me, fleet, fleetId, backend, theme, setTheme } = useApp();
@@ -27,23 +35,27 @@ export function SettingsPage() {
       </nav>
       <div className="settings-grid">
         <nav className="settings-nav" aria-label="Settings sections">
-          <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-fleet")?.scrollIntoView({ behavior: "smooth" }); }}>Fleet</a>
-          <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-team")?.scrollIntoView({ behavior: "smooth" }); }}>Team</a>
-          <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-security")?.scrollIntoView({ behavior: "smooth" }); }}>Security</a>
-          {role === "owner" && <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-api")?.scrollIntoView({ behavior: "smooth" }); }}>API keys</a>}
-          {role === "owner" && <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-webhooks")?.scrollIntoView({ behavior: "smooth" }); }}>Webhooks</a>}
-          {me?.is_admin && <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-brand")?.scrollIntoView({ behavior: "smooth" }); }}>Branding</a>}
-          <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-look")?.scrollIntoView({ behavior: "smooth" }); }}>Appearance</a>
-          <a href="#/settings" onClick={(e) => { e.preventDefault(); document.getElementById("s-account")?.scrollIntoView({ behavior: "smooth" }); }}>Account</a>
+          <a href="#/settings" onClick={(e) => { e.preventDefault(); go("s-fleet"); }}>Fleet</a>
+          <a href="#/settings" onClick={(e) => { e.preventDefault(); go("s-team"); }}>Team</a>
+          <a href="#/settings" onClick={(e) => { e.preventDefault(); go("s-security"); }}>Security</a>
+          {role === "owner" && <a href="#/settings" onClick={(e) => { e.preventDefault(); go("s-api"); }}>API keys</a>}
+          {role === "owner" && <a href="#/settings" onClick={(e) => { e.preventDefault(); go("s-webhooks"); }}>Webhooks</a>}
+          {me?.is_admin && <a href="#/settings" onClick={(e) => { e.preventDefault(); go("s-brand"); }}>Branding</a>}
+          <a href="#/settings" onClick={(e) => { e.preventDefault(); go("s-look"); }}>Appearance</a>
+          <a href="#/settings" onClick={(e) => { e.preventDefault(); go("s-account"); }}>Account</a>
           {me?.is_admin && <a href={href("/compliance")}>Security & compliance</a>}
         </nav>
         <div className="stack gap-24">
           {fleet && <FleetSettings fleet={fleet} canEdit={role === "owner"} />}
           {fleet && <TeamSettings canManage={role === "owner"} />}
           <SecuritySettings />
-          {fleet && role === "owner" && <ApiKeySettings />}
-          {fleet && role === "owner" && <WebhookSettings />}
-          {me?.is_admin && <BrandSettings />}
+          {fleet && role === "owner" && (
+            <MoreList label="For developers" className="settings-more">
+              <ApiKeySettings />
+              <WebhookSettings />
+            </MoreList>
+          )}
+          {me?.is_admin && <MoreList label="Branding" className="settings-more"><BrandSettings /></MoreList>}
           <section className="panel" id="s-look">
             <div className="panel-head"><h2>Appearance</h2></div>
             <div className="panel-body stack gap-8">
@@ -161,11 +173,11 @@ function BrandSettings() {
     }
   };
   const dirty = JSON.stringify(draft) !== JSON.stringify(brand);
+  const summary = `${brand.name} · ${brand.primary_color.toUpperCase()} · ${brand.logo_url ? "your logo" : "monogram"}${dirty ? " · unsaved changes" : ""}`;
   return (
-    <section className="panel" id="s-brand">
-      <div className="panel-head"><h2>Branding</h2><span className="right xs muted">White label</span></div>
-      <div className="panel-body stack gap-16">
-        <p className="small muted">One name, one logo and one colour theme the whole product: planners' screens, sign-in and every driver pass. Hover, focus and highlight shades are derived from the colour automatically.</p>
+    <MoreRow icon="palette" title="Branding" summary={summary} tone={dirty ? "warn" : undefined} id="s-brand">
+      <div className="stack gap-16">
+        <p className="small muted" style={{ margin: 0 }}>White label: one name, one logo and one colour theme across the whole product, from planners' screens and sign-in to every driver pass. Hover, focus and highlight shades are derived from the colour automatically.</p>
         <div className="form-grid">
           <Field label="Product name">{(id) => <input id={id} className="input" value={draft.name} maxLength={40} onChange={(e) => set("name", e.target.value)} />}</Field>
           <div className="field">
@@ -215,6 +227,6 @@ function BrandSettings() {
           <button className="btn ghost right" onClick={() => setDraft({ ...DEFAULT_BRAND })}>Restore defaults</button>
         </div>
       </div>
-    </section>
+    </MoreRow>
   );
 }
