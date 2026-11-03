@@ -78,9 +78,10 @@ export async function createDemoBackend(base?: Partial<AppConfig>, opts: { publi
   const ctx = createLocalCtx({
     store,
     baseUrl: "https://demo.depotcharge.local",
-    // On a real deployment, live Octopus prices and NESO carbon come from the app's own cached
-    // public endpoints (server/market.ts). Offline (file preview) they're modelled.
-    marketUrl: typeof location !== "undefined" && /^https?:$/.test(location.protocol) ? location.origin : undefined,
+    // On a real deployment (it answered /api/config), live Octopus prices and NESO carbon come from
+    // the app's own cached public endpoints (server/market.ts). Without an API (static preview,
+    // file://) they're modelled, and nothing is requested.
+    marketUrl: base && typeof location !== "undefined" && /^https?:$/.test(location.protocol) ? location.origin : undefined,
     user: USER,
     simDelayMs: 0,
     now: () => (fakeNow != null ? new Date(fakeNow) : new Date()),
