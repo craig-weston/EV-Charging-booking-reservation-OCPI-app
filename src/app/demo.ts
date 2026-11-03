@@ -11,8 +11,8 @@ import { MemoryStore, type MemoryData } from "../../server/store/memory";
 import { tick } from "../../server/sim/cpo";
 import { ApiFailure, type Backend } from "./backend";
 
-const STORAGE_KEY = "depotcharge.demo.v2";
-const SEEDED_KEY = "depotcharge.demo.seeded.v2";
+const STORAGE_KEY = "depotcharge.demo.v3";
+const SEEDED_KEY = "depotcharge.demo.seeded.v3";
 /** Sample history is relative to the day it was made; after this long it's rebuilt so "today" stays today. */
 const FRESH_FOR_MS = 18 * 60 * 60 * 1000;
 const TRY_FLAG = "depotcharge.try-demo";

@@ -128,3 +128,17 @@ test("public endpoints: validated, and the demo reaches them through its own ori
   const off = await carbonFor({ mode: "demo", now: () => now, transport: async () => new Response("", { status: 500 }) }, "NN4 7AB", "2026-11-03T10:00:00Z", "2026-11-03T11:00:00Z");
   assert.equal(off.source, "modelled");
 });
+
+test("settings saved before suppliers existed still plan with their own rates", async () => {
+  const { harness } = await import("./helpers");
+  const h = await harness("2026-10-29T15:00:00Z");
+  // Written straight to the store, as an older version saved it.
+  await h.store.saveEnergy({ fleet_id: h.fleetId, config: { depots: [{ id: "yard", name: "Yard", postcode: "NN4 7AB", import_limit_kw: 400, site_load_kw: 50, goal: "cost", tariff: { kind: "tou", standard: 0.24, rates: [{ price: 0.13, start: "00:30", end: "07:30" }] }, chargers: [{ id: "b1", name: "Bay 1", max_kw: 150 }] }] } as never, secrets: {}, state: { dispatch: {} }, updated_at: "2026-10-29T15:00:00Z" });
+  const e = await h.api<{ config: { depots: { tariff: { kind: string } }[] } }>("GET", `/api/fleets/${h.fleetId}/energy`);
+  assert.equal(e.data.config.depots[0].tariff.kind, "fixed");
+  const plan = await h.api<{ price: { source: string; label: string; modelled: boolean } }>("GET", `/api/fleets/${h.fleetId}/depots/yard/plan`);
+  assert.equal(plan.status, 200);
+  assert.equal(plan.data.price.source, "fixed");
+  assert.equal(plan.data.price.modelled, false);
+  assert.ok(plan.data.price.label.length > 0);
+});
