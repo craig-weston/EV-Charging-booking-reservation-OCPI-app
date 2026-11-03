@@ -371,7 +371,7 @@ function CompanyDetails({ onSaved }: { onSaved(): void }) {
   return (
     <MoreRow icon="scale" title="Company & legal" summary={summary} tone={saved ? (missing ? "warn" : "ok") : undefined} id="company">
       <div className="stack gap-12">
-        <p className="small muted" style={{ margin: 0 }}>UK company and e-commerce rules require your registered name, number, registered office and a contact email on your website. These fill in the privacy notice, terms, data processing terms and the footer. <a className="no-print" href={href("/legal/privacy")}>Preview the legal pages</a></p>
+        <p className="small muted" style={{ margin: 0 }}>UK company and e-commerce rules require your registered name, number, registered office and a contact email on your website. These fill in the privacy notice, terms, data processing terms and the footer.</p>
         {!saved ? <div className="skeleton" style={{ height: 120 }} /> : (
           <div className="form-grid">
             {LEGAL_FIELDS.map((f) => (
@@ -385,6 +385,7 @@ function CompanyDetails({ onSaved }: { onSaved(): void }) {
         <div className="row gap-8 no-print">
           <button className="btn primary" disabled={!dirty || busy} onClick={save}>{busy && <Spinner />}Save details</button>
           {dirty && <button className="btn ghost" onClick={() => saved && setDraft(saved)}>Discard changes</button>}
+          <a className="btn ghost right" href={href("/legal/privacy")}><Icon name="eye" size="sm" />Preview legal pages</a>
         </div>
       </div>
     </MoreRow>
