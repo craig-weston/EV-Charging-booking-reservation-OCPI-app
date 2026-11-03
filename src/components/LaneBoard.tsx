@@ -3,7 +3,7 @@
 import type { BookingRow, NetworkSnapshot, Vehicle } from "../../shared/model";
 import { MINUTE, floorToStep } from "../../shared/util";
 import { fmtRange, fmtTime } from "../app/format";
-import { findLocation, operatorFor, shortSiteName } from "../app/network";
+import { chargerStatus, findLocation, isFaultStatus, operatorFor, shortSiteName } from "../app/network";
 import { Plate, toneOf } from "../ui/ui";
 
 const HOURS = 24;
@@ -72,7 +72,10 @@ export function LaneBoard({ vehicles, bookings, network, now, onOpen, onBookAt }
               {visible.filter((b) => b.vehicle_id === v.id).map((b) => {
                 const left = pct(new Date(b.start_at).getTime());
                 const width = Math.max(0.8, pct(new Date(b.end_at).getTime()) - left);
-                const tone = toneOf(b);
+                // A charger that breaks mid-charge (or before an open booking) turns the block red.
+                const inPlay = b.session?.status === "ACTIVE" || b.reservation_status === "RESERVED" || b.reservation_status === "PENDING";
+                const fault = inPlay && isFaultStatus(chargerStatus(network, b));
+                const tone = fault ? "bad" : toneOf(b);
                 const narrow = width < 11;
                 const kwh = b.session?.status === "ACTIVE" ? (b.session.kwh >= 1 ? `, ${Math.round(b.session.kwh)} kWh` : ", starting") : "";
                 const text = (
@@ -88,7 +91,7 @@ export function LaneBoard({ vehicles, bookings, network, now, onOpen, onBookAt }
                       className={`lane-block ${tone}`}
                       style={{ left: `${left}%`, width: `${width}%` }}
                       onClick={() => onOpen(b)}
-                      aria-label={`${v.plate}, ${site(b)}, ${fmtRange(b.start_at, b.end_at)}`}
+                      aria-label={`${v.plate}, ${site(b)}, ${fmtRange(b.start_at, b.end_at)}${fault ? ", charger fault" : ""}`}
                     >
                       {!narrow && text}
                     </button>

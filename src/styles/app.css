@@ -987,7 +987,10 @@ details.disclose[open] > summary .icon { transform: rotate(90deg); }
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 16px;
   display: flex; flex-direction: column; gap: 12px; min-width: 0;
 }
-.truck-card.state-charging { border-color: var(--brand-line); box-shadow: inset 3px 0 0 var(--brand); }
+.truck-card.state-charging { border-color: color-mix(in oklab, var(--ok) 38%, var(--surface)); box-shadow: inset 3px 0 0 var(--ok); }
+.truck-card.state-fault { border-color: color-mix(in oklab, var(--bad) 42%, var(--surface)); box-shadow: inset 3px 0 0 var(--bad); }
+.truck-card.state-fault .truck-foot .icon { color: var(--bad); }
+.kpi-sub.bad { color: var(--bad); font-weight: 560; }
 .truck-card.state-inactive { opacity: 0.72; }
 .truck-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .truck-name { display: block; font-weight: 620; }
@@ -996,21 +999,26 @@ details.disclose[open] > summary .icon { transform: rotate(90deg); }
 .truck-foot { display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); min-width: 0; }
 .truck-foot .icon { width: 14px; height: 14px; margin-right: 5px; vertical-align: -2px; color: var(--muted); }
 
-/* battery meter: fill colour follows the level, the track is a lighter step of the same colour */
+/* battery meter, one meaning per colour: green flows while charging, red pulses on a fault, amber is
+   a low battery at rest, otherwise the brand colour. The track is a lighter step of the same colour. */
 .battery-meter { --bm: var(--brand); --bm-track: var(--brand-soft); }
-.battery-meter.mid { --bm: var(--pending); --bm-track: var(--pending-bg); }
-.battery-meter.low { --bm: var(--bad); --bm-track: var(--bad-bg); }
+.battery-meter.low { --bm: var(--pending); --bm-track: var(--pending-bg); }
 .battery-meter.none { --bm-track: var(--surface-3); }
+.battery-meter.charging { --bm: var(--ok); --bm-track: var(--ok-bg); }
+.battery-meter.fault { --bm: var(--bad); --bm-track: var(--bad-bg); }
 .bm-track { position: relative; height: 10px; border-radius: 99px; background: var(--bm-track); overflow: hidden; }
-.bm-fill { height: 100%; border-radius: 99px; background: var(--bm); transition: width 0.8s ease; }
-.battery-meter.live .bm-fill {
-  background-image: linear-gradient(90deg, transparent 0, color-mix(in oklab, #fff 35%, transparent) 50%, transparent 100%);
+.bm-fill { height: 100%; border-radius: 99px; background: var(--bm); transition: width 0.8s ease, background-color 0.3s ease; }
+.battery-meter.charging .bm-fill {
+  background-image: linear-gradient(90deg, transparent 0, color-mix(in oklab, #fff 40%, transparent) 50%, transparent 100%);
   background-size: 60px 100%; background-repeat: no-repeat; background-color: var(--bm);
   animation: bm-flow 1.8s linear infinite;
 }
 @keyframes bm-flow { from { background-position: -60px 0; } to { background-position: calc(100% + 60px) 0; } }
+.battery-meter.fault .bm-fill { animation: bm-alert 1.4s ease-in-out infinite; }
+.battery-meter.fault.none .bm-track { box-shadow: inset 0 0 0 1.5px var(--bad); animation: bm-alert 1.4s ease-in-out infinite; }
+@keyframes bm-alert { 50% { opacity: 0.4; } }
 .bm-mark { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--surface); opacity: 0.9; }
-@media (prefers-reduced-motion: reduce) { .battery-meter.live .bm-fill { animation: none; background-image: none; } .live-dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .battery-meter .bm-fill, .battery-meter .bm-track { animation: none !important; background-image: none; } .live-dot { animation: none; } }
 
 /* recent charges */
 .charge-row { width: 100%; border: 0; background: none; text-align: left; font: inherit; color: inherit; display: flex; align-items: center; gap: 12px; padding: 11px 16px; cursor: pointer; }

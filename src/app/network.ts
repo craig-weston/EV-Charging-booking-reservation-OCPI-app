@@ -1,6 +1,6 @@
 // Turns the OCPI network snapshot into "sites" the planner can rank for one vehicle and time.
-import type { BookingLocation, Location, Tariff } from "../../shared/ocpi/types";
-import type { NetworkSnapshot, Vehicle } from "../../shared/model";
+import type { BookingLocation, EVSEStatus, Location, Tariff } from "../../shared/ocpi/types";
+import type { BookingRow, NetworkSnapshot, Vehicle } from "../../shared/model";
 import { assess, type Assessment } from "../../shared/booking/compat";
 import { availabilityRatio, durationLimits, suggestSlots, type Suggestion } from "../../shared/booking/slots";
 import { summarizeTariffs, type TariffSummary } from "../../shared/booking/tariffs";
@@ -49,6 +49,16 @@ export function shortSiteName(loc: Location, operator: string): string {
 export function findLocation(net: NetworkSnapshot | null, cc: string, pid: string, id: string): Location | null {
   return net?.locations.find((l) => l.country_code === upper(cc) && l.party_id === upper(pid) && l.id === id)?.data ?? null;
 }
+
+/** What the operator reports for the charger a booking is on: the session's charger, else the booked one. */
+export function chargerStatus(net: NetworkSnapshot | null, b: BookingRow): EVSEStatus | null {
+  const uid = b.session?.evse_uid ?? b.evse_uid;
+  if (!uid) return null;
+  return findLocation(net, b.cpo_country_code, b.cpo_party_id, b.location_id)?.evses?.find((e) => e.uid === uid)?.status ?? null;
+}
+
+/** OCPI statuses that mean the charger is broken (not merely busy or reserved). */
+export const isFaultStatus = (s: EVSEStatus | null | undefined) => s === "OUTOFORDER" || s === "INOPERATIVE";
 
 export function findBookingLocation(net: NetworkSnapshot | null, cc: string, pid: string, id: string): BookingLocation | null {
   return net?.booking_locations.find((l) => l.country_code === upper(cc) && l.party_id === upper(pid) && l.id === id)?.data ?? null;
