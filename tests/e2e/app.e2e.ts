@@ -189,6 +189,8 @@ test("settings and team pages pass accessibility checks; keyboard reaches the ma
   await page.goto(`${base}/#/savings`);
   await page.getByRole("heading", { name: "Savings", level: 1 }).waitFor({ timeout: 15_000 });
   await axe(page, "savings");
+  await page.evaluate(() => document.querySelectorAll("details.more-row").forEach((d) => ((d as HTMLDetailsElement).open = true)));
+  await axe(page, "savings, details open");
   await page.goto(`${base}/#/energy`);
   await page.getByRole("heading", { name: "Charging plan" }).waitFor({ timeout: 15_000 });
   await axe(page, "depot smart charging");

@@ -15,6 +15,7 @@ import { DataSources } from "../components/DataSources";
 import { localToUtc, localDateKey, uuid } from "../../shared/util";
 import { Drawer, Field, Icon, Plate, Seg, Spinner, Switch } from "../ui/ui";
 import type { IconName } from "../ui/icon-data";
+import { MoreList, MoreRow } from "../components/More";
 import { SupplierPicker } from "../components/SupplierPicker";
 
 type EnergyView = { config: EnergyConfig; state: EnergyState; has_secret: Record<string, boolean> };
@@ -478,19 +479,6 @@ function TruckRow({ v, depot, S, at, t0, now, hoverBar, canEdit, onEdit }: {
 
 // ---- everything else, one tap away -------------------------------------------------------------
 
-function MoreRow({ icon, title, summary, tone, children }: { icon: IconName; title: string; summary: ReactNode; tone?: "bad" | "warn" | "ok"; children: ReactNode }) {
-  return (
-    <details className="en-more-row">
-      <summary>
-        <span className={`en-more-icon ${tone ?? ""}`}><Icon name={icon} size="sm" /></span>
-        <span className="grow"><b>{title}</b><span className={`en-more-sum ${tone ?? ""}`}>{summary}</span></span>
-        <span className="en-chev" aria-hidden="true"><Icon name="chevronDown" size="sm" /></span>
-      </summary>
-      <div className="en-more-body">{children}</div>
-    </details>
-  );
-}
-
 function MoreFromDepot({ depot, plan, events, provider, vehicles, now, canPlan, isOwner, sending, onSend, onSettings, onChanged, deciding, onDecide }: {
   depot: Depot; plan: PlanResponse; events: FlexEvent[]; provider: EnergyConfig["flex_provider"]; vehicles: { id: string; plate: string; name: string }[]; now: Date;
   canPlan: boolean; isOwner: boolean; sending: boolean; onSend(): void; onSettings(f?: SettingsFocus): void; onChanged(): Promise<void>; deciding: string | null; onDecide(e: FlexEvent, accept: boolean): void;
@@ -520,7 +508,7 @@ function MoreFromDepot({ depot, plan, events, provider, vehicles, now, canPlan, 
     : `${CONTROL_LABEL[depot.control.kind]}, not sent yet`;
 
   return (
-    <section className="panel en-more" aria-label="More from this depot">
+    <MoreList label="More from this depot">
       <MoreRow icon="plug" title="Chargers" summary={chargerSummary} tone={failed ? "bad" : d && depot.control.kind !== "simulated" ? "ok" : undefined}>
         <ChargersBody depot={depot} plan={plan} canSend={canPlan} sending={sending} onSend={onSend} isOwner={isOwner} onSettings={() => onSettings("connect")} now={now} />
       </MoreRow>
@@ -531,7 +519,7 @@ function MoreFromDepot({ depot, plan, events, provider, vehicles, now, canPlan, 
         <V2gBody depot={depot} plan={plan} isOwner={isOwner} onSettings={() => onSettings("v2g")} />
       </MoreRow>
       {vehicles.length === 0 && <p className="xs muted" style={{ padding: "0 20px 14px", margin: 0 }}>Add your trucks in Fleet first.</p>}
-    </section>
+    </MoreList>
   );
 }
 
@@ -689,7 +677,7 @@ function V2gBody({ depot, plan, isOwner, onSettings }: { depot: Depot; plan: Pla
   return (
     <div className="stack gap-12">
       {r && r.dischargedKwh > 0.5 ? (
-        <div className="en-figures">
+        <div className="figures">
           <div><b>{N0.format(r.dischargedKwh)} kWh</b><span>given back at the peak</span></div>
           <div><b className="en-good">{fmtMoney(r.net)}</b><span>net in this plan ({fmtMoney(r.arbitrage)} less {fmtMoney(r.wear)} battery wear), about {fmtMoney(Math.round(r.net * 250))} a year</span></div>
           <div><b>{r.minSocReached != null ? `${N0.format(r.minSocReached)}%` : "—"}</b><span>lowest charge; never below {cfg.min_soc}%</span></div>
@@ -809,7 +797,7 @@ function DayTime({ label, value, now, onChange }: { label: string; value: string
 function Adv({ id, title, summary, open, children }: { id: string; title: string; summary: string; open?: boolean; children: ReactNode }) {
   return (
     <details className="en-adv" id={id} open={open}>
-      <summary><span className="grow"><b>{title}</b><span className="xs muted">{summary}</span></span><span className="en-chev" aria-hidden="true"><Icon name="chevronDown" size="sm" /></span></summary>
+      <summary><span className="grow"><b>{title}</b><span className="xs muted">{summary}</span></span><span className="more-chev" aria-hidden="true"><Icon name="chevronDown" size="sm" /></span></summary>
       <div className="stack gap-12">{children}</div>
     </details>
   );
