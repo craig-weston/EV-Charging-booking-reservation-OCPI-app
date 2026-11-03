@@ -33,13 +33,12 @@ minimum in between. It stops when no pair beats battery wear.
 
 The page shows:
 
-- **Chart:** give-back as hatched bars below the axis.
-- **Trucks:** each pilot truck shows "Gives back N kWh".
-- **Pilot panel:**
-  - a readiness checklist: bidirectional charger, pilot truck, truck on a V2G charger tonight,
-    warranty, export approval or site-only mode;
-  - tonight's results: energy given back, value after recharging, battery wear, net benefit
-    (also per year at 250 nights), and the lowest charge reached.
+- **Timeline:** give-back as teal bars below the axis, and teal blocks on the pilot truck's row.
+- **Vehicle-to-grid pilot** (one tap away, summarised in one line):
+  - the results: energy given back, the net benefit after battery wear (also per year at 250
+    nights), and the lowest charge reached;
+  - what's left to do before give-back can be planned: bidirectional charger, pilot truck, the
+    truck on that charger, warranty, export approval or site-only mode.
 - **Pilot data for funders (CSV):** the half-hourly schedule with prices, carbon, each pilot
   truck's kW (+ charge / − give back) and the results. This is for trial reports, for example to
   the government's V2X innovation programme.
