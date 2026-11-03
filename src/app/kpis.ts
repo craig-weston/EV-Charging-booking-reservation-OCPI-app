@@ -237,10 +237,7 @@ export function fleetOverview(vehicles: Vehicle[], bookings: BookingRow[], now: 
     || a.vehicle.name.localeCompare(b.vehicle.name, "en-GB", { numeric: true }));
 }
 
-/**
- * The meter's colour, kept to one meaning each: green while charging, red for a fault, amber for a
- * low battery at rest, otherwise the brand colour. The reading is always written out too.
- */
+/** Low battery (under 20%): flagged with an amber "Low" tag; the meter's colour follows the charging key. */
 export function batteryBand(soc: number): "low" | "good" {
   return soc < 20 ? "low" : "good";
 }

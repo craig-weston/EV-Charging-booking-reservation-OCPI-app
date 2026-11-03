@@ -22,7 +22,7 @@ import { ChargingMini } from "../components/art/Mini";
 import { accessKindOf, truckKindOf } from "../components/art/scene";
 
 const EVENT_TONE: Record<string, string> = {
-  RESERVED: "ok", CHANGE_ACCEPTED: "ok", FULFILLED: "info", SESSION_STARTED: "info", SESSION_COMPLETED: "ok", CDR_RECEIVED: "ok",
+  RESERVED: "ok", CHANGE_ACCEPTED: "ok", FULFILLED: "info", SESSION_STARTED: "charging", SESSION_COMPLETED: "ok", CDR_RECEIVED: "ok",
   AUTHORIZED: "info", PENDING: "pending", CHANGE_REQUESTED: "pending", CANCEL_REQUESTED: "pending", REQUESTED: "pending",
   REJECTED: "bad", FAILED: "bad", NO_SHOW: "bad", CANCELED: "bad", CHANGE_DECLINED: "bad", CANCEL_DECLINED: "bad", BAY_ASSIGNED: "info",
 };

@@ -9,7 +9,7 @@ import { marginAt, priceLine } from "../../shared/billing";
 import { change, computeKpis, fleetOverview, keptRate, pricePerKwh, recentCharges, type TruckOverview } from "../app/kpis";
 import { LaneBoard } from "../components/LaneBoard";
 import { Sparkline } from "../components/Sparkline";
-import { BatteryMeter } from "../components/Battery";
+import { BatteryMeter, ChargeKey } from "../components/Battery";
 import { Empty, Icon, Modal, Plate, StatusBadge } from "../ui/ui";
 import { ChargeStory } from "../components/art/ChargeStory";
 import { TruckArt } from "../components/art/Mini";
@@ -196,7 +196,7 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
           <section className="section" aria-labelledby="fleet-h">
             <div className="section-head">
               <h2 id="fleet-h">Your fleet</h2>
-              <span className="right xs muted">Battery levels come from the charger while a truck is plugged in</span>
+              <span className="right"><ChargeKey /></span>
             </div>
             <div className="truck-grid">
               {trucks.map((t) => <TruckCard key={t.vehicle.id} t={t} siteName={siteName} onOpen={openBooking} />)}
@@ -331,8 +331,8 @@ function TruckCard({ t, siteName, onOpen }: { t: TruckOverview; siteName(b: Book
   const site = (x: BookingRow) => siteName(x).replace(/\s*\(.*\)$/, "");
   const stateLabel: Record<TruckOverview["state"], { text: string; tone: string }> = {
     fault: { text: t.fault?.title ?? "Fault", tone: "bad" },
-    charging: { text: "Charging", tone: "ok" },
-    due: { text: "Due on site", tone: "info" },
+    charging: { text: "Charging", tone: "charging" },
+    due: { text: "Ready to charge", tone: "ok" },
     booked: { text: "Booked", tone: "neutral" },
     idle: { text: "No booking", tone: "neutral" },
     inactive: { text: "Inactive", tone: "neutral" },
@@ -362,14 +362,14 @@ function TruckCard({ t, siteName, onOpen }: { t: TruckOverview; siteName(b: Book
 
       <div className="truck-battery">
         <div className="row gap-8" style={{ alignItems: "baseline" }}>
-          <span className="battery-figure">{b ? `${Math.round(b.soc)}%` : "—"}</span>
+          <span className="battery-figure">{b ? `${Math.round(b.soc)}%` : "—"}{b?.live && !t.fault && <span className="charge-bolt" aria-hidden="true"><Icon name="zap" /></span>}</span>
           <span className="xs muted grow" style={{ minWidth: 0 }}>
             {b && b.soc < 20 && !t.fault && <span className="tag warn" style={{ marginRight: 6 }}><Icon name="batteryLow" size="sm" />Low</span>}
             {t.fault ? <span className="sr-only">Fault: </span> : b?.live ? <span className="sr-only">Live: </span> : b ? <span className="sr-only">Last known: </span> : null}
             {batteryText}
           </span>
         </div>
-        {b ? <BatteryMeter soc={b.soc} mode={t.fault ? "fault" : b.live ? "charging" : null} label={`${v.name} battery`} /> : <div className={`battery-meter none${t.fault ? " fault" : ""}`} aria-hidden="true"><div className="bm-track" /></div>}
+        {b ? <BatteryMeter soc={b.soc} mode={t.fault ? "fault" : b.live ? "charging" : t.state === "due" ? "ready" : null} label={`${v.name} battery`} /> : <div className={`battery-meter none${t.fault ? " fault" : t.state === "due" ? " ready" : ""}`} aria-hidden="true"><div className="bm-track" /></div>}
       </div>
 
       <div className="truck-foot">
