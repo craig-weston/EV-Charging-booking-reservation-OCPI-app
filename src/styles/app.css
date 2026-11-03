@@ -561,13 +561,19 @@ p { margin: 0; }
 .vehicle-menu button:hover, .vehicle-menu button[aria-selected="true"] { background: var(--surface-2); }
 
 .result { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; padding: 14px 16px; cursor: pointer; border-left: 3px solid transparent; }
-.result:hover { background: var(--surface-2); }
+.result:hover, .result.hot { background: var(--surface-2); }
+.result.hot { border-left-color: var(--line-2); }
 .result[aria-selected="true"] { border-left-color: var(--brand); background: var(--brand-softer); }
 .result .title { font-weight: 620; }
-.result .when { text-align: right; }
-.result .when .time { font-size: var(--fs-xl); font-weight: 650; font-stretch: 80%; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.result .price { text-align: right; }
+.result .ppk { font-size: var(--fs-xl); font-weight: 680; font-stretch: 85%; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; line-height: 1.1; display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; }
+.result .ppk .unit { font-size: var(--fs-xs); font-weight: 500; color: var(--muted); letter-spacing: 0; }
+.result .ppk .cheapest { align-self: center; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 7px; border-radius: 999px; background: var(--ink); color: var(--surface); font-stretch: 100%; }
+.result .when { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; align-self: center; }
+.result .when b { font-size: var(--fs-md); }
 .result .meta { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; }
-.result .strip { grid-column: 1 / -1; }
+.result .strip { align-self: center; }
+.results-sort { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
 .result.unfit { cursor: default; opacity: 0.75; }
 .result.unfit:hover { background: transparent; }
 .op-mark { width: 30px; height: 30px; border-radius: 7px; background: var(--surface-3); color: var(--ink-2); display: grid; place-items: center; font-weight: 700; font-size: 12px; flex: none; font-stretch: 80%; }
@@ -610,15 +616,39 @@ p { margin: 0; }
 .map .pin.sel circle.ring { fill: var(--brand); stroke: var(--surface); }
 .map .pin text { font-weight: 650; fill: var(--ink); paint-order: stroke; stroke: var(--map-land); stroke-width: 3.5px; stroke-linejoin: round; }
 .map .near circle { fill: none; stroke: var(--brand); stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+/* price tags: white, with the price; the cheapest dark; the chosen one brand; hovered lifted */
+.map .pin.pill .ptag { fill: var(--surface); stroke: color-mix(in oklab, var(--ink) 22%, var(--surface)); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.map .pin.pill .ptag-shadow { fill: rgba(15, 20, 28, 0.16); }
+.map .pin.pill .tail { fill: var(--surface); stroke: color-mix(in oklab, var(--ink) 22%, var(--surface)); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.map .pin.pill .spot { fill: var(--ink); }
+.map .pin.pill .price { fill: var(--ink); font-weight: 720; font-variant-numeric: tabular-nums; stroke: none; }
+.map .pin.pill.best .ptag, .map .pin.pill.best .tail { fill: var(--ink); stroke: var(--ink); }
+.map .pin.pill.best .price { fill: var(--surface); }
+.map .pin .best-cap { fill: var(--ink); font-weight: 750; letter-spacing: 0.08em; paint-order: stroke; stroke: var(--map-land); stroke-width: 3px; stroke-linejoin: round; }
+.map .pin.pill.hot .ptag, .map .pin.pill.hot .tail { stroke: var(--brand); stroke-width: 2; }
+.map .pin.pill.sel .ptag, .map .pin.pill.sel .tail { fill: var(--brand); stroke: var(--brand); }
+.map .pin.pill.sel .price { fill: var(--brand-ink); }
+.map .pin .name { font-weight: 650; fill: var(--ink); paint-order: stroke; stroke: var(--map-land); stroke-width: 3.5px; stroke-linejoin: round; }
+.map .pin.dot circle.ring { fill: var(--surface); stroke: var(--ink); }
+.map .pin.dot.hot circle.ring { stroke: var(--brand); }
+.map .pin:focus-visible { outline: none; }
+.map .pin:focus-visible .ptag, .map .pin:focus-visible circle.ring { stroke: var(--focus); stroke-width: 3; }
+.map-legend { position: absolute; left: 10px; bottom: 10px; max-width: min(320px, calc(100% - 70px)); display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: var(--r-md); background: color-mix(in oklab, var(--surface) 92%, transparent); box-shadow: var(--shadow-pop); font-size: var(--fs-sm); line-height: 1.35; backdrop-filter: blur(4px); }
+.map-legend b { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 650; }
+.map-legend strong { font-variant-numeric: tabular-nums; }
 .map-ctrl { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
 .map-ctrl .btn { background: var(--surface); box-shadow: var(--shadow-pop); }
-.map-note { position: absolute; left: 10px; bottom: 8px; font-size: 11px; color: var(--faint); }
+.map-note { position: absolute; right: 10px; bottom: 8px; font-size: 11px; color: var(--faint); }
+.map-summary { display: none; }
 
 @media (max-width: 1023px) {
   .planner { grid-template-columns: minmax(0, 1fr); }
   .planner-map { position: relative; top: 0; height: 58vh; min-height: 360px; }
   .planner.list-mode .planner-map { display: none; }
   .planner.map-mode .planner-side .results { display: none; }
+  .planner.map-mode .planner-side .criteria { display: none; }
+  .planner.map-mode .map-summary { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--line); font-size: var(--fs-sm); }
+  .planner.map-mode .planner-map { height: calc(100vh - 250px); min-height: 420px; }
 }
 
 /* bookings list */

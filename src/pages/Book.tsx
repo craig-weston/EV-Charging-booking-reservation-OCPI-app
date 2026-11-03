@@ -61,6 +61,8 @@ export function BookPage() {
   const [resultId, setResultId] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<"list" | "map">("list");
   const [showUnfit, setShowUnfit] = useState(false);
+  const [sort, setSort] = useState<"time" | "price" | "near">("time");
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
   const sideRef = useRef<HTMLDivElement>(null);
 
   // Start with a truck that doesn't already have charge lined up.
@@ -171,10 +173,48 @@ export function BookPage() {
     }
   };
 
-  const pins: MapPin[] = sites.map((s) => ({
-    key: s.key, lat: s.lat, lon: s.lon, label: s.shortName,
-    state: s.key === selectedKey ? "sel" : s.fits && (!zeroTouchOnly || s.zeroTouch) && s.best?.best ? "fit" : "unfit",
-  }));
+  // What each matching site would cost for this charge: the energy price for the suggested slot
+  // (time-of-use aware) and an estimate for the whole charge, booking fee included.
+  const prices = useMemo(() => {
+    const out = new Map<string, SitePrice>();
+    for (const s of sites) {
+      const o = s.best ?? s.options.find((x) => x.assessment.ok) ?? null;
+      if (!s.fits || !o?.tariff) continue;
+      const from = o.best?.start ?? desired, to = o.best?.end ?? new Date(desired.getTime() + duration * MINUTE);
+      const perKwh = averageEnergyPrice(o.tariffs, from, to, TZ) ?? o.tariff.energyPerKwh;
+      const est = estimateCost(o.tariff, duration, o.assessment.usableKw, vehicle?.battery_kwh, perKwh);
+      out.set(s.key, { perKwh, total: est.total, kwh: est.kwh, booking: est.booking, currency: o.tariff.currency, vat: o.tariff.taxIncluded === "YES" ? "inc VAT" : o.tariff.taxIncluded === "NO" ? "ex VAT" : "" });
+    }
+    return out;
+  }, [sites, desired, duration, vehicle?.battery_kwh]);
+  const priceKey = (s: Site) => { const p = prices.get(s.key); return p?.total ?? (p?.perKwh != null ? p.perKwh * 1000 : Infinity); };
+  const byPrice = [...shown].filter((s) => prices.get(s.key)?.perKwh != null).sort((a, b) => priceKey(a) - priceKey(b));
+  const cheapest = byPrice[0] ?? null;
+  const priciest = byPrice[byPrice.length - 1] ?? null;
+  const ordered = sort === "price" ? [...shown].sort((a, b) => priceKey(a) - priceKey(b))
+    : sort === "near" && near ? [...shown].sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity))
+    : shown;
+  const vatNote = cheapest ? prices.get(cheapest.key)?.vat : "";
+
+  const pins: MapPin[] = sites.map((s) => {
+    const listed = s.fits && (!zeroTouchOnly || s.zeroTouch) && !!s.best?.best;
+    const p = listed ? prices.get(s.key) : undefined;
+    return {
+      key: s.key, lat: s.lat, lon: s.lon, label: s.shortName,
+      state: s.key === selectedKey ? "sel" : listed ? "fit" : "unfit",
+      price: p?.perKwh != null ? pence(p.perKwh) : null,
+      best: !!cheapest && s.key === cheapest.key && byPrice.length > 1,
+      rank: byPrice.indexOf(s),
+    };
+  });
+  const legend = byPrice.length > 0 ? (
+    <>
+      <b>Energy price{vatNote ? `, ${vatNote}` : ""} · {fmtDay(desired, now) === "Today" ? "" : `${fmtDay(desired, now)} `}{fmtTime(desired, TZ)}</b>
+      {byPrice.length > 1
+        ? <span><strong>{pence(prices.get(cheapest!.key)!.perKwh!)}</strong> at {cheapest!.shortName.replace(/\s*\(.*\)$/, "")}, up to {pence(prices.get(priciest!.key)!.perKwh!)} per kWh</span>
+        : <span><strong>{pence(prices.get(cheapest!.key)!.perKwh!)}</strong> per kWh at {cheapest!.shortName}</span>}
+    </>
+  ) : null;
 
   if (loaded.fleet && active.length === 0) {
     return (
@@ -202,6 +242,12 @@ export function BookPage() {
 
       <div className={`planner ${mobileView}-mode`}>
         <div className="planner-side" ref={sideRef}>
+          {!site && vehicle && (
+            <div className="map-summary">
+              <span className="grow ellipsis"><b>{vehicle.plate}</b> · {fmtDay(desired, now)} around {fmtTime(desired, TZ)} · {fmtDuration(duration).replace(" min", "m")}</span>
+              <button type="button" className="btn sm" onClick={() => setMobileView("list")}>Change</button>
+            </div>
+          )}
           {!site && <section className="panel criteria" aria-label="What to book">
             <VehiclePicker vehicles={active} value={vehicle} onChange={(v) => { setVehicleId(v.id); setSelectedKey(null); setResultId(null); }} />
             <div className="field">
@@ -269,15 +315,25 @@ export function BookPage() {
                   {network.booking_locations.length === 0 ? "No operators are connected yet. An admin can connect one in Network." : "Try another day, a shorter charge, or turn off “Driver just turns up”."}
                 </Empty>
               ) : (
-                <ul className="list">
-                  {shown.map((s) => <ResultItem key={s.key} site={s} desired={desired} now={now} onSelect={() => selectSite(s)} />)}
-                </ul>
+                <>
+                  {shown.length > 1 && (
+                    <div className="results-sort">
+                      <span className="xs muted">Sort</span>
+                      <Seg<"time" | "price" | "near"> label="Sort sites" value={sort === "near" && !near ? "time" : sort} onChange={setSort}
+                        options={[{ value: "time", label: "Best time" }, { value: "price", label: "Cheapest" }, ...(near ? [{ value: "near" as const, label: "Nearest" }] : [])]} />
+                    </div>
+                  )}
+                  <ul className="list">
+                    {ordered.map((s) => <ResultItem key={s.key} site={s} desired={desired} now={now} price={prices.get(s.key) ?? null} cheapest={!!cheapest && cheapest.key === s.key && byPrice.length > 1} duration={duration}
+                      hot={hoverKey === s.key} onHover={setHoverKey} onSelect={() => selectSite(s)} />)}
+                  </ul>
+                </>
               )}
               {needsAction.length > 0 && (
                 <details className="disclose" style={{ padding: "4px 16px 10px", borderTop: "1px solid var(--line)" }}>
                   <summary><Icon name="chevronRight" size="sm" />{needsAction.length} more {needsAction.length === 1 ? "site needs" : "sites need"} the driver to do something</summary>
                   <ul className="list">
-                    {needsAction.map((s) => <ResultItem key={s.key} site={s} desired={desired} now={now} onSelect={() => selectSite(s)} />)}
+                    {needsAction.map((s) => <ResultItem key={s.key} site={s} desired={desired} now={now} price={prices.get(s.key) ?? null} cheapest={false} duration={duration} hot={hoverKey === s.key} onHover={setHoverKey} onSelect={() => selectSite(s)} />)}
                   </ul>
                 </details>
               )}
@@ -302,7 +358,8 @@ export function BookPage() {
           )}
         </div>
         <div className="planner-map">
-          <NetworkMap pins={pins} near={near} onSelect={(k) => { const s = sites.find((x) => x.key === k); if (s) selectSite(s); }} focusKey={selectedKey} />
+          <NetworkMap pins={pins} near={near} onSelect={(k) => { const s = sites.find((x) => x.key === k); if (s) selectSite(s); }} focusKey={selectedKey}
+            hoverKey={hoverKey} onHover={setHoverKey} legend={!site ? legend : null} />
         </div>
       </div>
     </div>
@@ -363,7 +420,11 @@ function VehicleLine({ v }: { v: Vehicle }) {
   );
 }
 
-function ResultItem({ site, desired, now, onSelect }: { site: Site; desired: Date; now: Date; onSelect(): void }) {
+interface SitePrice { perKwh: number | null; total: number | null; kwh: number | null; booking: number; currency: string; vat: string }
+/** 59p: how British charging prices are quoted. */
+const pence = (gbp: number) => `${Math.round(gbp * 100)}p`;
+
+function ResultItem({ site, desired, now, price, cheapest, duration, hot, onHover, onSelect }: { site: Site; desired: Date; now: Date; price: SitePrice | null; cheapest: boolean; duration: number; hot: boolean; onHover(k: string | null): void; onSelect(): void }) {
   const o = site.best;
   const s = o?.best ?? null;
   const spec = o?.assessment.spec;
@@ -375,7 +436,9 @@ function ResultItem({ site, desired, now, onSelect }: { site: Site; desired: Dat
   const fee = o?.tariff ? (o.tariff.bookingFlat ?? 0) + (o.tariff.bookingPerHour ?? 0) * ((s ? (s.end.getTime() - s.start.getTime()) : 45 * MINUTE) / 3_600_000) : null;
   return (
     // The <li> stays a list item (screen readers announce "1 of 8"); the button role sits inside it.
-    <li><div className="result" role="button" tabIndex={0} onClick={onSelect} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(); } }} aria-label={`${site.shortName}, ${s ? fmtRange(s.start, s.end) : "no slot nearby"}`}>
+    <li><div className={`result${hot ? " hot" : ""}`} role="button" tabIndex={0} onClick={onSelect} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(); } }}
+      onMouseEnter={() => onHover(site.key)} onMouseLeave={() => onHover(null)} onFocus={() => onHover(site.key)} onBlur={() => onHover(null)}
+      aria-label={`${site.shortName}, ${s ? fmtRange(s.start, s.end) : "no slot nearby"}${price?.perKwh != null ? `, ${pence(price.perKwh)} per kilowatt hour` : ""}${price?.total != null ? `, about ${fmtMoney(price.total, price.currency)} for this charge` : ""}${cheapest ? ", cheapest" : ""}`}>
       <div className="row gap-12" style={{ minWidth: 0 }}>
         <span className="op-mark" title={site.operator}>{initials(site.operator)}</span>
         <div style={{ minWidth: 0 }}>
@@ -383,24 +446,27 @@ function ResultItem({ site, desired, now, onSelect }: { site: Site; desired: Dat
           <div className="xs muted ellipsis">{[site.road, site.location.city, site.distanceKm != null ? fmtMiles(site.distanceKm) : null].filter(Boolean).join(", ")}</div>
         </div>
       </div>
-      <div className="when">
-        {s ? (
+      <div className="price">
+        {price?.perKwh != null ? (
           <>
-            <div className="time">{fmtTime(s.start)}</div>
-            <div className="xs muted">{delta === 0 ? "as asked" : `${Math.abs(delta!) >= 60 ? fmtDuration(Math.abs(delta!)) : `${Math.abs(delta!)} min`} ${delta! > 0 ? "later" : "earlier"}`}</div>
+            <div className="ppk">{cheapest && <span className="cheapest">Cheapest</span>}{pence(price.perKwh)}<span className="unit">/kWh</span></div>
+            <div className="xs muted">{price.total != null ? `≈ ${fmtMoney(Math.round(price.total), price.currency)} for ${fmtDuration(duration).replace(" min", "m")}` : price.booking ? `${fmtMoney(price.booking, price.currency)} booking` : ""}</div>
           </>
-        ) : <div className="xs muted">No slot nearby</div>}
+        ) : <div className="xs muted">Price on request</div>}
       </div>
       <div className="strip" aria-hidden="true">
         {windows.map((w, i) => <span key={i} style={{ left: `${((w.start.getTime() - from) / span) * 100}%`, width: `${((w.end.getTime() - w.start.getTime()) / span) * 100}%` }} />)}
         <i className="want" style={{ left: "50%" }} />
+      </div>
+      <div className="when">
+        {s ? <><b>{fmtTime(s.start)}</b> <span className="xs muted">{delta === 0 ? "as asked" : `${Math.abs(delta!) >= 60 ? fmtDuration(Math.abs(delta!)) : `${Math.abs(delta!)} min`} ${delta! > 0 ? "later" : "earlier"}`}</span></> : <span className="xs muted">No slot nearby</span>}
       </div>
       <div className="meta">
         {o?.assessment.connector && <span className="tag"><Icon name="zap" />{connectorLabel(o.assessment.connector)} {fmtKw(kw ?? null)}</span>}
         {o?.bl.booking_option?.drive_through && <span className="tag">Drive-through</span>}
         {o?.bl.booking_option?.refrigeration_outlet && <span className="tag"><Icon name="snowflake" />Reefer power</span>}
         {s?.window.green && <span className="tag ok"><Icon name="leaf" />Green energy</span>}
-        {fee != null && <span className="tag">{fmtMoney(fee, o?.tariff?.currency)} booking</span>}
+        {fee != null && fee > 0 && <span className="tag">incl. {fmtMoney(fee, o?.tariff?.currency)} booking</span>}
         {o && o.assessment.issues.filter((i) => i.level !== "block").map((i) => <span key={i.code} className={`tag ${i.level === "touch" ? "warn" : ""}`}>{i.text}</span>)}
         {site.isSimulator && <span className="tag">Simulated</span>}
       </div>
