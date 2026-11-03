@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { BookingRow, Vehicle } from "../../shared/model";
 import type { BookingLocation } from "../../shared/ocpi/types";
 import { ACCESS_LABEL, START_METHOD_LABEL, VEHICLE_TYPE_LABEL, connectorLabel } from "../../shared/booking/labels";
-import { MIN_BOOKING_DAYS, bookableDays, availableWindows, checkSlot, durationLimits, suggestSlots } from "../../shared/booking/slots";
+import { bookableDays, availableWindows, checkSlot, durationLimits, suggestSlots } from "../../shared/booking/slots";
 import { deadlines } from "../../shared/booking/terms";
 import { estimateCost } from "../../shared/booking/tariffs";
 import { averageEnergyPrice, energyPriceAt, hasTimeOfUse } from "../../shared/energy/price";
@@ -87,6 +87,8 @@ export function BookPage() {
   const shown = sites.filter((s) => s.fits && (!zeroTouchOnly || s.zeroTouch));
   const needsAction = zeroTouchOnly ? sites.filter((s) => s.fits && !s.zeroTouch) : [];
   const unfit = sites.filter((s) => !s.fits);
+  // "Simulated" only tells you something when real and simulated operators are mixed.
+  const mixedSim = sites.some((s) => s.isSimulator) && sites.some((s) => !s.isSimulator);
   const site = sites.find((s) => s.key === selectedKey) ?? null;
   const option: SiteOption | null = site?.options.find((o) => o.bl.id === optionId) ?? site?.best ?? null;
   const bl = option?.bl ?? null;
@@ -97,8 +99,9 @@ export function BookPage() {
   const days = useMemo(() => bookableDays((network?.booking_locations ?? []).map((b) => b.data), now, TZ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [network, todayKey]);
-  const soonDays = days.slice(0, MIN_BOOKING_DAYS);
-  const laterDays = days.slice(MIN_BOOKING_DAYS);
+  // Today and tomorrow cover most bookings; every other day is one pick away.
+  const soonDays = days.slice(0, 2);
+  const laterDays = days.slice(2);
   const dayKey = localDateKey(day, TZ);
   const pickDay = (d: Date) => { setDay(d); setSelectedKey(null); setResultId(null); };
 
@@ -252,20 +255,22 @@ export function BookPage() {
             <VehiclePicker vehicles={active} value={vehicle} onChange={(v) => { setVehicleId(v.id); setSelectedKey(null); setResultId(null); }} />
             <div className="field">
               <span className="label">Day</span>
-              <div className="chips" role="group" aria-label="Day">
-                {soonDays.map((d) => (
-                  <button key={d.toISOString()} type="button" className="chip" aria-pressed={localDateKey(d, TZ) === dayKey} onClick={() => pickDay(d)}>
-                    {fmtDay(d, now)}
-                  </button>
-                ))}
+              <div className="day-pick">
+                <div className="chips" role="group" aria-label="Day">
+                  {soonDays.map((d) => (
+                    <button key={d.toISOString()} type="button" className="chip" aria-pressed={localDateKey(d, TZ) === dayKey} onClick={() => pickDay(d)}>
+                      {fmtDay(d, now)}
+                    </button>
+                  ))}
+                </div>
+                {laterDays.length > 0 && (
+                  <select className={`select later-day ${laterDays.some((d) => localDateKey(d, TZ) === dayKey) ? "on" : ""}`} aria-label="Another day" value={laterDays.some((d) => localDateKey(d, TZ) === dayKey) ? dayKey : ""}
+                    onChange={(e) => { const d = laterDays.find((x) => localDateKey(x, TZ) === e.target.value); if (d) pickDay(d); }}>
+                    <option value="">Another day</option>
+                    {laterDays.map((d) => <option key={d.toISOString()} value={localDateKey(d, TZ)}>{fmtDay(d, now)}</option>)}
+                  </select>
+                )}
               </div>
-              {laterDays.length > 0 && (
-                <select className="select later-day" aria-label="A later day" value={laterDays.some((d) => localDateKey(d, TZ) === dayKey) ? dayKey : ""}
-                  onChange={(e) => { const d = laterDays.find((x) => localDateKey(x, TZ) === e.target.value); if (d) pickDay(d); }}>
-                  <option value="">Later, up to {fmtDay(laterDays[laterDays.length - 1], now)}</option>
-                  {laterDays.map((d) => <option key={d.toISOString()} value={localDateKey(d, TZ)}>{fmtDay(d, now)}</option>)}
-                </select>
-              )}
             </div>
             <div className="two">
               <div className="field">
@@ -288,7 +293,7 @@ export function BookPage() {
             </div>
             <Switch checked={zeroTouchOnly} onChange={setZeroTouchOnly}>
               <span>Driver just turns up</span>
-              <span className="hint" style={{ display: "block" }}>Only sites that open for the number plate and start charging automatically ({vehicle ? START_METHOD_LABEL[vehicle.start_method] : "Autocharge or Plug & Charge"}).</span>
+              <span className="hint" style={{ display: "block" }}>Sites that know the plate and start charging by themselves ({vehicle ? START_METHOD_LABEL[vehicle.start_method] : "Autocharge or Plug & Charge"})</span>
             </Switch>
           </section>}
 
@@ -324,7 +329,7 @@ export function BookPage() {
                     </div>
                   )}
                   <ul className="list">
-                    {ordered.map((s) => <ResultItem key={s.key} site={s} desired={desired} now={now} price={prices.get(s.key) ?? null} cheapest={!!cheapest && cheapest.key === s.key && byPrice.length > 1} duration={duration}
+                    {ordered.map((s) => <ResultItem key={s.key} site={s} desired={desired} now={now} showSim={mixedSim} price={prices.get(s.key) ?? null} cheapest={!!cheapest && cheapest.key === s.key && byPrice.length > 1} duration={duration}
                       hot={hoverKey === s.key} onHover={setHoverKey} onSelect={() => selectSite(s)} />)}
                   </ul>
                 </>
@@ -333,7 +338,7 @@ export function BookPage() {
                 <details className="disclose" style={{ padding: "4px 16px 10px", borderTop: "1px solid var(--line)" }}>
                   <summary><Icon name="chevronRight" size="sm" />{needsAction.length} more {needsAction.length === 1 ? "site needs" : "sites need"} the driver to do something</summary>
                   <ul className="list">
-                    {needsAction.map((s) => <ResultItem key={s.key} site={s} desired={desired} now={now} price={prices.get(s.key) ?? null} cheapest={false} duration={duration} hot={hoverKey === s.key} onHover={setHoverKey} onSelect={() => selectSite(s)} />)}
+                    {needsAction.map((s) => <ResultItem key={s.key} site={s} desired={desired} now={now} showSim={mixedSim} price={prices.get(s.key) ?? null} cheapest={false} duration={duration} hot={hoverKey === s.key} onHover={setHoverKey} onSelect={() => selectSite(s)} />)}
                   </ul>
                 </details>
               )}
@@ -424,7 +429,7 @@ interface SitePrice { perKwh: number | null; total: number | null; kwh: number |
 /** 59p: how British charging prices are quoted. */
 const pence = (gbp: number) => `${Math.round(gbp * 100)}p`;
 
-function ResultItem({ site, desired, now, price, cheapest, duration, hot, onHover, onSelect }: { site: Site; desired: Date; now: Date; price: SitePrice | null; cheapest: boolean; duration: number; hot: boolean; onHover(k: string | null): void; onSelect(): void }) {
+function ResultItem({ site, desired, now, price, cheapest, duration, hot, showSim, onHover, onSelect }: { site: Site; desired: Date; now: Date; price: SitePrice | null; cheapest: boolean; duration: number; hot: boolean; showSim: boolean; onHover(k: string | null): void; onSelect(): void }) {
   const o = site.best;
   const s = o?.best ?? null;
   const spec = o?.assessment.spec;
@@ -468,7 +473,7 @@ function ResultItem({ site, desired, now, price, cheapest, duration, hot, onHove
         {s?.window.green && <span className="tag ok"><Icon name="leaf" />Green energy</span>}
         {fee != null && fee > 0 && <span className="tag">incl. {fmtMoney(fee, o?.tariff?.currency)} booking</span>}
         {o && o.assessment.issues.filter((i) => i.level !== "block").map((i) => <span key={i.code} className={`tag ${i.level === "touch" ? "warn" : ""}`}>{i.text}</span>)}
-        {site.isSimulator && <span className="tag">Simulated</span>}
+        {showSim && site.isSimulator && <span className="tag">Simulated</span>}
       </div>
     </div></li>
   );

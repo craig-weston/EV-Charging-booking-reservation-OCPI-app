@@ -14,6 +14,7 @@ import { ApiFailure } from "../app/backend";
 import { fmtDateTime, fmtRelative, fmtTime } from "../app/format";
 import { Empty, Field, Icon, Json, Modal, Seg, Spinner, copyText } from "../ui/ui";
 import { EmptyBayArt } from "../components/art/Mini";
+import { MoreList, MoreRow } from "../components/More";
 
 interface SimStatus { registered: boolean; bookings: number; active_sessions: number; sites: number }
 
@@ -60,7 +61,6 @@ export function NetworkPage() {
           <div className="sub">Charge point operators connected over OCPI 2.3.0 with the Bookings module.</div>
         </div>
         <div className="actions">
-          <a className="btn" href={href("/network/connect")}><Icon name="route" size="sm" />Step-by-step guide</a>
           <button className="btn" onClick={() => setDialog("invite")}>Invite an operator</button>
           <button className="btn primary" onClick={() => setDialog("connect")}><Icon name="link" size="sm" />Connect an operator</button>
         </div>
@@ -96,38 +96,34 @@ export function NetworkPage() {
         )}
       </section>
 
-      {config.simulator && (
-        <section className="panel section">
-          <div className="panel-head"><h2>CPO simulator</h2><span className="tag right">Test network</span></div>
-          <div className="panel-body row gap-16 wrap">
-            <div className="grow" style={{ minWidth: 260 }}>
-              <p>Three fictional operators with {sim?.sites ?? 12} HGV sites, speaking real OCPI to this app: calendars, asynchronous confirmations, changes, cancellations, plate + Autocharge/Plug & Charge arrival, sessions and CDRs.</p>
-              {sim && <p className="small muted" style={{ marginTop: 6 }}>{sim.registered ? `Registered. ${sim.bookings} bookings, ${sim.active_sessions} charging.` : "Not registered yet."}</p>}
+      <MoreList label="More about the network">
+        {config.simulator && (
+          <MoreRow icon="plug" title="CPO simulator" summary={!sim ? "A test network of fictional operators" : sim.registered ? `${sim.sites} test sites · ${sim.bookings} bookings, ${sim.active_sessions} charging` : "Not connected yet"}>
+            <div className="stack gap-12">
+              <p className="small" style={{ margin: 0 }}>Three fictional operators with {sim?.sites ?? 12} HGV sites, speaking real OCPI to this app: calendars, asynchronous confirmations, changes, cancellations, plate + Autocharge/Plug & Charge arrival, sessions and CDRs.</p>
+              <div>
+                <button className="btn sm" disabled={!!busy} onClick={() => act("sim", () => api("POST", "/admin/simulator/connect"), simPartner ? "Simulator data refreshed" : "Simulator connected")}>
+                  {busy === "sim" ? <Spinner /> : <Icon name="plug" size="sm" />}{simPartner ? "Refresh simulator" : "Connect simulator"}
+                </button>
+              </div>
             </div>
-            <button className="btn" disabled={!!busy} onClick={() => act("sim", () => api("POST", "/admin/simulator/connect"), simPartner ? "Simulator data refreshed" : "Simulator connected")}>
-              {busy === "sim" ? <Spinner /> : <Icon name="plug" size="sm" />}{simPartner ? "Refresh simulator" : "Connect simulator"}
-            </button>
+          </MoreRow>
+        )}
+        <PricingRow />
+        <MoreRow icon="link" title="Your OCPI details" summary={`Versions URL and credentials for operators · ${config.party.country_code}*${config.party.party_id}`}>
+          <div className="stack gap-12">
+            <p className="small muted" style={{ margin: 0 }}>Give operators your versions URL. Endpoints: credentials, locations, tariffs, sessions, cdrs (receiver), tokens (sender, with real-time authorise) and bookings (receiver).</p>
+            <CopyRow label="Versions URL" value={config.ocpi_versions_url} />
+            <div className="row gap-24 wrap small">
+              <span>Role <b>EMSP</b></span>
+              <span>Country code <b>{config.party.country_code}</b></span>
+              <span>Party ID <b>{config.party.party_id}</b></span>
+              <span>Business name <b>{config.party.name}</b></span>
+            </div>
           </div>
-        </section>
-      )}
-
-      <PricingPanel />
-
-      <section className="panel section">
-        <div className="panel-head"><h2>Your OCPI details</h2></div>
-        <div className="panel-body stack gap-12">
-          <p className="small muted">Give operators your versions URL. Endpoints: credentials, locations, tariffs, sessions, cdrs (receiver), tokens (sender, with real-time authorise) and bookings (receiver).</p>
-          <CopyRow label="Versions URL" value={config.ocpi_versions_url} />
-          <div className="row gap-24 wrap small">
-            <span>Role <b>EMSP</b></span>
-            <span>Country code <b>{config.party.country_code}</b></span>
-            <span>Party ID <b>{config.party.party_id}</b></span>
-            <span>Business name <b>{config.party.name}</b></span>
-          </div>
-        </div>
-      </section>
-
-      <MessageLog />
+        </MoreRow>
+        <MessageLog />
+      </MoreList>
 
       {dialog === "connect" && <ConnectDialog onClose={() => setDialog(null)} onDone={async () => { setDialog(null); await load(); await refreshNetwork(); }} />}
       {dialog === "invite" && <InviteDialog onClose={() => setDialog(null)} onDone={async () => { await load(); }} />}
@@ -181,6 +177,7 @@ function ConnectDialog({ onClose, onDone }: { onClose(): void; onDone(): void })
     <Modal title="Connect an operator" onClose={onClose} foot={<><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy || !url || !token} onClick={go}>{busy && <Spinner />}Connect</button></>}>
       <div className="stack gap-16">
         <p className="small muted">The operator gives you their versions URL and a registration token (CREDENTIALS_TOKEN_A). We fetch their endpoints, register with our own token and pull their sites, prices and calendars.</p>
+        <a className="btn sm ghost" style={{ alignSelf: "flex-start" }} href={href("/network/connect")}><Icon name="route" size="sm" />First time? Follow the step-by-step guide</a>
         <Field label="Versions URL">{(id) => <input id={id} className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://ocpi.operator.example/versions" />}</Field>
         <Field label="Registration token">{(id) => <input id={id} className="input" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" style={{ fontFamily: "var(--mono)" }} />}</Field>
         <Field label="Display name" hint="Optional. Otherwise taken from their credentials">{(id) => <input id={id} className="input" value={name} onChange={(e) => setName(e.target.value)} />}</Field>
@@ -227,19 +224,22 @@ function MessageLog() {
   const [module, setModule] = useState("");
   const [rows, setRows] = useState<OcpiLogEntry[] | null>(null);
   const [open, setOpen] = useState<OcpiLogEntry | null>(null);
+  const [shown, setShown] = useState(false);
   const [limit, setLimit] = useState(30);
   const load = useCallback(async () => setRows(await api<OcpiLogEntry[]>("GET", `/admin/log?limit=150${module ? `&module=${module}` : ""}`)), [api, module]);
+  // Once for the summary; then live, every 8 seconds, only while the log is open.
   useEffect(() => {
     void load();
+    if (!shown) return;
     const t = setInterval(() => void load(), 8000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, shown]);
+  const failed = (rows ?? []).filter((r) => !(r.status_code && r.status_code < 2000)).length;
+  const summary = !rows ? "Requests to and from operators" : rows.length === 0 ? "No messages yet"
+    : `Last ${fmtTime(rows[0].at)}${module ? "" : ` · ${rows.length}${rows.length >= 150 ? "+" : ""} recent`}${failed ? ` · ${failed} with errors` : ""}`;
   return (
-    <section className="panel section">
-      <div className="panel-head wrap">
-        <h2>OCPI messages</h2>
-        <div className="right"><Seg label="Module" value={module} onChange={setModule} options={[{ value: "", label: "All" }, { value: "bookings", label: "Bookings" }, { value: "tokens", label: "Tokens" }, { value: "sessions", label: "Sessions" }, { value: "cdrs", label: "CDRs" }, { value: "credentials", label: "Credentials" }]} /></div>
-      </div>
+    <MoreRow icon="activity" title="OCPI messages" summary={summary} tone={failed ? "warn" : undefined} flush onToggle={setShown}>
+      <div className="log-filter"><Seg label="Module" value={module} onChange={setModule} options={[{ value: "", label: "All" }, { value: "bookings", label: "Bookings" }, { value: "tokens", label: "Tokens" }, { value: "sessions", label: "Sessions" }, { value: "cdrs", label: "CDRs" }, { value: "credentials", label: "Credentials" }]} /></div>
       {!rows ? <div className="empty"><Spinner /></div> : rows.length === 0 ? <Empty title="No messages yet">Requests to and from operators appear here as they happen.</Empty> : (
         <ul className="list">
           {rows.slice(0, limit).map((r) => (
@@ -275,27 +275,33 @@ function MessageLog() {
           </div>
         </Modal>
       )}
-    </section>
+    </MoreRow>
   );
 }
 
-/** The platform's margin on operator prices: what every fleet pays is the operator's price plus this. */
-function PricingPanel() {
+interface Billing { margin_percent: number; vat_rate: number; flex_fleet_share: number; history: { from: string; margin_percent: number }[] }
+
+/** The platform's margin on operator prices (what every fleet pays is the operator's price plus
+ *  this), and fleets' share of grid flexibility payments (the rest is the platform's fee). */
+function PricingRow() {
   const { api, toast, refreshFleet } = useApp();
-  const [saved, setSaved] = useState<{ margin_percent: number; vat_rate: number; history: { from: string; margin_percent: number }[] } | null>(null);
+  const [saved, setSaved] = useState<Billing | null>(null);
   const [value, setValue] = useState("");
+  const [share, setShare] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    void api<{ margin_percent: number; vat_rate: number; history: { from: string; margin_percent: number }[] }>("GET", "/admin/billing").then((b) => { setSaved(b); setValue(String(b.margin_percent)); }).catch(() => undefined);
+    void api<Billing>("GET", "/admin/billing").then((b) => { setSaved(b); setValue(String(b.margin_percent)); setShare(String(b.flex_fleet_share)); }).catch(() => undefined);
   }, [api]);
   const n = Number(value);
   const valid = value.trim() !== "" && Number.isFinite(n) && n >= 0 && n <= 100;
   const example = valid ? Math.round(100 * (1 + n / 100) * 100) / 100 : null;
+  const sn = Number(share);
+  const shareOk = share.trim() !== "" && Number.isFinite(sn) && sn >= 0 && sn <= 100;
   const save = async () => {
     setBusy(true);
     try {
-      const b = await api<{ margin_percent: number; vat_rate: number; history: { from: string; margin_percent: number }[] }>("PUT", "/admin/billing", { margin_percent: n });
-      setSaved(b);
+      const b = await api<Billing>("PUT", "/admin/billing", { margin_percent: n });
+      setSaved((s) => ({ ...(s ?? b), ...b }));
       setValue(String(b.margin_percent));
       await refreshFleet();
       toast(`Margin set to ${b.margin_percent}%`);
@@ -305,36 +311,30 @@ function PricingPanel() {
       setBusy(false);
     }
   };
+  const saveShare = async () => {
+    try {
+      const b = await api<Billing>("PUT", "/admin/billing", { flex_fleet_share: sn });
+      setSaved((s) => ({ ...(s ?? b), ...b }));
+      toast(`Fleets now get ${b.flex_fleet_share}% of flexibility payments`);
+    } catch { toast("Couldn't save", "bad"); }
+  };
+  const summary = saved ? `Operator price + ${saved.margin_percent}% margin · fleets keep ${saved.flex_fleet_share}% of flexibility payments` : "What fleets pay";
   return (
-    <section className="panel section">
-      <div className="panel-head"><h2>Fleet pricing</h2><span className="tag right">Operator price + margin</span></div>
-      <div className="panel-body stack gap-12">
-        <p className="small muted">Fleets pay each operator's price plus this margin, then VAT. A new margin applies to charges that finish from now on; earlier charges and past statements keep the margin they had.</p>
+    <MoreRow icon="poundSterling" title="Fleet pricing" summary={summary}>
+      <div className="stack gap-12">
+        <p className="small muted" style={{ margin: 0 }}>Fleets pay each operator's price plus this margin, then VAT. A new margin applies to charges that finish from now on; earlier charges and past statements keep the margin they had.</p>
         <div className="row gap-12 wrap" style={{ alignItems: "flex-end" }}>
           <Field label="Margin on operator prices (%)">{(id) => <input id={id} className="input" inputMode="decimal" style={{ width: 140 }} value={value} onChange={(e) => setValue(e.target.value)} />}</Field>
           <button className="btn primary" disabled={!valid || busy || (saved != null && n === saved.margin_percent)} onClick={save}>{busy && <Spinner />}Save margin</button>
         </div>
         {!valid && value !== "" && <div className="error-text" role="alert">Enter a number from 0 to 100</div>}
-        {saved && saved.history.length > 0 && <p className="xs muted">Changes: {saved.history.slice(-4).reverse().map((h) => `${h.margin_percent}% from ${fmtDateTime(h.from, new Date())}`).join(" · ")}</p>}
-        <FlexShare />
-        {example != null && <p className="small pricing-example">A charge the operator prices at £100.00 ex VAT costs a fleet <b>£{example.toFixed(2)}</b> ex VAT, £{(example * (1 + (saved?.vat_rate ?? 0.2))).toFixed(2)} with VAT.</p>}
+        {example != null && <p className="small pricing-example" style={{ margin: 0 }}>A charge the operator prices at £100.00 ex VAT costs a fleet <b>£{example.toFixed(2)}</b> ex VAT, £{(example * (1 + (saved?.vat_rate ?? 0.2))).toFixed(2)} with VAT.</p>}
+        {saved && saved.history.length > 0 && <p className="xs muted" style={{ margin: 0 }}>Changes: {saved.history.slice(-4).reverse().map((h) => `${h.margin_percent}% from ${fmtDateTime(h.from, new Date())}`).join(" · ")}</p>}
+        <div className="row gap-8 wrap" style={{ alignItems: "flex-end", marginTop: 4 }}>
+          <label className="field" style={{ maxWidth: 260 }}><span className="label">Fleets' share of grid flexibility payments, %</span><input className="input" inputMode="decimal" value={share} onChange={(e) => setShare(e.target.value)} /></label>
+          <button className="btn" disabled={!shareOk || sn === saved?.flex_fleet_share} onClick={() => void saveShare()}>Save share</button>
+        </div>
       </div>
-    </section>
-  );
-}
-
-/** Fleets' share of grid flexibility payments (the rest is the platform's fee). */
-function FlexShare() {
-  const { api, toast } = useApp();
-  const [v, setV] = useState<string>("");
-  const [saved, setSaved] = useState<number | null>(null);
-  useEffect(() => { void api<{ flex_fleet_share: number }>("GET", "/admin/billing").then((b) => { setSaved(b.flex_fleet_share); setV(String(b.flex_fleet_share)); }).catch(() => undefined); }, [api]);
-  const n = Number(v);
-  const ok = v !== "" && Number.isFinite(n) && n >= 0 && n <= 100;
-  return (
-    <div className="row gap-8 wrap" style={{ alignItems: "flex-end" }}>
-      <label className="field" style={{ maxWidth: 260 }}><span className="label">Fleets' share of grid flexibility payments, %</span><input className="input" inputMode="decimal" value={v} onChange={(e) => setV(e.target.value)} /></label>
-      <button className="btn" disabled={!ok || n === saved} onClick={async () => { try { const b = await api<{ flex_fleet_share: number }>("PUT", "/admin/billing", { flex_fleet_share: n }); setSaved(b.flex_fleet_share); toast(`Fleets now get ${b.flex_fleet_share}% of flexibility payments`); } catch { toast("Couldn't save", "bad"); } }}>Save share</button>
-    </div>
+    </MoreRow>
   );
 }

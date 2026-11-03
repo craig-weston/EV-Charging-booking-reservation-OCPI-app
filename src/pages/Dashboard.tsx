@@ -318,7 +318,7 @@ function TruckCard({ t, siteName, onOpen }: { t: TruckOverview; siteName(b: Book
         <div className="row gap-8" style={{ alignItems: "baseline" }}>
           <span className="battery-figure">{b ? `${Math.round(b.soc)}%` : "—"}{b?.live && !t.fault && <span className="charge-bolt" aria-hidden="true"><Icon name="zap" /></span>}</span>
           <span className="xs muted grow" style={{ minWidth: 0 }}>
-            {b && b.soc < 20 && !t.fault && <span className="tag warn" style={{ marginRight: 6 }}><Icon name="batteryLow" size="sm" />Low</span>}
+            {b && b.soc < 20 && !t.fault && !b.live && <span className="tag warn" style={{ marginRight: 6 }}><Icon name="batteryLow" size="sm" />Low</span>}
             {t.fault ? <span className="sr-only">Fault: </span> : b?.live ? <span className="sr-only">Live: </span> : b ? <span className="sr-only">Last known: </span> : null}
             {batteryText}
           </span>
