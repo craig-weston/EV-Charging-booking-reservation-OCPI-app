@@ -509,7 +509,7 @@ function ChargersBody({ depot, plan, canSend, sending, onSend, isOwner, onSettin
     <div className="stack gap-12">
       <p className="small" style={{ margin: 0 }}>
         {depot.control.kind === "simulated"
-          ? <>The plan is worked out but not sent anywhere yet. {isOwner ? <>Connect the chargers in <button className="linklike" onClick={onSettings}>settings</button>, through CitrineOS (free and open source) or your depot operator's system.</> : "Ask a fleet owner to connect the chargers."}</>
+          ? <>The plan is worked out but not sent anywhere yet. {isOwner ? "Connect the chargers through CitrineOS (free and open source) or your depot operator's system." : "Ask a fleet owner to connect the chargers."}</>
           : <>Each charger is sent its power limit for every half-hour (an OCPP 2.0.1 charging profile). If the connection drops, chargers fall back to their own settings.</>}
       </p>
       {d && (
@@ -517,10 +517,11 @@ function ChargersBody({ depot, plan, canSend, sending, onSend, isOwner, onSettin
           {d.results.map((x) => <li key={x.charger_id} className={x.ok ? "" : "bad"}><Icon name={x.ok ? "circleCheck" : "circleX"} size="sm" /><b>{name(x.charger_id)}</b><span className="muted small">{x.message}</span></li>)}
         </ul>
       )}
-      {canSend && (
+      {(canSend || isOwner) && (
         <div className="row gap-8 wrap" style={{ alignItems: "center" }}>
-          <button className="btn sm primary" disabled={sending || !plan.visits.length} onClick={onSend}>{sending ? <Spinner label="Sending" /> : <Icon name="zap" size="sm" />}Send the plan to the chargers</button>
-          <span className="xs muted">{d ? `Last sent ${when(d.at, now)} (${d.by === "auto" ? "automatically" : "by hand"})` : "Not sent yet"}</span>
+          {isOwner && depot.control.kind === "simulated" && <button className="btn sm" onClick={onSettings}><Icon name="plug" size="sm" />Connect the chargers</button>}
+          {canSend && <button className={`btn sm ${depot.control.kind === "simulated" ? "ghost" : "primary"}`} disabled={sending || !plan.visits.length} onClick={onSend}>{sending ? <Spinner label="Sending" /> : <Icon name="zap" size="sm" />}Send the plan to the chargers</button>}
+          {canSend && <span className="xs muted">{d ? `Last sent ${when(d.at, now)} (${d.by === "auto" ? "automatically" : "by hand"})` : "Not sent yet"}</span>}
         </div>
       )}
     </div>
