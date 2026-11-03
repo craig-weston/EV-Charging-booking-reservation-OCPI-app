@@ -1236,7 +1236,9 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
 .legal-table th, .legal-table td { overflow-wrap: anywhere; }
 
 /* Book: days beyond the first week */
-.later-day { margin-top: 8px; max-width: 260px; }
+.day-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.later-day { width: auto; min-width: 150px; height: 34px; border-radius: 999px; padding-left: 14px; }
+.later-day.on { border-color: var(--brand); background-color: var(--brand-soft); color: var(--brand-strong); font-weight: 600; }
 
 /* operator guide */
 .guide .back-link { display: inline-flex; align-items: center; gap: 2px; margin-bottom: 6px; color: var(--muted); text-decoration: none; }
