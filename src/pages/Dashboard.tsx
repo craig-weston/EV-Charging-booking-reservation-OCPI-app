@@ -3,7 +3,7 @@ import type { BookingRow } from "../../shared/model";
 import { CANCEL_REASON_LABEL, VEHICLE_TYPE_LABEL } from "../../shared/booking/labels";
 import { useApp } from "../app/state";
 import { fmtDateTime, fmtDay, fmtKw, fmtKwh, fmtLongDate, fmtMoney, fmtRange, fmtRelative, fmtTime, greeting } from "../app/format";
-import { findLocation, operatorFor, shortSiteName } from "../app/network";
+import { chargerStatus, findLocation, operatorFor, shortSiteName } from "../app/network";
 import { href, navigate } from "../app/router";
 import { marginAt, priceLine } from "../../shared/billing";
 import { change, computeKpis, fleetOverview, keptRate, pricePerKwh, recentCharges, type TruckOverview } from "../app/kpis";
@@ -42,7 +42,7 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
 
   const margins = fleet?.margin_history;
   const kpis = useMemo(() => computeKpis(bookings, now, 7, undefined, margins), [bookings, now, margins]);
-  const trucks = useMemo(() => fleetOverview(vehicles, bookings, now), [vehicles, bookings, now]);
+  const trucks = useMemo(() => fleetOverview(vehicles, bookings, now, (b) => chargerStatus(network, b)), [vehicles, bookings, now, network]);
   const recent = useMemo(() => recentCharges(bookings, 5), [bookings]);
 
   const attention = useMemo(() => {
@@ -78,6 +78,7 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
 
   const hasHistory = kpis.current.sessions + kpis.previous.sessions + kpis.current.noShows + kpis.previous.noShows > 0;
   const charging = trucks.filter((t) => t.state === "charging");
+  const faults = trucks.filter((t) => t.state === "fault");
   const nextArrival = trucks.map((t) => t.state === "due" ? t.current : t.next).filter(Boolean).sort((a, b) => a!.start_at.localeCompare(b!.start_at))[0] ?? null;
 
   return (
@@ -160,12 +161,13 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
           />
           <KpiTile
             label="On charge now"
-            value={String(kpis.chargingNow)}
-            unit={kpis.chargingNow === 1 ? "truck" : "trucks"}
+            value={String(charging.length)}
+            unit={charging.length === 1 ? "truck" : "trucks"}
             sub={charging.length
               ? `${fmtKw(kpis.liveKw)} drawn now${charging.length === 1 && charging[0].current ? ` at ${siteName(charging[0].current).replace(/\s*\(.*\)$/, "")}` : ""}`
               : nextArrival ? `Next: ${vehicle(nextArrival.vehicle_id)?.name ?? nextArrival.plate}, ${fmtDateTime(nextArrival.start_at, now)}` : "Nothing booked"}
             sub2={charging.length && nextArrival ? `Next arrival: ${vehicle(nextArrival.vehicle_id)?.name ?? nextArrival.plate}, ${fmtDateTime(nextArrival.start_at, now)}` : undefined}
+            alert={faults.length ? `${faults.length === 1 ? `${faults[0].vehicle.name}: ${faults[0].fault!.title.toLowerCase()}` : `${faults.length} trucks stopped by a fault`}` : undefined}
             live={charging.length > 0}
           />
         </section>
@@ -283,7 +285,7 @@ function keptSummary(p: { kept: number; noShows: number; operatorCancels: number
   return parts.join(", ");
 }
 
-function KpiTile({ label, value, unit, delta, deltaAsPoints, tone, sub, sub2, spark, live }: {
+function KpiTile({ label, value, unit, delta, deltaAsPoints, tone, sub, sub2, alert, spark, live }: {
   label: string;
   value: string;
   unit?: string;
@@ -293,6 +295,8 @@ function KpiTile({ label, value, unit, delta, deltaAsPoints, tone, sub, sub2, sp
   tone?: "neutral" | "up-good" | "up-bad";
   sub?: string;
   sub2?: string;
+  /** Something broken, in red under the figure. */
+  alert?: string;
   spark?: { title: string; points: { label: string; value: number }[]; split: number; format(v: number): string };
   live?: boolean;
 }) {
@@ -313,6 +317,7 @@ function KpiTile({ label, value, unit, delta, deltaAsPoints, tone, sub, sub2, sp
       )}
       {sub && <div className="kpi-sub">{sub}</div>}
       {sub2 && <div className="kpi-sub">{sub2}</div>}
+      {alert && <div className="kpi-sub bad"><Icon name="alert" size="sm" /> {alert}</div>}
       {spark && <Sparkline {...spark} />}
     </div>
   );
@@ -325,6 +330,7 @@ function TruckCard({ t, siteName, onOpen }: { t: TruckOverview; siteName(b: Book
   const target = t.current ?? t.next;
   const site = (x: BookingRow) => siteName(x).replace(/\s*\(.*\)$/, "");
   const stateLabel: Record<TruckOverview["state"], { text: string; tone: string }> = {
+    fault: { text: t.fault?.title ?? "Fault", tone: "bad" },
     charging: { text: "Charging", tone: "ok" },
     due: { text: "Due on site", tone: "info" },
     booked: { text: "Booked", tone: "neutral" },
@@ -334,7 +340,8 @@ function TruckCard({ t, siteName, onOpen }: { t: TruckOverview; siteName(b: Book
   const s = stateLabel[t.state];
 
   let batteryText: string;
-  if (!b) batteryText = t.state === "charging" ? "Waiting for the first battery reading" : "No battery reading yet";
+  if (t.fault) batteryText = t.fault.text;
+  else if (!b) batteryText = t.state === "charging" ? "Waiting for the first battery reading" : "No battery reading yet";
   else if (b.live) {
     const parts = [b.powerKw ? `${fmtKw(b.powerKw)}` : "Charging"];
     if (b.soc >= 99.5) parts.push("full");
@@ -357,16 +364,20 @@ function TruckCard({ t, siteName, onOpen }: { t: TruckOverview; siteName(b: Book
         <div className="row gap-8" style={{ alignItems: "baseline" }}>
           <span className="battery-figure">{b ? `${Math.round(b.soc)}%` : "—"}</span>
           <span className="xs muted grow" style={{ minWidth: 0 }}>
-            {b && b.soc < 20 && <span className="tag bad" style={{ marginRight: 6 }}><Icon name="batteryLow" size="sm" />Low</span>}
-            {b?.live ? <span className="sr-only">Live: </span> : b ? <span className="sr-only">Last known: </span> : null}
+            {b && b.soc < 20 && !t.fault && <span className="tag warn" style={{ marginRight: 6 }}><Icon name="batteryLow" size="sm" />Low</span>}
+            {t.fault ? <span className="sr-only">Fault: </span> : b?.live ? <span className="sr-only">Live: </span> : b ? <span className="sr-only">Last known: </span> : null}
             {batteryText}
           </span>
         </div>
-        {b ? <BatteryMeter soc={b.soc} live={b.live} label={`${v.name} battery`} /> : <div className="battery-meter none" aria-hidden="true"><div className="bm-track" /></div>}
+        {b ? <BatteryMeter soc={b.soc} mode={t.fault ? "fault" : b.live ? "charging" : null} label={`${v.name} battery`} /> : <div className={`battery-meter none${t.fault ? " fault" : ""}`} aria-hidden="true"><div className="bm-track" /></div>}
       </div>
 
       <div className="truck-foot">
-        {t.state === "charging" && t.current ? (
+        {t.fault ? (
+          <span className="small ellipsis grow">
+            <Icon name="alert" size="sm" />{site(t.fault.booking)}, {t.fault.plugged ? `until ${fmtTime(t.fault.booking.end_at)}` : fmtDateTime(t.fault.booking.start_at, now)}
+          </span>
+        ) : t.state === "charging" && t.current ? (
           <span className="small ellipsis grow">
             <Icon name="zap" size="sm" />{site(t.current)}, until {fmtTime(t.current.end_at)}
           </span>
@@ -377,7 +388,12 @@ function TruckCard({ t, siteName, onOpen }: { t: TruckOverview; siteName(b: Book
         ) : (
           <span className="small muted grow">{t.problem ? "Last booking needs attention" : "Nothing booked"}</span>
         )}
-        {target ? (
+        {t.fault ? (
+          <span className="row gap-6">
+            <button className="btn sm" onClick={() => onOpen(t.fault!.booking.id)}>Open</button>
+            {!t.fault.plugged && <a className="btn sm primary" href={href("/book", { vehicle: v.id })}>Rebook</a>}
+          </span>
+        ) : target ? (
           <button className="btn sm" onClick={() => onOpen(target.id)}>Open</button>
         ) : v.active ? (
           <a className="btn sm" href={href("/book", { vehicle: v.id })}>Book</a>

@@ -50,6 +50,11 @@ interface SimBooking {
   /** Charging profiles from the eMSP (ChargingProfiles module), oldest first; each applies from its
    *  start until the next. An entry with no periods means the profile was cleared (full power). */
   profiles?: SimProfile[];
+  /** A charger fault (simulator control): when it started, and paused time from earlier faults. */
+  fault_since?: string | null;
+  fault_ms?: number;
+  /** The charger's status was reported to the eMSP; reset to AVAILABLE when the truck leaves. */
+  evse_reported?: boolean;
 }
 
 export interface SimState {
@@ -549,7 +554,13 @@ export async function tick(ctx: Ctx) {
  * Energy so far on a simple charge curve: full power up to 80% state of charge, then 45% of it
  * until the battery is full (power drops to 0).
  */
-export function sessionEnergy(sb: Pick<SimBooking, "bl_id" | "booking" | "session" | "soc_start" | "cap_kwh" | "profiles">, now: Date): { kwh: number; soc: number; kw: number } {
+export function sessionEnergy(sb: Pick<SimBooking, "bl_id" | "booking" | "session" | "soc_start" | "cap_kwh" | "profiles" | "fault_since" | "fault_ms">, now: Date): { kwh: number; soc: number; kw: number } {
+  // Time stopped by a charger fault doesn't count, and nothing flows while it's faulted.
+  const paused = pausedMs(sb, now);
+  if (paused > 0) {
+    const e = sessionEnergy({ ...sb, fault_since: null, fault_ms: 0 }, new Date(now.getTime() - paused));
+    return sb.fault_since ? { ...e, kw: 0 } : e;
+  }
   if (sb.profiles?.length && sb.session) return profiledEnergy(sb, now);
   const o = optionById(sb.bl_id);
   const s0 = Math.min(1, Math.max(0, (sb.soc_start ?? 25) / 100));
@@ -603,7 +614,19 @@ async function findSim(ctx: Ctx, bookingRef: string): Promise<{ state: SimState;
   return { state, sb };
 }
 
-export type SimAction = "arrive" | "finish" | "no_show" | "cpo_cancel" | "process";
+export type SimAction = "arrive" | "finish" | "no_show" | "cpo_cancel" | "charger_fault" | "charger_fixed" | "process";
+
+/** Time charger faults have stopped this session so far. */
+function pausedMs(sb: Pick<SimBooking, "fault_since" | "fault_ms">, now: Date): number {
+  return (sb.fault_ms ?? 0) + (sb.fault_since ? Math.max(0, now.getTime() - new Date(sb.fault_since).getTime()) : 0);
+}
+
+/** Locations module, EVSE level: tell the eMSP what the charger is doing (OCPI PATCH with status). */
+async function pushEvseStatus(ctx: Ctx, state: SimState, b: Booking, evseUid: string, status: "OUTOFORDER" | "CHARGING" | "AVAILABLE", now: Date) {
+  const base = emspUrl(state, "locations");
+  if (!base) return;
+  await push(ctx, state, "PATCH", `${base}/${b.country_code}/${b.party_id}/${encodeURIComponent(b.location_id)}/${encodeURIComponent(evseUid)}`, { status, last_updated: iso(now) }, b);
+}
 
 export async function simControl(ctx: Ctx, action: SimAction, bookingRef: string | null, reason?: CanceledReason): Promise<string> {
   if (action === "process") {
@@ -677,6 +700,28 @@ export async function simControl(ctx: Ctx, action: SimAction, bookingRef: string
     const kwh = await finishSession(ctx, state, sb, now);
     return `finished: ${kwh} kWh`;
   }
+  if (action === "charger_fault" || action === "charger_fixed") {
+    // The charger trips mid-charge: power drops to zero and the operator reports it out of order.
+    // The session stays open (the truck is still plugged in) until it's fixed or the slot ends.
+    if (!sb.session || sb.session.status !== "ACTIVE") throw new Error("Only a charging session can have a charger fault");
+    const faulting = action === "charger_fault";
+    if (faulting === !!sb.fault_since) throw new Error(faulting ? "The charger is already reporting a fault" : "The charger isn't reporting a fault");
+    const e = sessionEnergy(sb, now);
+    if (faulting) sb.fault_since = iso(now);
+    else { sb.fault_ms = pausedMs(sb, now); sb.fault_since = null; }
+    sb.evse_reported = true;
+    const period: ChargingPeriod = { start_date_time: iso(now), dimensions: [
+      { type: "ENERGY", volume: Math.max(0, Math.round((e.kwh - (sb.session_pushed_kwh ?? 0)) * 10) / 10) },
+      { type: "POWER", volume: faulting ? 0 : sessionEnergy(sb, now).kw },
+      { type: "STATE_OF_CHARGE", volume: e.soc },
+    ] };
+    sb.session = { ...sb.session, kwh: e.kwh, charging_periods: [...(sb.session.charging_periods ?? []), period], last_updated: iso(now) };
+    sb.session_pushed_kwh = e.kwh;
+    await save(ctx, state);
+    await pushEvseStatus(ctx, state, b, sb.session.evse_uid, faulting ? "OUTOFORDER" : "CHARGING", now);
+    await pushSession(ctx, state, sb.session, "PATCH", [period]);
+    return faulting ? "charger fault" : "charger fixed";
+  }
   throw new Error(`Unknown action ${action}`);
 }
 
@@ -734,10 +779,15 @@ async function finishSession(ctx: Ctx, state: SimState, sb: SimBooking, now: Dat
     total_reservation_cost: { before_taxes: Math.round(bookingCost * 100) / 100 }, last_updated: iso(now),
   };
   sb.cdr_sent = true;
+  // The truck has gone: a charger that reported a fault is reset and free again.
+  const resetEvse = sb.evse_reported ? sb.session.evse_uid : null;
+  sb.fault_since = null;
+  sb.evse_reported = false;
   await save(ctx, state);
   await pushSession(ctx, state, sb.session, "PUT");
   const cdrsUrl = emspUrl(state, "cdrs");
   if (cdrsUrl) await push(ctx, state, "POST", cdrsUrl, cdr, b);
+  if (resetEvse) await pushEvseStatus(ctx, state, b, resetEvse, "AVAILABLE", now);
   return kwh;
 }
 

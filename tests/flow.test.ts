@@ -219,3 +219,48 @@ test("driver pass and compatibility filtering", async () => {
   assert.equal(pass.data.site.name, "VoltHaul South Mimms");
   assert.equal(pass.data.start_method, "PLUG_AND_CHARGE");
 });
+
+test("charger fault mid-charge: reported over OCPI Locations, charging pauses, then resumes when fixed", async () => {
+  const h = await harness("2026-10-21T09:00:00Z");
+  await connect(h);
+  const net = await snapshot(h);
+  const t2 = (await vehicles(h)).find((v) => v.start_method === "AUTOCHARGE" && v.vehicle_type === "TRUCK_WITH_TRAILER")!;
+  const row = await book(h, t2, pick(net, "KCH-LYM-CCS"), "2026-10-21T09:15:00Z", 120);
+  h.clock.now = new Date(new Date(row.start_at).getTime() - 5 * 60_000);
+  assert.equal((await h.api("POST", "/api/admin/simulator/action", { action: "arrive", booking_id: row.id })).status, 200);
+  await h.ctx.flush();
+  const evseStatus = async () => {
+    const b = (await h.store.getBooking(row.id))!;
+    const loc = (await snapshot(h)).locations.find((l) => l.id === b.location_id)!.data;
+    return loc.evses!.find((e) => e.uid === b.session!.evse_uid)!.status;
+  };
+  // Twenty minutes in, the charger trips.
+  h.clock.now = new Date(h.clock.now.getTime() + 20 * 60_000);
+  const f = await h.api("POST", "/api/admin/simulator/action", { action: "charger_fault", booking_id: row.id });
+  assert.equal(f.status, 200, JSON.stringify(f.error));
+  await h.ctx.flush();
+  assert.equal(await evseStatus(), "OUTOFORDER");
+  let b = (await h.store.getBooking(row.id))!;
+  assert.equal(b.session?.status, "ACTIVE");
+  assert.equal(b.session?.power_kw, 0);
+  const kwhAtFault = b.session!.kwh;
+  // Twice is refused; nothing flows while it's broken.
+  assert.equal((await h.api("POST", "/api/admin/simulator/action", { action: "charger_fault", booking_id: row.id })).status, 409);
+  h.clock.now = new Date(h.clock.now.getTime() + 15 * 60_000);
+  const { tick } = await import("../server/sim/cpo");
+  await tick(h.ctx);
+  await h.ctx.flush();
+  assert.equal((await h.store.getBooking(row.id))!.session!.kwh, kwhAtFault);
+  // Fixed: charging again, and energy grows from where it stopped.
+  assert.equal((await h.api("POST", "/api/admin/simulator/action", { action: "charger_fixed", booking_id: row.id })).status, 200);
+  await h.ctx.flush();
+  assert.equal(await evseStatus(), "CHARGING");
+  b = (await h.store.getBooking(row.id))!;
+  assert.ok((b.session?.power_kw ?? 0) > 0);
+  h.clock.now = new Date(h.clock.now.getTime() + 20 * 60_000);
+  assert.equal((await h.api("POST", "/api/admin/simulator/action", { action: "finish", booking_id: row.id })).status, 200);
+  await h.ctx.flush();
+  b = (await h.store.getBooking(row.id))!;
+  assert.ok(b.session!.kwh > kwhAtFault);
+  assert.equal(await evseStatus(), "AVAILABLE"); // reset once the truck has gone
+});

@@ -10,7 +10,7 @@ import { useApp } from "../app/state";
 import { DEFAULT_VAT_RATE, marginAt, priceLine } from "../../shared/billing";
 import { ApiFailure } from "../app/backend";
 import { DEFAULT_TZ, fmtDateTime, fmtDay, fmtDuration, fmtKwh, fmtMoney, fmtRange, fmtRelative, fmtTime, sessionKw } from "../app/format";
-import { findBookingLocation, findLocation, operatorFor, shortSiteName, tariffsFor } from "../app/network";
+import { chargerStatus, findBookingLocation, findLocation, isFaultStatus, operatorFor, shortSiteName, tariffsFor } from "../app/network";
 import { SlotPicker } from "../components/SlotPicker";
 import { Drawer, Icon, Json, Plate, Seg, Spinner, StatusBadge } from "../ui/ui";
 import { PassShare } from "./PassShare";
@@ -28,7 +28,7 @@ const EVENT_TONE: Record<string, string> = {
 };
 
 export function BookingDrawer({ id, onClose }: { id: string; onClose(): void }) {
-  const { bookings, events, vehicles, drivers, network, now, api, toast, upsertBooking, fleetId, fleet, me, refreshBookings } = useApp();
+  const { bookings, events, vehicles, drivers, network, now, api, toast, upsertBooking, fleetId, fleet, me, refreshBookings, refreshNetwork } = useApp();
   const b = bookings.find((x) => x.id === id) ?? null;
   const [mode, setMode] = useState<"none" | "change" | "cancel">("none");
   const [busy, setBusy] = useState<string | null>(null);
@@ -69,6 +69,7 @@ export function BookingDrawer({ id, onClose }: { id: string; onClose(): void }) 
   const mine = events.filter((e) => e.booking_id === b.id).sort((x, y) => x.at.localeCompare(y.at));
   const durMin = Math.round((new Date(b.end_at).getTime() - new Date(b.start_at).getTime()) / MINUTE);
 
+  const faulted = isFaultStatus(chargerStatus(network, b));
   const run = async (label: string, fn: () => Promise<BookingRow | unknown>, done?: string) => {
     setBusy(label);
     try {
@@ -77,6 +78,7 @@ export function BookingDrawer({ id, onClose }: { id: string; onClose(): void }) 
       if (done) toast(done);
       setMode("none");
       await refreshBookings();
+      if (label === "charger_fault" || label === "charger_fixed") await refreshNetwork();
     } catch (e) {
       toast(e instanceof ApiFailure ? e.message : "That didn't work", "bad");
     } finally {
@@ -216,6 +218,8 @@ export function BookingDrawer({ id, onClose }: { id: string; onClose(): void }) 
               <div className="row gap-8 wrap">
                 {b.reservation_status === "RESERVED" && <button className="btn sm" disabled={!!busy} onClick={() => sim("arrive", "Truck recognised, charging started")}><Icon name="scan" size="sm" />Truck arrives</button>}
                 {b.session?.status === "ACTIVE" && <button className="btn sm" disabled={!!busy} onClick={() => sim("finish", "Charging finished, charge record received")}><Icon name="battery" size="sm" />Finish charging</button>}
+                {b.session?.status === "ACTIVE" && !faulted && <button className="btn sm" disabled={!!busy} onClick={() => sim("charger_fault", "The charger reported a fault")}><Icon name="alert" size="sm" />Charger fault</button>}
+                {b.session?.status === "ACTIVE" && faulted && <button className="btn sm" disabled={!!busy} onClick={() => sim("charger_fixed", "Charger fixed, charging again")}><Icon name="zap" size="sm" />Fix the charger</button>}
                 {b.reservation_status === "RESERVED" && <button className="btn sm" disabled={!!busy} onClick={() => sim("no_show", "Marked as no-show")}><Icon name="timer" size="sm" />No-show</button>}
                 {open && <button className="btn sm" disabled={!!busy} onClick={() => sim("cpo_cancel", "Operator cancelled the booking", { reason: "BROKEN_CHARGER" })}><Icon name="alert" size="sm" />Operator cancels</button>}
               </div>

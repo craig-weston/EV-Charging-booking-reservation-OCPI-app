@@ -2,6 +2,7 @@
 // Pure functions so they can be tested, and moved server-side when fleets get large.
 import { marginAt, type MarginChange } from "../../shared/billing";
 import type { BookingRow, Vehicle } from "../../shared/model";
+import type { EVSEStatus } from "../../shared/ocpi/types";
 import { addLocalDays, localDateKey, startOfLocalDay } from "../../shared/util";
 import { DEFAULT_TZ } from "./format";
 
@@ -121,7 +122,16 @@ export function change(current: number | null, previous: number | null): number 
 
 // ------------------------------------------------------------------ fleet overview
 
-export type TruckState = "charging" | "due" | "booked" | "idle" | "inactive";
+export type TruckState = "fault" | "charging" | "due" | "booked" | "idle" | "inactive";
+
+/** Something broken is stopping this truck charging: the charger, or the site's power. */
+export interface TruckFault {
+  title: string; // "Charger fault", "Power cut"
+  text: string; // one plain sentence
+  booking: BookingRow;
+  /** Still plugged in: the session is open but the charger has stopped. */
+  plugged: boolean;
+}
 
 export interface Battery {
   soc: number; // %
@@ -144,6 +154,7 @@ export interface TruckOverview {
   lastCharge: BookingRow | null;
   battery: Battery | null;
   problem: BookingRow | null; // a recent booking that went wrong
+  fault: TruckFault | null;
 }
 
 const isOpen = (b: BookingRow) => b.reservation_status === "RESERVED" || b.reservation_status === "PENDING";
@@ -164,7 +175,13 @@ export function batteryEta(b: BookingRow): Pick<Battery, "target" | "eta" | "inT
   return { target, eta, inTime: eta.getTime() <= new Date(b.end_at).getTime() };
 }
 
-export function fleetOverview(vehicles: Vehicle[], bookings: BookingRow[], now: Date): TruckOverview[] {
+const FAULT_REASONS = { BROKEN_CHARGER: "Charger fault", POWER_OUTAGE: "Power cut" } as const;
+
+/**
+ * One row per truck. `chargerStatus` reports what the operator says about the charger a booking is
+ * on (from OCPI Locations), so a charger that breaks mid-charge shows as a fault.
+ */
+export function fleetOverview(vehicles: Vehicle[], bookings: BookingRow[], now: Date, chargerStatus: (b: BookingRow) => EVSEStatus | null = () => null): TruckOverview[] {
   const t = now.getTime();
   const out: TruckOverview[] = [];
   for (const v of vehicles) {
@@ -195,19 +212,37 @@ export function fleetOverview(vehicles: Vehicle[], bookings: BookingRow[], now: 
       b.reservation_status === "NO_SHOW" || b.reservation_status === "REJECTED" || b.reservation_status === "FAILED"
       || (b.reservation_status === "CANCELED" && b.booking?.canceled?.who_canceled === "CPO"))) ?? null;
 
-    const state: TruckState = !v.active ? "inactive" : charging ? "charging" : due ? "due" : next ? "booked" : "idle";
-    out.push({ vehicle: v, state, current, next, lastCharge, battery, problem });
+    let fault: TruckFault | null = null;
+    const broken = (b: BookingRow) => { const st = chargerStatus(b); return st === "OUTOFORDER" || st === "INOPERATIVE"; };
+    if (charging && broken(charging)) {
+      fault = { title: "Charger fault", text: "The charger has reported a fault and stopped charging", booking: charging, plugged: true };
+    } else if (due && broken(due)) {
+      fault = { title: "Charger fault", text: "The booked charger is reporting a fault", booking: due, plugged: false };
+    } else if (!current && !next) {
+      // The operator cancelled because something broke, and nothing has been booked or charged since.
+      const c = problem && problem.reservation_status === "CANCELED" ? problem.booking?.canceled?.cancellation_reason : null;
+      const after = lastCharge ? new Date(lastCharge.session?.end_date_time ?? lastCharge.cdr?.end_date_time ?? lastCharge.end_at).getTime() : 0;
+      if (problem && (c === "BROKEN_CHARGER" || c === "POWER_OUTAGE") && new Date(problem.updated_at).getTime() > after) {
+        fault = { title: FAULT_REASONS[c], text: c === "POWER_OUTAGE" ? "The operator cancelled the booking: the site lost power" : "The operator cancelled the booking: the charger is broken", booking: problem, plugged: false };
+      }
+    }
+
+    const state: TruckState = !v.active ? "inactive" : fault ? "fault" : charging ? "charging" : due ? "due" : next ? "booked" : "idle";
+    out.push({ vehicle: v, state, current, next, lastCharge, battery, problem, fault: v.active ? fault : null });
   }
-  const order: Record<TruckState, number> = { charging: 0, due: 1, booked: 2, idle: 3, inactive: 4 };
+  const order: Record<TruckState, number> = { fault: 0, charging: 1, due: 2, booked: 3, idle: 4, inactive: 5 };
   const when = (o: TruckOverview) => (o.current ?? o.next)?.start_at ?? "9999";
   return out.sort((a, b) => order[a.state] - order[b.state]
     || when(a).localeCompare(when(b))
     || a.vehicle.name.localeCompare(b.vehicle.name, "en-GB", { numeric: true }));
 }
 
-/** Battery band for the meter colour: the reading also always shows as a number and a word. */
-export function batteryBand(soc: number): "low" | "mid" | "good" {
-  return soc < 20 ? "low" : soc < 50 ? "mid" : "good";
+/**
+ * The meter's colour, kept to one meaning each: green while charging, red for a fault, amber for a
+ * low battery at rest, otherwise the brand colour. The reading is always written out too.
+ */
+export function batteryBand(soc: number): "low" | "good" {
+  return soc < 20 ? "low" : "good";
 }
 
 /** Recent completed charges, newest first. */

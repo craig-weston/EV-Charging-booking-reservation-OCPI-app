@@ -113,3 +113,35 @@ test("fleet overview: who is charging, who is due, last known battery", () => {
   assert.equal(t1.next?.start_at, "2026-10-21T15:00:00Z");
   assert.equal(o.find((t) => t.vehicle.id === "v4")!.battery, null);
 });
+
+test("faults: a charger that breaks mid-charge, a broken booked charger, and an operator cancellation for a fault", () => {
+  const now = new Date("2026-10-21T09:00:00Z");
+  const v = (id: string, name: string) => ({ id, name, active: true, plate: name, vehicle_type: "TRUCK_WITH_TRAILER" } as Vehicle);
+  const vehicles = [v("v1", "Tractor 01"), v("v2", "Tractor 02"), v("v3", "Rigid 03"), v("v4", "Reefer 04"), v("v5", "Tanker 05")];
+  const live = (evse: string) => ({ session: { id: `s-${evse}`, status: "ACTIVE" as const, kwh: 80, start_date_time: "2026-10-21T08:35:00Z", evse_uid: evse, currency: "GBP", last_updated: "2026-10-21T08:58:00Z", soc: 55, soc_start: 25, power_kw: 0 } });
+  const cancelled = (reason: "BROKEN_CHARGER" | "POWER_OUTAGE" | "TRAFFIC", who: "CPO" | "EMSP" = "CPO") => ({ reservation_status: "CANCELED" as const, booking: { canceled: { who_canceled: who, cancellation_reason: reason } } as never });
+  const bookings = [
+    row({ vehicle_id: "v1", start_at: "2026-10-21T08:30:00Z", end_at: "2026-10-21T09:30:00Z", ...live("E-BROKEN") }),
+    row({ vehicle_id: "v2", start_at: "2026-10-21T08:30:00Z", end_at: "2026-10-21T09:30:00Z", ...live("E-OK") }),
+    row({ vehicle_id: "v3", start_at: "2026-10-21T09:10:00Z", end_at: "2026-10-21T10:00:00Z", reservation_status: "RESERVED", evse_uid: "E-BROKEN-2" }),
+    row({ vehicle_id: "v4", start_at: "2026-10-21T11:00:00Z", end_at: "2026-10-21T12:00:00Z", ...cancelled("POWER_OUTAGE"), updated_at: "2026-10-21T08:00:00Z" }),
+    // Cancelled for a fault but already rebooked: handled, so not a fault.
+    row({ vehicle_id: "v5", start_at: "2026-10-21T11:00:00Z", end_at: "2026-10-21T12:00:00Z", ...cancelled("BROKEN_CHARGER"), updated_at: "2026-10-21T08:00:00Z" }),
+    row({ vehicle_id: "v5", start_at: "2026-10-21T14:00:00Z", end_at: "2026-10-21T15:00:00Z", reservation_status: "RESERVED" }),
+  ];
+  const status = (b: BookingRow) => ((b.session?.evse_uid ?? b.evse_uid ?? "").startsWith("E-BROKEN") ? "OUTOFORDER" as const : "CHARGING" as const);
+  const o = fleetOverview(vehicles, bookings, now, status);
+  // Faults first, then charging.
+  assert.deepEqual(o.map((t) => [t.vehicle.name, t.state]), [["Tractor 01", "fault"], ["Rigid 03", "fault"], ["Reefer 04", "fault"], ["Tractor 02", "charging"], ["Tanker 05", "booked"]]);
+  const t1 = o[0];
+  assert.equal(t1.fault?.plugged, true);
+  assert.equal(t1.fault?.title, "Charger fault");
+  assert.equal(t1.battery?.live, true); // still plugged in: the reading stays live, shown red
+  assert.equal(o[1].fault?.plugged, false);
+  assert.equal(o[2].fault?.title, "Power cut");
+  // A cancellation the fleet made (traffic) is never a fault.
+  const mine = fleetOverview([v("v6", "Tractor 06")], [row({ vehicle_id: "v6", start_at: "2026-10-21T11:00:00Z", end_at: "2026-10-21T12:00:00Z", ...cancelled("TRAFFIC", "EMSP"), updated_at: "2026-10-21T08:00:00Z" })], now);
+  assert.equal(mine[0].state, "idle");
+  // Without charger statuses (the default), live sessions are simply charging.
+  assert.equal(fleetOverview(vehicles, bookings, now).find((t) => t.vehicle.id === "v1")!.state, "charging");
+});
