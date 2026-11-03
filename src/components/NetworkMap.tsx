@@ -1,6 +1,6 @@
 // Offline schematic map of Great Britain (Natural Earth coastline + motorway network). No tile
 // server, API key or third-party requests: it renders the same in production, previews and offline.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CITIES, LAND_OTHER, LAND_UK, MAP_H, MAP_W, MOTORWAYS, ROAD_LABELS, TRUNK_ROADS, latToY, lonToX } from "../map/ukmap";
 import { Icon } from "../ui/ui";
 
@@ -10,16 +10,30 @@ export interface MapPin {
   lon: number;
   label: string;
   state: "fit" | "unfit" | "sel" | "plain";
+  /** A short price shown on the pin, e.g. "59p". */
+  price?: string | null;
+  /** The cheapest site: marked so it stands out. */
+  best?: boolean;
+  /** Lower draws its price first when pins crowd (e.g. cheaper first). */
+  rank?: number;
 }
 
 interface View { cx: number; cy: number; s: number } // centre (map units) and map units per pixel
 
-export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys }: {
+const PILL_H = 24;
+const pillW = (t: string) => Math.round(t.length * 7.8 + 18);
+
+export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, onHover, legend }: {
   pins: MapPin[];
   near?: { lat: number; lon: number } | null;
   onSelect?(key: string): void;
   focusKey?: string | null;
   fitKeys?: string[];
+  /** A site highlighted elsewhere (e.g. hovered in the list). */
+  hoverKey?: string | null;
+  onHover?(key: string | null): void;
+  /** A small key or summary in the corner. */
+  legend?: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 600, h: 700 });
@@ -144,6 +158,25 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys }: {
     return [...pins].sort((a, b) => order[a.state] - order[b.state]);
   }, [pins]);
 
+  // Price tags where they fit: the selected, hovered and cheapest sites first, then cheaper before
+  // dearer. A tag that would cover another becomes a dot (its price shows on hover).
+  const placed = useMemo(() => {
+    const scr = (p: MapPin) => ({ sx: (lonToX(p.lon) - vb.x) / u, sy: (latToY(p.lat) - vb.y) / u });
+    const prio = (p: MapPin) => (p.state === "sel" ? -3 : p.key === hoverKey ? -2 : p.best ? -1 : 0) * 1e6 + (p.rank ?? 1e5);
+    const taken: { x0: number; y0: number; x1: number; y1: number }[] = [];
+    const pill = new Map<string, boolean>();
+    for (const p of [...pins].filter((x) => x.price && x.state !== "unfit").sort((a, b) => prio(a) - prio(b))) {
+      const { sx, sy } = scr(p);
+      const w = pillW(p.price!), r = { x0: sx - w / 2 - 3, y0: sy - 9 - PILL_H - (p.best ? 14 : 3), x1: sx + w / 2 + 3, y1: sy + 3 };
+      const clash = taken.some((t) => r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0);
+      pill.set(p.key, !clash);
+      if (!clash) taken.push(r);
+    }
+    // Draw order: unfit, then dots, then tags, with the important ones last (on top).
+    return sortedPins.map((p) => ({ p, x: lonToX(p.lon), y: latToY(p.lat), pill: pill.get(p.key) ?? false }))
+      .sort((a, b) => (a.p.state === "unfit" ? -1 : 0) - (b.p.state === "unfit" ? -1 : 0) || Number(a.pill) - Number(b.pill) || prio(b.p) - prio(a.p));
+  }, [pins, sortedPins, hoverKey, vb.x, vb.y, u]);
+
   return (
     <div className="map" ref={box} onWheel={onWheel}>
       <svg
@@ -175,23 +208,36 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys }: {
             <circle cx={lonToX(near.lon)} cy={latToY(near.lat)} r={16 * u} strokeWidth={1.5} />
           </g>
         )}
-        {sortedPins.map((p) => {
-          const x = lonToX(p.lon), y = latToY(p.lat);
-          const r = (p.state === "sel" ? 8 : p.state === "unfit" ? 4.5 : 6) * u;
-          const showLabel = p.state === "sel" || (k > 2.2 && p.state !== "unfit");
+        {placed.map(({ p, x, y, pill }) => {
+          const hot = p.key === hoverKey;
+          const priced = !!p.price && p.state !== "unfit";
+          const cls = `pin ${p.state}${p.best ? " best" : ""}${hot ? " hot" : ""}${priced ? (pill ? " pill" : " dot") : ""}`;
+          const act = {
+            role: "button" as const, tabIndex: 0, "aria-label": `${p.label}${p.price ? `, ${p.price} per kWh` : ""}${p.best ? ", cheapest" : ""}`,
+            onClick: () => { if (!drag.current?.moved) onSelect?.(p.key); },
+            onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(p.key); } },
+            onMouseEnter: () => onHover?.(p.key), onMouseLeave: () => onHover?.(null), onFocus: () => onHover?.(p.key), onBlur: () => onHover?.(null),
+          };
+          const name = (p.state === "sel" || hot || (!priced && k > 2.2 && p.state !== "unfit")) ? p.label : null;
+          if (priced && pill) {
+            const w = pillW(p.price!) * u, h = PILL_H * u, lift = 9 * u;
+            return (
+              <g key={p.key} className={cls} transform={`translate(${x} ${y})`} {...act}>
+                <circle className="spot" r={3 * u} />
+                <path className="tail" d={`M ${-5 * u} ${-lift - 0.5 * u} L 0 ${-3 * u} L ${5 * u} ${-lift - 0.5 * u} Z`} />
+                <rect className="ptag-shadow" x={-w / 2} y={-lift - h + 1.5 * u} width={w} height={h} rx={h / 2} />
+                <rect className="ptag" x={-w / 2} y={-lift - h} width={w} height={h} rx={h / 2} />
+                <text className="price" x={0} y={-lift - h / 2} textAnchor="middle" dominantBaseline="central" fontSize={13 * u}>{p.price}</text>
+                {p.best && <text className="best-cap" x={0} y={-lift - h - 6 * u} textAnchor="middle" fontSize={10.5 * u}>CHEAPEST</text>}
+                {name && <text className="name" x={0} y={14 * u} textAnchor="middle" fontSize={12 * u}>{name}</text>}
+              </g>
+            );
+          }
+          const r = (p.state === "sel" ? 8 : p.state === "unfit" ? 4.5 : priced ? 5.5 : 6) * u;
           return (
-            <g
-              key={p.key}
-              className={`pin ${p.state}`}
-              transform={`translate(${x} ${y})`}
-              role="button"
-              tabIndex={0}
-              aria-label={p.label}
-              onClick={() => { if (!drag.current?.moved) onSelect?.(p.key); }}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(p.key); } }}
-            >
+            <g key={p.key} className={cls} transform={`translate(${x} ${y})`} {...act}>
               <circle className="ring" r={r} strokeWidth={2} />
-              {showLabel && <text x={r + 5 * u} y={4 * u} fontSize={12.5 * u}>{p.label}</text>}
+              {name && <text x={r + 5 * u} y={4 * u} fontSize={12.5 * u}>{name}</text>}
             </g>
           );
         })}
@@ -201,6 +247,7 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys }: {
         <button className="btn sm icon-only" onClick={() => zoomAt(1 / 1.5)} aria-label="Zoom out"><Icon name="minus" size="sm" /></button>
         <button className="btn sm icon-only" onClick={() => fit(fitKeys)} aria-label="Show all sites"><Icon name="layers" size="sm" /></button>
       </div>
+      {legend && <div className="map-legend">{legend}</div>}
       <div className="map-note">Natural Earth</div>
     </div>
   );
