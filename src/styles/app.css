@@ -1543,3 +1543,16 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
   .fr-money, .fr-status { grid-column: 2; align-items: flex-start; }
 }
 .copyable { display: block; padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); font-size: var(--fs-sm); word-break: break-all; user-select: all; }
+/* V2G */
+.load-chart .seg.give { fill: var(--c); fill-opacity: 0.45; stroke: var(--c); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.sw.give { background: repeating-linear-gradient(135deg, var(--series-1) 0 2px, transparent 2px 4px); border: 1px dashed var(--series-1); }
+.tp-mini span.give { background: repeating-linear-gradient(135deg, var(--c) 0 2px, transparent 2px 4px); }
+.tag.v2g { background: var(--info-bg); color: var(--info); }
+.v2g-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.v2g-checks li { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--line); color: var(--muted); }
+.v2g-checks li.ok { color: var(--ok); border-color: color-mix(in oklab, var(--ok) 35%, var(--line)); background: color-mix(in oklab, var(--ok) 5%, var(--surface)); }
+.v2g-checks li span { display: flex; flex-direction: column; gap: 2px; }
+.v2g-checks li b { color: var(--ink); font-size: var(--fs-sm); }
+.v2g-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.v2g-results > div { display: flex; flex-direction: column; gap: 2px; background: var(--surface-2); border-radius: var(--r-sm); padding: 10px 12px; }
+.v2g-results b { font-size: var(--fs-xl); font-variant-numeric: tabular-nums; }

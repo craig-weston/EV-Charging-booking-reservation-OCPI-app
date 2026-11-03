@@ -49,6 +49,8 @@ export interface VisitPlan {
 }
 
 export interface DepotPlan {
+  /** Vehicle-to-grid pilot results, when the depot runs one. */
+  v2g?: import("./v2g").V2gResult | null;
   slots: PlanSlot[];
   visits: VisitPlan[];
   totalKw: number[];

@@ -113,6 +113,7 @@ export function EnergyPage() {
             <div className="panel-head"><h2>Trucks</h2><span className="right xs muted">{depot.chargers.length} charger{depot.chargers.length === 1 ? "" : "s"}, plan from now</span></div>
             <TruckList plan={plan} depot={depot} now={now} canEdit={canPlan} onEdit={(v) => setEditVisit(v)} />
           </section>
+          <V2gPanel depot={depot} plan={plan} vehicles={vehicles} isOwner={role === "owner"} onSettings={() => setSettingsOpen(true)} />
           <FlexPanel depot={depot} events={flex.filter((x) => x.depot_id === depot.id)} provider={energy.config.flex_provider} now={now} canDecide={canPlan} isOwner={role === "owner"} onSettings={() => setSettingsOpen(true)} onChanged={load} />
           <DispatchPanel depot={depot} plan={plan} canSend={canPlan} sending={sending} onSend={send} isOwner={role === "owner"} onSettings={() => setSettingsOpen(true)} />
         </>
@@ -168,8 +169,10 @@ function LoadChart({ plan, now }: { plan: PlanResponse; now: Date }) {
   const S = plan.slots.length;
   const W = Math.max(720, S * 14), H = 220, PADB = 24, PADT = 16, STRIP = 12;
   const max = Math.max(plan.headroom_kw, plan.peak_kw, 1) * 1.08;
+  const give = plan.slots.map((_, j) => plan.visits.reduce((a, v) => a + Math.min(0, v.plan.kw[j] ?? 0), 0));
+  const min = Math.min(0, ...give) * 1.15;
   const bw = W / S;
-  const y = (kw: number) => H - PADB - STRIP - 6 - (kw / max) * (H - PADB - STRIP - 6 - PADT);
+  const y = (kw: number) => H - PADB - STRIP - 6 - ((kw - min) / (max - min)) * (H - PADB - STRIP - 6 - PADT);
   const base = y(0);
   const prices = plan.slots.map((s) => s.price);
   const lo = Math.min(...prices), hi = Math.max(...prices);
@@ -190,6 +193,7 @@ function LoadChart({ plan, now }: { plan: PlanResponse; now: Date }) {
         {plan.visits.map((v, i) => <span key={v.visit.id}><i className={`sw s${(i % SERIES) + 1}`} />{v.plate}</span>)}
         <span><i className="sw limit" />Charging limit</span>
         {(plan.events ?? []).length > 0 && <span><i className="sw ev-down" />Grid event</span>}
+        {give.some((g) => g < -0.05) && <span><i className="sw give" />Giving power back (V2G)</span>}
       </div>
       <div className="lc-scroll" ref={scroller}>
         <svg viewBox={`0 0 ${W} ${H}`} style={{ minWidth: Math.max(620, W > 900 ? W * 0.9 : 0) }} role="group" aria-label={`Planned charging power by half-hour, peak ${N0.format(plan.peak_kw)} kW against a ${N0.format(plan.headroom_kw)} kW limit`}>
@@ -213,6 +217,13 @@ function LoadChart({ plan, now }: { plan: PlanResponse; now: Date }) {
               <g key={s.start} onMouseEnter={() => setHover(j)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(j)} onBlur={() => setHover(null)} tabIndex={0} role="img"
                 aria-label={`${fmtTime(new Date(s.start), TZ)}: ${N0.format(plan.total_kw[j])} kW, ${fmtMoney(s.price)} per kWh${s.carbon != null ? `, ${s.carbon} g CO2 per kWh` : ""}`}>
                 <rect x={j * bw} y={0} width={bw} height={H} fill="transparent" />
+                {(() => { let neg = 0; return order.map((i) => {
+                  const kw = plan.visits[i].plan.kw[j] ?? 0;
+                  if (kw > -0.05) return null;
+                  const top = y(neg), bottom = y(neg + kw);
+                  neg += kw;
+                  return <rect key={`g${i}`} x={x} y={top} width={w} height={Math.max(0, bottom - top)} rx={1.5} className={`seg give s${(i % SERIES) + 1}`} />;
+                }); })()}
                 {order.map((i) => {
                   const kw = plan.visits[i].plan.kw[j] ?? 0;
                   if (kw < 0.05) return null;
@@ -220,7 +231,7 @@ function LoadChart({ plan, now }: { plan: PlanResponse; now: Date }) {
                   acc += kw;
                   return <rect key={i} x={x} y={top} width={w} height={Math.max(0, bottom - top - (acc > kw ? 1 : 0))} rx={1.5} className={`seg s${(i % SERIES) + 1} ${hover === j ? "on" : ""}`} />;
                 })}
-                <rect x={j * bw} y={H - PADB - STRIP} width={bw} height={STRIP} className="price-cell" style={{ opacity: hi > lo ? 0.12 + 0.78 * (1 - (s.price - lo) / (hi - lo)) : 0.4 }} />
+                <rect x={j * bw} y={H - PADB - STRIP + 2} width={bw} height={STRIP - 2} className="price-cell" style={{ opacity: hi > lo ? 0.12 + 0.78 * (1 - (s.price - lo) / (hi - lo)) : 0.4 }} />
               </g>
             );
           })}
@@ -233,8 +244,8 @@ function LoadChart({ plan, now }: { plan: PlanResponse; now: Date }) {
       {h && hover != null && (
         <div className="mb-tip lc-tip" style={{ left: `${((hover + 0.5) / S) * 100}%` }}>
           <b>{fmtTime(new Date(h.start), TZ)}–{fmtTime(new Date(h.end), TZ)}</b>
-          <span>{N0.format(plan.total_kw[hover])} kW planned · {fmtMoney(h.price)}/kWh{h.carbon != null ? ` · ${h.carbon} g CO₂ (${carbonBand(h.carbon).label.toLowerCase()})` : ""}</span>
-          {plan.visits.filter((v) => (v.plan.kw[hover] ?? 0) >= 0.05).map((v) => <span key={v.visit.id}>{v.plate}: {N0.format(v.plan.kw[hover])} kW</span>)}
+          <span>{N0.format(plan.total_kw[hover])} kW {plan.total_kw[hover] < 0 ? "net export" : "planned"} · {fmtMoney(h.price)}/kWh{h.carbon != null ? ` · ${h.carbon} g CO₂ (${carbonBand(h.carbon).label.toLowerCase()})` : ""}</span>
+          {plan.visits.filter((v) => Math.abs(v.plan.kw[hover] ?? 0) >= 0.05).map((v) => <span key={v.visit.id}>{v.plate}: {(v.plan.kw[hover] ?? 0) < 0 ? `giving back ${N0.format(-v.plan.kw[hover])} kW` : `${N0.format(v.plan.kw[hover])} kW`}</span>)}
         </div>
       )}
     </div>
@@ -268,13 +279,14 @@ function TruckList({ plan, depot, now, canEdit, onEdit }: { plan: PlanResponse; 
               <div className="xs muted">{v.battery_kwh ? `${N0.format(v.need_kwh)} kWh from the grid, up to ${N0.format(v.max_kw)} kW` : "Add the battery size in Fleet to plan this truck"}</div>
             </div>
             <div className="tp-mini" aria-hidden="true">
-              {v.plan.kw.map((kw, j) => kw >= 0.05 ? <span key={j} className={`s${(i % SERIES) + 1}`} style={{ left: `${(j / S) * 100}%`, width: `${100 / S}%`, opacity: 0.35 + 0.65 * Math.min(1, kw / Math.max(1, v.max_kw)) }} /> : null)}
+              {v.plan.kw.map((kw, j) => kw >= 0.05 ? <span key={j} className={`s${(i % SERIES) + 1}`} style={{ left: `${(j / S) * 100}%`, width: `${100 / S}%`, opacity: 0.35 + 0.65 * Math.min(1, kw / Math.max(1, v.max_kw)) }} /> : kw <= -0.05 ? <span key={j} className={`give s${(i % SERIES) + 1}`} style={{ left: `${(j / S) * 100}%`, width: `${100 / S}%` }} /> : null)}
             </div>
             <div className="tp-status">
               {v.outcome === "ready" && <span className="tag ok"><Icon name="circleCheck" size="sm" />Ready by {v.plan.readyAt ? fmtTime(new Date(v.plan.readyAt), TZ) : "—"}</span>}
               {v.outcome === "short" && <span className="tag bad"><Icon name="alert" size="sm" />{N0.format(v.plan.shortfallKwh)} kWh short</span>}
               {v.outcome === "idle" && <span className="tag">{v.battery_kwh ? "Already charged" : "Battery size missing"}</span>}
-              <span className="xs muted">{fmtMoney(v.plan.cost)} · {N0.format(v.plan.kg)} kg CO₂</span>
+              {(() => { const back = v.plan.kw.reduce((a, kw, j) => a + (kw < 0 ? -kw * ((plan.slots[j].end - plan.slots[j].start) / 3_600_000) : 0), 0); return back > 0.5 ? <span className="tag v2g"><Icon name="arrowUpRight" size="sm" />Gives back {N0.format(back)} kWh</span> : null; })()}
+              <span className="xs muted">{v.plan.cost < 0 ? `earns ${fmtMoney(-v.plan.cost)}` : fmtMoney(v.plan.cost)} · {N0.format(v.plan.kg)} kg CO₂</span>
             </div>
             {canEdit && <button className="btn sm ghost tp-edit" onClick={() => onEdit(v.visit)} aria-label={`Edit ${v.plate}`}><Icon name="pencil" size="sm" /></button>}
           </li>
@@ -392,7 +404,7 @@ function VisitDrawer({ depot, visit, vehicles, now, onClose, onSaved, existing }
 // ---- depot settings (owners) -------------------------------------------------------------------
 
 function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyView; depotId: string | null; onClose(): void; onSaved(e: EnergyView, id: string): void }) {
-  const { api, fleetId, toast } = useApp();
+  const { api, fleetId, toast, vehicles } = useApp();
   const [cfg, setCfg] = useState<EnergyConfig>(() => (energy.config.depots.length ? structuredClone(energy.config) : { ...energy.config, depots: [newDepot("Main depot")] }));
   const [id, setId] = useState(depotId ?? cfg.depots[0].id);
   const [secret, setSecret] = useState("");
@@ -472,6 +484,7 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
               <input className="input" aria-label="OCPP station id" placeholder="Station id" value={c.station_id} onChange={(e) => set({ chargers: d.chargers.map((x, j) => (j === i ? { ...x, station_id: e.target.value } : x)) })} />
               <input className="input" aria-label="Maximum kW" inputMode="numeric" value={c.max_kw} onChange={(e) => set({ chargers: d.chargers.map((x, j) => (j === i ? { ...x, max_kw: Number(e.target.value) || 0 } : x)) })} />
               <span className="small muted">kW</span>
+              <label className="small row gap-4" title="Can give power back (V2G, OCPP 2.1 / ISO 15118-20)"><input type="checkbox" checked={!!c.bidirectional} onChange={(e) => set({ chargers: d.chargers.map((x, j) => (j === i ? { ...x, bidirectional: e.target.checked || undefined } : x)) })} />V2G</label>
               <button className="btn sm ghost icon-only" aria-label={`Remove ${c.name}`} onClick={() => set({ chargers: d.chargers.filter((_, j) => j !== i) })}><Icon name="x" size="sm" /></button>
             </div>
           ))}
@@ -503,6 +516,35 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
           )}
           {d.control.kind !== "simulated" && <Switch checked={d.auto_dispatch} onChange={(v) => set({ auto_dispatch: v })}>Send updated schedules automatically every 15 minutes</Switch>}
         </div>
+        <div className="stack gap-12">
+          <h3>Vehicle-to-grid pilot</h3>
+          <Switch checked={d.v2g.enabled} onChange={(v) => set({ v2g: { ...d.v2g, enabled: v } })}>Run a V2G pilot at this depot</Switch>
+          {d.v2g.enabled && (
+            <>
+              <div className="field">
+                <span className="label">Pilot trucks</span>
+                {vehicles.map((v) => (
+                  <label key={v.id} className="small row gap-6"><input type="checkbox" checked={d.v2g.vehicle_ids.includes(v.id)} onChange={(e) => set({ v2g: { ...d.v2g, vehicle_ids: e.target.checked ? [...d.v2g.vehicle_ids, v.id] : d.v2g.vehicle_ids.filter((x) => x !== v.id) } })} />{v.plate} · {v.name}</label>
+                ))}
+                <span className="hint">Mark the chargers that can give power back with V2G above.</span>
+              </div>
+              <div className="two" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <Field label={`Never below: ${d.v2g.min_soc}% charge`}>{(fid) => <input id={fid} className="range" type="range" min={10} max={90} step={5} value={d.v2g.min_soc} onChange={(e) => set({ v2g: { ...d.v2g, min_soc: Number(e.target.value) } })} />}</Field>
+                <Field label="Most power to give back, kW">{(fid) => <input id={fid} className="input" inputMode="numeric" value={d.v2g.max_discharge_kw} onChange={(e) => set({ v2g: { ...d.v2g, max_discharge_kw: Number(e.target.value) || 0 } })} />}</Field>
+              </div>
+              <div className="field"><span className="label">Where the power goes</span>
+                <Seg<"behind_meter" | "export"> label="V2G mode" full value={d.v2g.mode} onChange={(m) => set({ v2g: { ...d.v2g, mode: m } })} options={[{ value: "behind_meter", label: "Site only (no export)" }, { value: "export", label: "Export (G99 approved)" }]} />
+                <span className="hint">{d.v2g.mode === "behind_meter" ? "Only covers the site's own load, so no export approval is needed." : "Needs your network operator's G99 approval for export."}</span>
+              </div>
+              <div className="two" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                {d.v2g.mode === "export" ? <Field label="Approved export, kW">{(fid) => <input id={fid} className="input" inputMode="numeric" value={d.v2g.export_limit_kw} onChange={(e) => set({ v2g: { ...d.v2g, export_limit_kw: Number(e.target.value) || 0 } })} />}</Field> : <span />}
+                <Field label="Battery wear, £ per kWh cycled" hint="Only gives power back when the price gap beats this">{(fid) => <input id={fid} className="input" inputMode="decimal" value={d.v2g.wear_per_kwh} onChange={(e) => set({ v2g: { ...d.v2g, wear_per_kwh: Number(e.target.value) } })} />}</Field>
+              </div>
+              <label className="small row gap-6"><input type="checkbox" checked={d.v2g.warranty_confirmed} onChange={(e) => set({ v2g: { ...d.v2g, warranty_confirmed: e.target.checked } })} />The truck maker has confirmed in writing that bidirectional charging is covered by the battery warranty</label>
+            </>
+          )}
+        </div>
+
         <div className="stack gap-12">
           <h3>Grid flexibility</h3>
           <Switch checked={d.flex.enabled} onChange={(v) => set({ flex: { ...d.flex, enabled: v } })}>Take part in grid flexibility at this depot</Switch>
@@ -655,5 +697,61 @@ function FlexRow({ e, now, busy, canDecide, onAct }: { e: FlexEvent; now: Date; 
         )}
       </div>
     </li>
+  );
+}
+
+// ---- vehicle-to-grid pilot -----------------------------------------------------------------------
+
+function V2gPanel({ depot, plan, vehicles, isOwner, onSettings }: { depot: Depot; plan: PlanResponse; vehicles: { id: string; plate: string; name: string }[]; isOwner: boolean; onSettings(): void }) {
+  const { toast } = useApp();
+  const cfg = depot.v2g;
+  const r = plan.v2g;
+  const pilotVisits = plan.visits.filter((v) => cfg.vehicle_ids.includes(v.visit.vehicle_id));
+  const bidi = depot.chargers.filter((c) => c.bidirectional);
+  const onBidi = pilotVisits.filter((v) => bidi.some((c) => c.id === v.visit.charger_id));
+  const checks = [
+    { ok: bidi.length > 0, label: "Bidirectional charger", detail: bidi.length ? bidi.map((c) => c.name).join(", ") : "Mark a charger that can give power back (OCPP 2.1, ISO 15118-20)" },
+    { ok: cfg.vehicle_ids.length > 0, label: "Pilot truck", detail: cfg.vehicle_ids.length ? cfg.vehicle_ids.map((id) => vehicles.find((v) => v.id === id)?.plate ?? "?").join(", ") : "Choose the truck taking part" },
+    { ok: onBidi.length > 0, label: "On a V2G charger tonight", detail: onBidi.length ? onBidi.map((v) => `${v.plate} on ${depot.chargers.find((c) => c.id === v.visit.charger_id)?.name}`).join(", ") : "Put a pilot truck's visit on a bidirectional charger" },
+    { ok: cfg.warranty_confirmed, label: "Maker's warranty confirmed", detail: cfg.warranty_confirmed ? "Confirmed in writing" : "Ask the truck maker to confirm bidirectional use is covered" },
+    { ok: cfg.mode === "behind_meter" || cfg.export_limit_kw > 0, label: cfg.mode === "behind_meter" ? "Site only: no export approval needed" : "G99 export approval", detail: cfg.mode === "behind_meter" ? "Power given back only covers the site's own load" : `${N0.format(cfg.export_limit_kw)} kW approved` },
+  ];
+  const download = async () => {
+    const pilots = plan.visits.filter((v) => cfg.vehicle_ids.includes(v.visit.vehicle_id));
+    const rows = [["Half-hour start", "Price £/kWh", "Grid g CO2/kWh", ...pilots.map((v) => `${v.plate} kW (+charge / -give back)`), "Site charging total kW"]];
+    plan.slots.forEach((s, j) => rows.push([new Date(s.start).toISOString(), s.price.toFixed(4), s.carbon != null ? String(s.carbon) : "", ...pilots.map((v) => (v.plan.kw[j] ?? 0).toFixed(1)), plan.total_kw[j].toFixed(1)]));
+    rows.push([], ["Given back kWh", r ? r.dischargedKwh.toFixed(1) : "0"], ["Recharged kWh", r ? r.rechargedKwh.toFixed(1) : "0"], ["Arbitrage £", r ? r.arbitrage.toFixed(2) : "0"], ["Battery wear £", r ? r.wear.toFixed(2) : "0"], ["Net £", r ? r.net.toFixed(2) : "0"], ["Lowest charge %", r?.minSocReached != null ? r.minSocReached.toFixed(0) : ""], ["Minimum allowed %", String(cfg.min_soc)], ["Mode", cfg.mode]);
+    try { const { saveFile } = await import("../app/download"); const res = await saveFile(`v2g-pilot-${depot.name.replace(/[^\w-]+/g, "-")}.csv`, rows.map((x) => x.join(",")).join("\r\n") + "\r\n", "text/csv"); if (res === "saved") toast("Pilot data downloaded"); } catch { toast("Download failed", "bad"); }
+  };
+  if (!cfg.enabled) {
+    return (
+      <section className="panel section">
+        <div className="panel-head"><h2>Vehicle-to-grid pilot</h2><span className="right tag">Pilot</span></div>
+        <div className="panel-body stack gap-12">
+          <p className="small" style={{ margin: 0 }}>Parked trucks can give power back at peak times and recharge overnight, cutting the site's peak bill and, with approval, exporting to the grid. It always keeps a minimum charge and every truck still leaves with what it needs. Start with one truck on one bidirectional charger: the UK government's V2X innovation programme has funded pilots like this.</p>
+          {isOwner ? <div><button className="btn sm" onClick={onSettings}><Icon name="zap" size="sm" />Set up a pilot</button></div> : null}
+        </div>
+      </section>
+    );
+  }
+  return (
+    <section className="panel section">
+      <div className="panel-head"><h2>Vehicle-to-grid pilot</h2><span className="right row gap-8"><span className="tag">{cfg.mode === "behind_meter" ? "Site only" : "Export"}</span>{isOwner && <button className="btn sm ghost" onClick={onSettings}>Pilot settings</button>}</span></div>
+      <div className="panel-body stack gap-16">
+        <ul className="v2g-checks">
+          {checks.map((c) => <li key={c.label} className={c.ok ? "ok" : ""}><Icon name={c.ok ? "circleCheck" : "circleHelp"} size="sm" /><span><b>{c.label}</b><span className="xs muted">{c.detail}</span></span></li>)}
+        </ul>
+        {r && r.dischargedKwh > 0.5 ? (
+          <div className="v2g-results">
+            <div><span className="xs muted">Given back</span><b>{N0.format(r.dischargedKwh)} kWh</b></div>
+            <div><span className="xs muted">Value after recharging</span><b>{fmtMoney(r.arbitrage)}</b></div>
+            <div><span className="xs muted">Battery wear</span><b>{fmtMoney(r.wear)}</b></div>
+            <div><span className="xs muted">Net benefit</span><b className="ok-text">{fmtMoney(r.net)}</b><span className="xs muted">≈ {fmtMoney(Math.round(r.net * 250))} a year (250 nights)</span></div>
+            <div><span className="xs muted">Lowest charge</span><b>{r.minSocReached != null ? `${N0.format(r.minSocReached)}%` : "—"}</b><span className="xs muted">never below {cfg.min_soc}%</span></div>
+          </div>
+        ) : <p className="small muted" style={{ margin: 0 }}>{checks.every((c) => c.ok) ? "No give-back planned in this window: the price gap doesn't beat battery wear, or the truck's charge is too low to spare." : "Complete the checklist to start planning give-back."}</p>}
+        <div className="row gap-8 wrap"><button className="btn sm" onClick={download}><Icon name="download" size="sm" />Pilot data for funders (CSV)</button><span className="xs muted">Half-hourly schedule, prices, carbon and results.</span></div>
+      </div>
+    </section>
   );
 }
