@@ -13,6 +13,7 @@ import { fmtDateTime } from "../app/format";
 import { Field, Icon, Modal, Spinner } from "../ui/ui";
 import type { IconName } from "../ui/icon-data";
 import { MfaEnrol } from "./Security";
+import { MoreList, MoreRow, usePrintOpensRows } from "../components/More";
 
 interface Report {
   generated_at: string;
@@ -38,6 +39,10 @@ const AREA_ICON: Record<ComplianceArea, IconName> = {
 };
 
 const IASME_SEARCH = "https://iasme.co.uk/cyber-essentials/ncsc-certificate-search/";
+/** What needs doing first: things that failed, then things to check, then to-dos; done last. */
+const ORDER: Record<CheckStatus, number> = { fail: 0, warn: 1, todo: 2, info: 3, pass: 4 };
+const DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const fmtDay = (d: string) => { const t = new Date(`${d}T12:00:00Z`); return Number.isNaN(t.getTime()) ? d : DAY.format(t); };
 
 /** Platform admin pages need two-step verification in live mode: this asks for it in place. */
 export function AdminMfaGate({ children }: { children: React.ReactNode }) {
@@ -102,78 +107,72 @@ function ComplianceInner() {
   const counted = (report?.checks ?? []).filter((c) => c.status !== "info");
   const done = counted.filter((c) => c.status === "pass").length;
   const blocking = counted.filter((c) => c.status === "fail").length;
+  const sorted = (area: ComplianceArea) => [...(byArea.get(area) ?? [])].sort((x, y) => ORDER[x.status] - ORDER[y.status]);
+  const next = COMPLIANCE_AREAS.flatMap(sorted).filter((c) => c.status !== "pass" && c.status !== "info").sort((x, y) => ORDER[x.status] - ORDER[y.status])[0];
+  usePrintOpensRows();
 
   return (
     <div className="page compliance">
       <div className="page-head">
         <div>
           <h1>Security & compliance</h1>
-          <div className="sub">Get this deployment ready for Cyber Essentials, keep the evidence in one place, and publish your company details.</div>
+          <div className="sub">
+            {report
+              ? <>Cyber Essentials readiness: <b>{done} of {counted.length}</b> done{blocking ? <>, <span className="cx-bad">{blocking} need{blocking === 1 ? "s" : ""} action</span></> : null}.{next ? <> Next: {next.title}.</> : " Ready for the self-assessment."}</>
+              : "Get this deployment ready for Cyber Essentials and keep the evidence in one place."}
+          </div>
         </div>
         <div className="actions no-print">
           <a className="btn ghost" href={href("/legal/security")}><Icon name="eye" size="sm" />View public security page</a>
           <button className="btn" onClick={() => window.print()}><Icon name="fileText" size="sm" />Print evidence</button>
         </div>
       </div>
-
-      <div className="explain panel">
-        <div className="panel-body">
-          <div className="explain-grid">
-            <div className="stack gap-8">
-              <div className="sec-title"><Icon name="badgeCheck" />How certification works</div>
-              <p className="small">
-                Cyber Essentials certifies <b>your organisation</b>: its devices, accounts, networks and the cloud services it uses (here Cloudflare, Supabase,
-                GitHub and your email). The app can't be certified on its own. Work through the list below. The app checks its own items; you tick the rest
-                with a note of the evidence. Then complete the self-assessment with an IASME certification body. A director signs it off, and certificates
-                last 12 months.
-              </p>
-              <p className="xs muted">Checklist based on the Cyber Essentials Requirements for IT Infrastructure v3.3 (the "Danzell" question set, used since April 2026). Policies and the full readiness pack are in <code>docs/compliance</code> in the code repository.</p>
-            </div>
-            <div className="progress-box" aria-label="Progress">
-              <div className="big num">{report ? `${done}/${counted.length}` : "–"}</div>
-              <div className="xs muted">items done</div>
-              {blocking > 0 && <div className="tag bad" style={{ marginTop: 8 }}><Icon name="alert" size="sm" />{blocking} need action</div>}
-            </div>
-          </div>
-        </div>
-      </div>
+      {report && <div className="cx-progress" aria-hidden="true"><span style={{ width: `${counted.length ? (done / counted.length) * 100 : 0}%` }} /></div>}
 
       {error && <div className="error-text" role="alert">{error}</div>}
       {!report && !error && <div className="skeleton" style={{ height: 240, marginTop: 16 }} />}
 
       {report && (
-        <div className="area-list">
-          {COMPLIANCE_AREAS.map((area) => {
-            const items = byArea.get(area) ?? [];
-            const scored = items.filter((c) => c.status !== "info");
-            const ok = scored.filter((c) => c.status === "pass").length;
-            return (
-              <section className="panel area" key={area} aria-labelledby={`area-${area.replace(/\W+/g, "-")}`}>
-                <div className="panel-head">
-                  <Icon name={AREA_ICON[area]} />
-                  <h2 id={`area-${area.replace(/\W+/g, "-")}`}>{area}</h2>
-                  <span className="right xs muted num">{ok} of {scored.length} done</span>
-                  <span className="meter" aria-hidden="true"><span style={{ width: `${scored.length ? (ok / scored.length) * 100 : 0}%` }} /></span>
-                </div>
-                <ul className="list check-list">
-                  {items.map((c) => <CheckRow key={c.id} c={c} now={now} onTick={tick} />)}
-                </ul>
-              </section>
-            );
-          })}
-          <p className="xs muted">Checked {fmtDateTime(report.generated_at, now)}{report.mode === "demo" ? ". Demo mode: automatic checks that need a real deployment show as \"Demo\"" : ""}.</p>
-        </div>
+        <>
+          <MoreList label="Cyber Essentials checklist" className="cx-list">
+            <MoreRow icon="circleHelp" title="How certification works" summary="It certifies your organisation, not the app. A director signs it off, and it lasts 12 months.">
+              <div className="stack gap-8">
+                <p className="small" style={{ margin: 0 }}>
+                  Cyber Essentials certifies <b>your organisation</b>: its devices, accounts, networks and the cloud services it uses (here Cloudflare, Supabase,
+                  GitHub and your email). The app checks its own items below; you tick the rest with a note of the evidence. Then complete the
+                  self-assessment with an IASME certification body.
+                </p>
+                <p className="xs muted" style={{ margin: 0 }}>Based on the Cyber Essentials Requirements for IT Infrastructure v3.3 (the "Danzell" question set, used since April 2026). Policies and the full readiness pack are in <code>docs/compliance</code> in the code repository.</p>
+              </div>
+            </MoreRow>
+            {COMPLIANCE_AREAS.map((area) => {
+              const items = sorted(area);
+              const scored = items.filter((c) => c.status !== "info");
+              const ok = scored.filter((c) => c.status === "pass").length;
+              const bad = scored.filter((c) => c.status === "fail").length;
+              const first = items.find((c) => c.status !== "pass" && c.status !== "info");
+              const all = scored.length > 0 && ok === scored.length;
+              const summary = all ? `All ${scored.length} done` : `${ok} of ${scored.length} done${bad ? ` · ${bad} need${bad === 1 ? "s" : ""} action` : ""}${first ? ` · Next: ${first.title}` : ""}`;
+              return (
+                <MoreRow key={area} icon={AREA_ICON[area]} title={area} summary={summary} tone={bad ? "bad" : all ? "ok" : undefined} flush>
+                  <ul className="list check-list">
+                    {items.map((c) => <CheckRow key={c.id} c={c} now={now} onTick={tick} />)}
+                  </ul>
+                </MoreRow>
+              );
+            })}
+          </MoreList>
+          <p className="xs muted cx-checked">Checked {fmtDateTime(report.generated_at, now)}{report.mode === "demo" ? ". Demo mode: automatic checks that need a real deployment show as \"Demo\"" : ""}.</p>
+        </>
       )}
 
-      <div className="compliance-grid">
+      <MoreList label="Your organisation">
         <Certificates onSaved={load} />
         <CompanyDetails onSaved={load} />
-      </div>
-      <div className="compliance-grid no-print">
         <AccountRecovery />
         <KeyRotation />
-      </div>
-      <PlatformAudit />
+        <PlatformAudit />
+      </MoreList>
     </div>
   );
 }
@@ -257,14 +256,19 @@ function Certificates({ onSaved }: { onSaved(): void }) {
   };
   const set = <K extends keyof Certification>(k: K, v: Certification[K]) => setDraft((d) => (d ? { ...d, [k]: v } : d));
 
+  const valid = (list ?? []).filter((c) => c.expires_on >= today).sort((x, y) => y.expires_on.localeCompare(x.expires_on));
+  const renewSoon = valid.length > 0 && new Date(`${valid[0].expires_on}T12:00:00Z`).getTime() - now.getTime() < 60 * 86_400_000;
+  const summary = !list ? "Loading…"
+    : valid.length ? `${valid[0].scheme}, valid until ${fmtDay(valid[0].expires_on)}${renewSoon ? ": renew soon" : ""}`
+    : list.length ? "Expired: add the renewed certificate to show it again"
+    : "None yet. Add one once it's issued.";
+
   return (
-    <section className="panel" id="certificates">
-      <div className="panel-head"><Icon name="badgeCheck" /><h2>Certificates</h2></div>
-      <div className="panel-body stack gap-12">
-        <p className="small muted">
-          Add a certificate only once it has been issued to your organisation. It then shows on the sign-in and security pages with a link to the
-          public certificate search, so anyone can check it, and disappears when it expires. The official Cyber Essentials badge isn't drawn here;
-          use the badge files your certification body gives you, on their terms.
+    <MoreRow icon="badgeCheck" title="Certificates" summary={summary} tone={valid.length ? (renewSoon ? "warn" : "ok") : list?.length ? "bad" : undefined} id="certificates">
+      <div className="stack gap-12">
+        <p className="small muted" style={{ margin: 0 }}>
+          Add a certificate once it's issued to your organisation. It shows on the sign-in and security pages with a link to the public
+          certificate search, and disappears when it expires. For the official badge, use the files your certification body gives you.
         </p>
         {!list ? <div className="skeleton" style={{ height: 44 }} /> : list.length === 0 && !draft ? (
           <p className="small">No certificates yet.</p>
@@ -277,7 +281,7 @@ function Certificates({ onSaved }: { onSaved(): void }) {
                 <li key={`${c.scheme}-${c.certificate_number}`} className="row gap-12" style={{ padding: "10px 0" }}>
                   <div className="grow">
                     <div style={{ fontWeight: 600 }}>{c.scheme} · {c.certificate_number}</div>
-                    <div className="xs muted">{c.certification_body || "Certification body not given"} · issued {c.issued_on} · {expired ? "expired" : "valid until"} {c.expires_on}</div>
+                    <div className="xs muted">{c.certification_body || "Certification body not given"} · issued {fmtDay(c.issued_on)} · {expired ? "expired" : "valid until"} {fmtDay(c.expires_on)}</div>
                   </div>
                   {expired ? <span className="tag bad">Expired</span> : soon ? <span className="tag warn">Renew soon</span> : <span className="tag ok">Valid</span>}
                   <button className="btn sm ghost" disabled={busy} onClick={() => void save(list.filter((_, j) => j !== i))} aria-label={`Remove ${c.scheme} certificate ${c.certificate_number}`}><Icon name="trash" size="sm" /></button>
@@ -311,7 +315,7 @@ function Certificates({ onSaved }: { onSaved(): void }) {
           <div className="no-print"><button className="btn sm" onClick={() => setDraft({ scheme: "Cyber Essentials", certificate_number: "", issued_on: today, expires_on: addYear(today), certification_body: "", verify_url: IASME_SEARCH })}><Icon name="plus" size="sm" />Add a certificate</button></div>
         )}
       </div>
-    </section>
+    </MoreRow>
   );
 }
 
@@ -331,6 +335,9 @@ const LEGAL_FIELDS: { key: keyof LegalInfo; label: string; hint?: string; placeh
   { key: "email_provider", label: "Email delivery provider", hint: "Sends sign-in emails (a sub-processor)", placeholder: "e.g. Postmark, Amazon SES" },
   { key: "hosting_region", label: "Database region", hint: "Your Supabase project's region", placeholder: "London, UK (AWS eu-west-2)" },
 ];
+
+/** What UK company and e-commerce rules need on the website. */
+const REQUIRED_LEGAL: (keyof LegalInfo)[] = ["company_name", "company_number", "registered_office", "contact_email"];
 
 function CompanyDetails({ onSaved }: { onSaved(): void }) {
   const { api, toast, refreshConfig } = useApp();
@@ -356,11 +363,15 @@ function CompanyDetails({ onSaved }: { onSaved(): void }) {
       setBusy(false);
     }
   };
+  const missing = saved ? REQUIRED_LEGAL.filter((k) => !saved[k].trim()).length : 0;
+  const summary = !saved ? "Loading…"
+    : missing === REQUIRED_LEGAL.length ? "Not filled in yet. UK law requires these on your website."
+    : missing ? `${missing} required detail${missing === 1 ? "" : "s"} missing from the legal pages`
+    : `${saved.company_name} · company ${saved.company_number}`;
   return (
-    <section className="panel" id="company">
-      <div className="panel-head"><Icon name="scale" /><h2>Company & legal</h2><a className="right small no-print" href={href("/legal/privacy")}>Preview legal pages</a></div>
-      <div className="panel-body stack gap-12">
-        <p className="small muted">UK company and e-commerce rules require your registered name, number, registered office and a contact email on your website. These fill in the privacy notice, terms, data processing terms and the footer.</p>
+    <MoreRow icon="scale" title="Company & legal" summary={summary} tone={saved ? (missing ? "warn" : "ok") : undefined} id="company">
+      <div className="stack gap-12">
+        <p className="small muted" style={{ margin: 0 }}>UK company and e-commerce rules require your registered name, number, registered office and a contact email on your website. These fill in the privacy notice, terms, data processing terms and the footer. <a className="no-print" href={href("/legal/privacy")}>Preview the legal pages</a></p>
         {!saved ? <div className="skeleton" style={{ height: 120 }} /> : (
           <div className="form-grid">
             {LEGAL_FIELDS.map((f) => (
@@ -376,7 +387,7 @@ function CompanyDetails({ onSaved }: { onSaved(): void }) {
           {dirty && <button className="btn ghost" onClick={() => saved && setDraft(saved)}>Discard changes</button>}
         </div>
       </div>
-    </section>
+    </MoreRow>
   );
 }
 
@@ -404,15 +415,14 @@ function AccountRecovery() {
     }
   };
   return (
-    <section className="panel">
-      <div className="panel-head"><Icon name="smartphone" /><h2>Lost authenticator</h2></div>
-      <div className="panel-body stack gap-12">
-        <p className="small muted">If someone loses the phone with their authenticator app, remove their two-step verification so they can set it up again. First confirm it's really them, for example by calling them on a number you already hold, or with their fleet owner. Never do it on the strength of an email alone.</p>
+    <MoreRow icon="smartphone" title="Lost authenticator" summary="Reset two-step verification for someone who has lost their phone" className="no-print">
+      <div className="stack gap-12">
+        <p className="small muted" style={{ margin: 0 }}>If someone loses the phone with their authenticator app, remove their two-step verification so they can set it up again. First confirm it's really them, for example by calling them on a number you already hold, or with their fleet owner. Never do it on the strength of an email alone.</p>
         <Field label="Their email address">{(id) => <input id={id} className="input" type="email" value={email} onChange={(e) => { setEmail(e.target.value); setConfirm(false); }} autoComplete="off" />}</Field>
         <Field label="How you confirmed who they are" hint="Saved in the audit log">{(id) => <input id={id} className="input" value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Called back on the number in our HR system" />}</Field>
         <div><button className={`btn ${confirm ? "danger" : ""}`} disabled={busy || !email.trim() || !reason.trim()} onClick={go}>{busy && <Spinner />}{confirm ? "Confirm reset" : "Reset two-step verification"}</button></div>
       </div>
-    </section>
+    </MoreRow>
   );
 }
 
@@ -432,17 +442,16 @@ function KeyRotation() {
     }
   };
   return (
-    <section className="panel">
-      <div className="panel-head"><Icon name="key" /><h2>Encryption key</h2></div>
-      <div className="panel-body stack gap-12">
-        <p className="small muted">
+    <MoreRow icon="key" title="Encryption key" summary="Rotate it yearly, or at once if it may have leaked, then re-encrypt what's stored" className="no-print">
+      <div className="stack gap-12">
+        <p className="small muted" style={{ margin: 0 }}>
           Operators' credentials, driver pass links and team invite links are encrypted with <code>DATA_ENCRYPTION_KEY</code>. To rotate it (yearly, or at once if it may have leaked), put the old key in
           <code> DATA_ENCRYPTION_KEY_PREVIOUS</code>, set a new key, redeploy, then re-encrypt here. Remove the previous key afterwards. Do the same once after
           first setting a key, to encrypt credentials and links saved before it.
         </p>
         <div><button className="btn" disabled={busy} onClick={go}>{busy && <Spinner />}Re-encrypt stored credentials</button></div>
       </div>
-    </section>
+    </MoreRow>
   );
 }
 
@@ -463,27 +472,18 @@ function PlatformAudit() {
     void api<AuditEntry[]>("GET", "/admin/audit?limit=100").then(setRows).catch(() => setRows([]));
   }, [api, open]);
   return (
-    <section className="panel" style={{ marginTop: 16 }}>
-      <div className="panel-head">
-        <Icon name="history" />
-        <h2>Platform activity log</h2>
-        <button className="btn sm ghost right no-print" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Hide" : "Show"}</button>
-      </div>
-      {open && (
-        <div className="panel-body">
-          {!rows ? <div className="skeleton" style={{ height: 48 }} /> : rows.length === 0 ? <p className="small muted">Nothing yet.</p> : (
-            <ul className="list audit-list">
-              {rows.map((e) => (
-                <li key={e.id}>
-                  <span className="xs muted num nowrap">{fmtDateTime(e.at, now)}</span>
-                  <span className="grow small"><b>{e.actor_email ?? "Deleted account"}</b> {PLATFORM_ACTIONS[e.action] ?? e.action}{e.target ? ` ${e.target}` : ""}{e.ip ? <span className="xs muted"> · {e.ip}</span> : null}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="xs muted" style={{ marginTop: 8 }}>Platform-level actions by admins, kept for 12 months. Each fleet's own log is in its Settings → Security.</p>
-        </div>
+    <MoreRow icon="history" title="Platform activity log" summary="What platform admins did, kept for 12 months" className={open ? "" : "no-print"} onToggle={(o) => { if (o) setOpen(true); }}>
+      {!rows ? <div className="skeleton" style={{ height: 48 }} /> : rows.length === 0 ? <p className="small muted" style={{ margin: 0 }}>Nothing yet.</p> : (
+        <ul className="list audit-list">
+          {rows.map((e) => (
+            <li key={e.id}>
+              <span className="xs muted num nowrap">{fmtDateTime(e.at, now)}</span>
+              <span className="grow small"><b>{e.actor_email ?? "Deleted account"}</b> {PLATFORM_ACTIONS[e.action] ?? e.action}{e.target ? ` ${e.target}` : ""}{e.ip ? <span className="xs muted"> · {e.ip}</span> : null}</span>
+            </li>
+          ))}
+        </ul>
       )}
-    </section>
+      <p className="xs muted" style={{ margin: "8px 0 0" }}>Each fleet's own log is in its Settings → Security.</p>
+    </MoreRow>
   );
 }
