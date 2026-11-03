@@ -45,6 +45,10 @@
   --info-bg: #ddf1f7;
   --bad: #b8382a;
   --bad-bg: #fbe6e2;
+  /* the charging colour key, as on charger lights: green ready, blue charging, red fault */
+  --charging: #0b66d6;
+  --charging-glow: #4aa3ff;
+  --charging-bg: #e2eefc;
   --neutral-bg: #eceef1;
 
   --plate: #ffd23f;
@@ -101,6 +105,9 @@
     --info-bg: rgba(83, 193, 224, 0.13);
     --bad: #f07a68;
     --bad-bg: rgba(240, 122, 104, 0.13);
+    --charging: #5aa6ff;
+    --charging-glow: #9ccbff;
+    --charging-bg: rgba(90, 166, 255, 0.14);
     --neutral-bg: #262b33;
     --hatch-line: #2f363f;
     --map-sea: #161a20;
@@ -137,6 +144,9 @@
   --info-bg: rgba(83, 193, 224, 0.13);
   --bad: #f07a68;
   --bad-bg: rgba(240, 122, 104, 0.13);
+  --charging: #5aa6ff;
+  --charging-glow: #9ccbff;
+  --charging-bg: rgba(90, 166, 255, 0.14);
   --neutral-bg: #262b33;
   --hatch-line: #2f363f;
   --map-sea: #161a20;
@@ -353,6 +363,8 @@ p { margin: 0; }
 .status.info { background: var(--info-bg); color: var(--info); }
 .status.info::before { animation: pulse 1.8s ease-in-out infinite; }
 .status.bad { background: var(--bad-bg); color: var(--bad); }
+.status.charging { background: var(--charging-bg); color: var(--charging); }
+.status.charging::before { animation: pulse 1.1s ease-in-out infinite; box-shadow: 0 0 0 0 var(--charging-glow); }
 .status.muted { color: var(--muted); }
 @keyframes pulse { 50% { opacity: 0.35; } }
 
@@ -365,6 +377,7 @@ p { margin: 0; }
 .tag.warn { background: var(--pending-bg); color: var(--pending); }
 .tag.bad { background: var(--bad-bg); color: var(--bad); }
 .tag.ok { background: var(--ok-bg); color: var(--ok); }
+.tag.charging { background: var(--charging-bg); color: var(--charging); }
 
 /* number plate — the vehicle is the identity in this product */
 .plate {
@@ -456,6 +469,13 @@ p { margin: 0; }
 .lane-block.pending { border-left-color: var(--pending); background: var(--pending-bg); }
 .lane-block.info { border-left-color: var(--info); background: var(--info-bg); }
 .lane-block.bad { border-left-color: var(--bad); background: var(--bad-bg); }
+/* charging now: blue, with slow-moving stripes */
+.lane-block.charging {
+  border-left-color: var(--charging); background-color: var(--charging-bg);
+  background-image: repeating-linear-gradient(-45deg, color-mix(in oklab, var(--charging) 13%, transparent) 0 6px, transparent 6px 12px);
+  background-size: 16.97px 16.97px; animation: stripes 1.4s linear infinite;
+}
+@keyframes stripes { to { background-position: 16.97px 0; } }
 .lane-block.muted { border-style: dashed; color: var(--muted); background: transparent; }
 .nowline { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--brand); z-index: 1; pointer-events: none; }
 .nowline::before { content: ""; position: absolute; top: -4px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--brand); }
@@ -626,6 +646,7 @@ p { margin: 0; }
 .timeline li.bad .mark { background: var(--bad); }
 .timeline li.pending .mark { background: var(--pending); }
 .timeline li.info .mark { background: var(--info); }
+.timeline li.charging .mark { background: var(--charging); }
 
 .json { font-family: var(--mono); font-size: 12px; line-height: 1.5; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; overflow: auto; max-height: 360px; white-space: pre; color: var(--ink-2); }
 details.disclose > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; font-weight: 560; color: var(--ink-2); padding: 6px 0; }
@@ -840,27 +861,27 @@ details.disclose[open] > summary .icon { transform: rotate(90deg); }
 .a-brake.on { fill: #ff4d4d; filter: drop-shadow(0 0 3px #ff4d4d); }
 .a-shadow { fill: var(--art-shadow); }
 .a-port { fill: var(--art-hub); }
-.a-port.linked, .a-port.charging { fill: var(--brand); }
+.a-port.linked, .a-port.charging { fill: var(--charging); }
 .a-port.done { fill: var(--ok); }
-.a-port-ring { fill: none; stroke: var(--brand); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; animation: a-ring 1.4s ease-out infinite; }
+.a-port-ring { fill: none; stroke: var(--charging-glow); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; animation: a-ring 1.4s ease-out infinite; }
 @keyframes a-ring { from { transform: scale(0.6); opacity: 0.9; } to { transform: scale(1.7); opacity: 0; } }
 .a-plinth { fill: var(--art-plinth); }
-.a-strip { fill: var(--brand); opacity: 0.28; }
+.a-strip { fill: var(--charging); opacity: 0.28; }
 .a-strip.linked { opacity: 0.7; }
 .a-strip.charging { opacity: 1; animation: a-glow 1.6s ease-in-out infinite; }
 .a-strip.done { fill: var(--ok); opacity: 0.85; }
 @keyframes a-glow { 50% { opacity: 0.5; } }
 .a-screen { fill: var(--art-screen); }
 .a-screen-line { fill: none; stroke: #8fa0b3; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-.a-dot { fill: color-mix(in oklab, var(--brand) 60%, #fff); animation: a-blink 0.9s ease-in-out infinite; }
+.a-dot { fill: var(--charging-glow); animation: a-blink 0.9s ease-in-out infinite; }
 @keyframes a-blink { 50% { opacity: 0.2; } }
-.a-kw { fill: color-mix(in oklab, var(--brand) 55%, #fff); font-size: 11px; font-weight: 700; font-stretch: 75%; font-variant-numeric: tabular-nums; }
+.a-kw { fill: var(--charging-glow); font-size: 11px; font-weight: 700; font-stretch: 75%; font-variant-numeric: tabular-nums; }
 .a-kw-unit { fill: #8fa0b3; font-size: 6.5px; font-weight: 600; }
 .a-screen-ok { fill: none; stroke: var(--ok); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .a-led { fill: var(--ok); }
-.a-led.linked, .a-led.charging { fill: var(--brand); animation: a-blink 1.2s ease-in-out infinite; }
+.a-led.linked, .a-led.charging { fill: var(--charging); animation: a-blink 1.2s ease-in-out infinite; }
 .a-cable { fill: none; stroke: var(--art-cable); stroke-width: 4.5; stroke-linecap: round; }
-.a-energy { fill: none; stroke: color-mix(in oklab, var(--brand) 65%, #fff); stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 2 12; animation: a-flow 0.6s linear infinite; }
+.a-energy { fill: none; stroke: var(--charging-glow); stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 2 12; animation: a-flow 0.6s linear infinite; }
 @keyframes a-flow { to { stroke-dashoffset: -14; } }
 .a-plug { fill: var(--art-trim); }
 .a-plug-tip { fill: var(--art-rim); }
@@ -953,7 +974,7 @@ details.disclose[open] > summary .icon { transform: rotate(90deg); }
 .kpi-delta.bad { color: var(--bad); }
 .kpi-delta .muted { font-weight: 450; }
 .kpi-sub { font-size: var(--fs-xs); color: var(--muted); }
-.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg); animation: pulse 1.8s ease-in-out infinite; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--charging); box-shadow: 0 0 0 3px var(--charging-bg); animation: pulse 1.8s ease-in-out infinite; }
 @media (max-width: 560px) {
   .kpi { padding: 12px 12px 10px; }
   .kpi-value { font-size: var(--fs-2xl); }
@@ -987,7 +1008,8 @@ details.disclose[open] > summary .icon { transform: rotate(90deg); }
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 16px;
   display: flex; flex-direction: column; gap: 12px; min-width: 0;
 }
-.truck-card.state-charging { border-color: color-mix(in oklab, var(--ok) 38%, var(--surface)); box-shadow: inset 3px 0 0 var(--ok); }
+.truck-card.state-charging { border-color: color-mix(in oklab, var(--charging) 38%, var(--surface)); box-shadow: inset 3px 0 0 var(--charging); }
+.truck-card.state-due { border-color: color-mix(in oklab, var(--ok) 38%, var(--surface)); box-shadow: inset 3px 0 0 var(--ok); }
 .truck-card.state-fault { border-color: color-mix(in oklab, var(--bad) 42%, var(--surface)); box-shadow: inset 3px 0 0 var(--bad); }
 .truck-card.state-fault .truck-foot .icon { color: var(--bad); }
 .kpi-sub.bad { color: var(--bad); font-weight: 560; }
@@ -999,26 +1021,48 @@ details.disclose[open] > summary .icon { transform: rotate(90deg); }
 .truck-foot { display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); min-width: 0; }
 .truck-foot .icon { width: 14px; height: 14px; margin-right: 5px; vertical-align: -2px; color: var(--muted); }
 
-/* battery meter, one meaning per colour: green flows while charging, red pulses on a fault, amber is
-   a low battery at rest, otherwise the brand colour. The track is a lighter step of the same colour. */
-.battery-meter { --bm: var(--brand); --bm-track: var(--brand-soft); }
-.battery-meter.low { --bm: var(--pending); --bm-track: var(--pending-bg); }
-.battery-meter.none { --bm-track: var(--surface-3); }
-.battery-meter.charging { --bm: var(--ok); --bm-track: var(--ok-bg); }
+/* battery meter, coloured by the charging key: green ready to charge, blue charging (animated),
+   red fault, and a calm neutral otherwise. The level is always written out too. */
+.battery-meter { --bm: color-mix(in oklab, var(--ink) 34%, var(--surface)); --bm-track: var(--surface-3); }
+.battery-meter.ready { --bm: var(--ok); --bm-track: var(--ok-bg); }
+.battery-meter.charging { --bm: var(--charging); --bm-track: var(--charging-bg); }
 .battery-meter.fault { --bm: var(--bad); --bm-track: var(--bad-bg); }
 .bm-track { position: relative; height: 10px; border-radius: 99px; background: var(--bm-track); overflow: hidden; }
-.bm-fill { height: 100%; border-radius: 99px; background: var(--bm); transition: width 0.8s ease, background-color 0.3s ease; }
+.bm-fill { position: relative; height: 100%; border-radius: 99px; background: var(--bm); transition: width 0.8s ease, background-color 0.3s ease; }
+/* charging: energy stripes flowing in, a glowing gradient, and a bright spark at the leading edge */
 .battery-meter.charging .bm-fill {
-  background-image: linear-gradient(90deg, transparent 0, color-mix(in oklab, #fff 40%, transparent) 50%, transparent 100%);
-  background-size: 60px 100%; background-repeat: no-repeat; background-color: var(--bm);
-  animation: bm-flow 1.8s linear infinite;
+  background-image:
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.28) 0 5px, transparent 5px 10px),
+    linear-gradient(90deg, var(--charging) 0%, var(--charging-glow) 100%);
+  background-size: 14.14px 14.14px, 100% 100%;
+  animation: bm-stripes 0.7s linear infinite;
+  box-shadow: 0 0 12px color-mix(in oklab, var(--charging-glow) 60%, transparent);
 }
-@keyframes bm-flow { from { background-position: -60px 0; } to { background-position: calc(100% + 60px) 0; } }
+@keyframes bm-stripes { to { background-position: 14.14px 0, 0 0; } }
+.battery-meter.charging .bm-fill::after {
+  content: ""; position: absolute; right: -3px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, var(--charging-glow) 38%, transparent 70%);
+  animation: bm-spark 1.1s ease-in-out infinite;
+}
+@keyframes bm-spark { 0%, 100% { transform: scale(0.8); opacity: 0.75; } 50% { transform: scale(1.3); opacity: 1; } }
 .battery-meter.fault .bm-fill { animation: bm-alert 1.4s ease-in-out infinite; }
 .battery-meter.fault.none .bm-track { box-shadow: inset 0 0 0 1.5px var(--bad); animation: bm-alert 1.4s ease-in-out infinite; }
 @keyframes bm-alert { 50% { opacity: 0.4; } }
 .bm-mark { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--surface); opacity: 0.9; }
-@media (prefers-reduced-motion: reduce) { .battery-meter .bm-fill, .battery-meter .bm-track { animation: none !important; background-image: none; } .live-dot { animation: none; } }
+/* a bolt beside the reading while charging */
+.charge-bolt { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--charging-bg); color: var(--charging); margin-left: 6px; vertical-align: 4px; }
+.charge-bolt .icon { width: 13px; height: 13px; animation: bolt 1.6s ease-in-out infinite; }
+@keyframes bolt { 0%, 100% { transform: scale(1); opacity: 1; } 45% { transform: scale(1.18); opacity: 0.75; } }
+/* the key itself */
+.charge-key { display: flex; flex-wrap: wrap; gap: 6px 14px; list-style: none; margin: 0; padding: 0; font-size: var(--fs-xs); color: var(--muted); }
+.charge-key li { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.charge-key i { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
+.charge-key i.charging { background: var(--charging); box-shadow: 0 0 0 3px var(--charging-bg); animation: pulse 1.6s ease-in-out infinite; }
+.charge-key i.fault { background: var(--bad); }
+@media (prefers-reduced-motion: reduce) {
+  .battery-meter .bm-fill, .battery-meter .bm-fill::after, .battery-meter .bm-track, .charge-bolt .icon, .charge-key i, .lane-block.charging { animation: none !important; }
+  .live-dot { animation: none; }
+}
 
 /* recent charges */
 .charge-row { width: 100%; border: 0; background: none; text-align: left; font: inherit; color: inherit; display: flex; align-items: center; gap: 12px; padding: 11px 16px; cursor: pointer; }

@@ -53,7 +53,8 @@ export const CANCEL_REASON_LABEL: Record<CanceledReason, string> = {
 /** Reasons an eMSP (fleet) may give when cancelling. */
 export const FLEET_CANCEL_REASONS: CanceledReason[] = ["TRAFFIC", "BROKEN_VEHICLE", "NO_CANCELED"];
 
-export type StatusTone = "neutral" | "pending" | "ok" | "info" | "bad" | "muted";
+/** Tones follow the charging key: ok (green) ready to charge, charging (blue), bad (red) fault. */
+export type StatusTone = "neutral" | "pending" | "ok" | "info" | "charging" | "bad" | "muted";
 
 export function statusView(status: ReservationStatus, opts: { sessionStatus?: string | null; pending?: boolean } = {}): {
   label: string; tone: StatusTone;
@@ -63,7 +64,7 @@ export function statusView(status: ReservationStatus, opts: { sessionStatus?: st
     case "RESERVED": return opts.pending ? { label: "Change pending", tone: "pending" } : { label: "Reserved", tone: "ok" };
     case "FULFILLED":
       if (opts.sessionStatus === "COMPLETED") return { label: "Completed", tone: "neutral" };
-      if (opts.sessionStatus === "ACTIVE") return { label: "Charging", tone: "info" };
+      if (opts.sessionStatus === "ACTIVE") return { label: "Charging", tone: "charging" };
       return { label: "Checked in", tone: "info" };
     case "CANCELED": return { label: "Cancelled", tone: "muted" };
     case "NO_SHOW": return { label: "No-show", tone: "bad" };
