@@ -11,11 +11,14 @@ without going over the site's grid connection.
 - **Site:** name, postcode (for regional grid carbon), grid connection in kW, and other site load
   to keep free (lighting, warehouse, reefers).
 - **Plan for:** lowest cost, balanced (carbon valued at £100 a tonne) or lowest carbon.
-- **Electricity tariff:**
-  - one rate;
-  - time of use (a standard rate plus timed rates, optionally weekdays only);
-  - half-hourly Octopus Agile prices by product code and region. These come from Octopus's public
-    API, with a modelled fallback that's labelled as such.
+- **Electricity supplier:** one question, "Who supplies this depot's electricity?", with four answers:
+  - **Octopus Energy:** live half-hourly prices from Octopus's public API (Shape Shifters Agile for
+    business by default; other Octopus tariffs or any product code), region from the postcode;
+  - **Wholesale-linked contract:** Elexon's half-hourly market price plus the fleet's fixed costs;
+  - **Fixed rates:** an all-day rate plus night or peak rates, for any supplier;
+  - **Price feed:** a supplier's own published prices.
+  See [energy.md](energy.md#electricity-suppliers-and-live-prices) for the sources, gap filling and
+  fallbacks. Older saved settings (one rate, time of use, Agile) are migrated automatically.
 - **Chargers:** name, OCPP station id, EVSE id and maximum kW.
 - **Control:** how schedules reach the chargers (see below), and whether to re-send them
   automatically every 15 minutes.

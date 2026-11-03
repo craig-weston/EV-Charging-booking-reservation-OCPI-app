@@ -13,9 +13,11 @@ import type { Ctx } from "./context";
 import type { ChargerDispatchResult, DepotDispatch, EnergyState, FleetEnergyRow, Vehicle } from "../shared/model";
 import { EMPTY_ENERGY, depotTariffAsOcpi, type Depot, type DepotVisit, type EnergyConfig } from "../shared/energy/depot";
 import { energyPriceAt } from "../shared/energy/price";
-import { intensityAt, HALF_HOUR, floorHalfHour, type CarbonSeries } from "../shared/energy/carbon";
+import { intensityAt, HALF_HOUR, type CarbonSeries } from "../shared/energy/carbon";
 import { buildSlots, planDepot, schedulePeriods, type DepotPlan } from "../shared/energy/optimise";
 import { carbonFor } from "./energy";
+import { feedRates, octopusRates, octopusRegion, wholesaleRates } from "./market";
+import { OCTOPUS_PRODUCTS, REGION_NAMES, fillPrices, type PriceSeries } from "../shared/energy/suppliers";
 import type { FlexEvent } from "../shared/energy/flex";
 import { v2gPass, type V2gVisit } from "../shared/energy/v2g";
 import { openSecret } from "./security";
@@ -56,35 +58,51 @@ export interface DepotPlanView {
   headroom_kw: number;
   baseline: DepotPlan["baseline"];
   carbon_source: CarbonSeries["source"] | null;
-  price_source: "tariff" | "agile" | "agile-modelled";
+  price: PriceInfo;
   /** Grid flexibility events affecting this plan (accepted) or waiting for a decision (offered). */
   events: FlexEvent[];
   v2g: DepotPlan["v2g"];
 }
 
-// --- Octopus Agile (public, no key): half-hourly unit rates by region ---------------------------
-const agileCache = new Map<string, { at: number; value: Promise<Map<number, number> | null> }>();
-async function agilePrices(ctx: Ctx, product: string, region: string, from: number, to: number): Promise<Map<number, number> | null> {
-  if (ctx.mode !== "live") return null;
-  const key = `${product}|${region}|${floorHalfHour(from)}|${floorHalfHour(to)}`;
-  const hit = agileCache.get(key);
-  if (hit && ctx.now().getTime() - hit.at < 30 * 60_000) return hit.value;
-  const value = (async () => {
-    try {
-      const url = `https://api.octopus.energy/v1/products/${encodeURIComponent(product)}/electricity-tariffs/E-1R-${encodeURIComponent(product)}-${region}/standard-unit-rates/?period_from=${new Date(from).toISOString()}&period_to=${new Date(to).toISOString()}&page_size=300`;
-      const res = await ctx.transport(new Request(url, { headers: { Accept: "application/json" } }));
-      if (!res.ok) return null;
-      const j = (await res.json()) as { results?: { value_exc_vat: number; valid_from: string; valid_to: string | null }[] };
-      const m = new Map<number, number>();
-      for (const r of j.results ?? []) {
-        const a = new Date(r.valid_from).getTime(), b = r.valid_to ? new Date(r.valid_to).getTime() : a + HALF_HOUR;
-        for (let t = a; t < b; t += HALF_HOUR) m.set(t, r.value_exc_vat / 100);
-      }
-      return m.size ? m : null;
-    } catch { return null; }
-  })();
-  agileCache.set(key, { at: ctx.now().getTime(), value });
-  return value;
+/** Where tonight's prices came from, in words for the page. */
+export interface PriceInfo {
+  source: "fixed" | "octopus" | "wholesale" | "feed" | "modelled";
+  /** e.g. "Octopus Shape Shifters: Agile (business), East Midlands". */
+  label: string;
+  /** First half-hour estimated from earlier days' prices (not yet published), or null. */
+  estimated_from: string | null;
+  /** Live prices weren't available, so a modelled stand-in was used. */
+  modelled: boolean;
+}
+
+/** The depot's half-hourly prices from its supplier source, with gaps filled and labelled. */
+export async function depotPrices(ctx: Ctx, depot: Depot, from: number, to: number, carbon: CarbonSeries | null): Promise<{ priceAt(t: number): number; info: PriceInfo }> {
+  const t = depot.tariff;
+  const fixedAt = (x: number) => energyPriceAt(depotTariffAsOcpi(t), new Date(x)) ?? t.standard;
+  // A wholesale-shaped stand-in that tracks the carbon forecast around the standard rate.
+  const modelledAt = (x: number) => Math.round(t.standard * (0.45 + 0.9 * Math.min(1.6, (intensityAt(carbon, new Date(x)) ?? 130) / 160)) * 10000) / 10000;
+  if (t.kind === "fixed") return { priceAt: fixedAt, info: { source: "fixed", label: t.supplier ? `${t.supplier}, fixed rates` : "Your fixed rates", estimated_from: null, modelled: false } };
+  let series: PriceSeries | null = null;
+  let label = "";
+  let adjust = (p: number) => p;
+  if (t.kind === "octopus") {
+    const product = t.octopus_product ?? "AGILE-BUS-25-02-05";
+    const region = t.octopus_region && t.octopus_region !== "auto" ? t.octopus_region : (await octopusRegion(ctx, depot.postcode)) ?? "B";
+    series = await octopusRates(ctx, product, region, from - 24 * 3_600_000, to);
+    const name = OCTOPUS_PRODUCTS.find((p) => p.code === product)?.label ?? product;
+    label = `Octopus ${name}, ${REGION_NAMES[region] ?? `region ${region}`}`;
+  } else if (t.kind === "wholesale") {
+    series = await wholesaleRates(ctx, from, to);
+    const up = t.uplift ?? 0.12;
+    adjust = (p) => Math.round((p + up) * 10000) / 10000;
+    label = `Wholesale price (Elexon) + £${up.toFixed(3)}/kWh`;
+  } else if (t.kind === "feed") {
+    series = t.feed_url ? await feedRates(ctx, t.feed_url) : null;
+    label = t.supplier ? `${t.supplier} price feed` : "Your supplier's price feed";
+  }
+  const filled = fillPrices(series, from, to, modelledAt, adjust);
+  if (filled.allFallback) return { priceAt: modelledAt, info: { source: "modelled", label: `${label} (live prices unavailable: modelled)`, estimated_from: null, modelled: true } };
+  return { priceAt: filled.priceAt, info: { source: t.kind, label, estimated_from: filled.estimatedFrom ? new Date(filled.estimatedFrom).toISOString() : null, modelled: false } };
 }
 
 export interface PlanInputs {
@@ -95,7 +113,7 @@ export interface PlanInputs {
   chargers: { id: string; maxKw: number }[];
   headroom: number;
   carbonSource: CarbonSeries["source"] | null;
-  priceSource: DepotPlanView["price_source"];
+  price: PriceInfo;
 }
 
 /** Everything the planner needs for a depot right now (prices, carbon, trucks). */
@@ -104,21 +122,8 @@ export async function depotInputs(ctx: Ctx, depot: Depot, visits: DepotVisit[], 
   const active = visits.filter((v) => v.depot_id === depot.id && (v.status === "planned" || v.status === "plugged_in") && new Date(v.depart_at).getTime() > now);
   const horizonEnd = Math.min(now + MAX_HORIZON_MS, Math.max(now + 12 * 3_600_000, ...active.map((v) => new Date(v.depart_at).getTime())));
   const carbon = await carbonFor(ctx, depot.postcode || null, new Date(now - HALF_HOUR).toISOString(), new Date(horizonEnd + HALF_HOUR).toISOString());
-  const tariffs = depotTariffAsOcpi(depot.tariff);
-  let priceSource: DepotPlanView["price_source"] = "tariff";
-  let priceAt = (t: number) => energyPriceAt(tariffs, new Date(t)) ?? depot.tariff.standard;
-  if (depot.tariff.kind === "agile") {
-    const agile = await agilePrices(ctx, depot.tariff.agile_product ?? "AGILE-24-10-01", depot.tariff.agile_region ?? "B", now - HALF_HOUR, horizonEnd + HALF_HOUR);
-    if (agile) {
-      priceSource = "agile";
-      priceAt = (t: number) => agile.get(floorHalfHour(t)) ?? depot.tariff.standard;
-    } else {
-      // No live prices (demo, or Octopus unreachable): a wholesale-shaped stand-in that tracks the
-      // carbon forecast around the standard rate, labelled as modelled.
-      priceSource = "agile-modelled";
-      priceAt = (t: number) => Math.round(depot.tariff.standard * (0.45 + 0.9 * Math.min(1.6, (intensityAt(carbon, new Date(t)) ?? 130) / 160)) * 10000) / 10000;
-    }
-  }
+  const prices = await depotPrices(ctx, depot, now - HALF_HOUR, horizonEnd + HALF_HOUR, carbon);
+  const priceAt = prices.priceAt;
   const headroom = Math.max(0, depot.import_limit_kw - depot.site_load_kw);
   const slots = buildSlots(now, horizonEnd, priceAt, (t) => intensityAt(carbon, new Date(t)), headroom);
   const rows = active.map((v) => {
@@ -129,7 +134,7 @@ export async function depotInputs(ctx: Ctx, depot: Depot, visits: DepotVisit[], 
     const needBattery = battery ? Math.max(0, ((v.soc_target - v.soc_start) / 100) * battery) : 0;
     return { v, veh, battery, maxKw, need: needBattery / EFFICIENCY };
   });
-  return { depot, now, slots, rows, chargers: depot.chargers.map((c) => ({ id: c.id, maxKw: c.max_kw })), headroom, carbonSource: carbon.source, priceSource };
+  return { depot, now, slots, rows, chargers: depot.chargers.map((c) => ({ id: c.id, maxKw: c.max_kw })), headroom, carbonSource: carbon.source, price: prices.info };
 }
 
 /** Event windows applied to the slots: turn-down caps charging power, turn-up makes power cheaper
@@ -193,7 +198,7 @@ export function viewFromPlan(i: PlanInputs, plan: DepotPlan, events: FlexEvent[]
       };
     }),
     cost: plan.cost, kg: plan.kg, peak_kw: plan.peakKw, headroom_kw: i.headroom, baseline: plan.baseline,
-    carbon_source: i.carbonSource, price_source: i.priceSource,
+    carbon_source: i.carbonSource, price: i.price,
     v2g: plan.v2g ?? null,
     events: events.filter((e) => e.depot_id === i.depot.id && Date.parse(e.end_at) > i.now && (e.status === "accepted" || e.status === "offered")),
   };

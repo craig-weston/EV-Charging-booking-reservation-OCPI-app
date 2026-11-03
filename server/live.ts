@@ -1,4 +1,5 @@
 // Production context for Cloudflare Pages Functions.
+import { handlePublicMarket } from "./market";
 import type { AppConfig } from "../shared/model";
 import { notifyChannels } from "./notify";
 import { reportError, shortRef } from "./alerts";
@@ -123,7 +124,7 @@ export async function guard(req: Request, rl = limiter, now = Date.now(), shared
     if (!r.ok) return tooMany(r.retryAfter, false);
     if (Number(req.headers.get("Content-Length") ?? "0") > 8 * 1024) return Response.json({ error: { message: "Too large", code: "TOO_LARGE" } }, { status: 413 });
   }
-  const isPublic = /^\/api\/(pass|invites)\//.test(url.pathname);
+  const isPublic = /^\/api\/(pass|invites|public)\//.test(url.pathname);
   if (isPublic) {
     r = rl.hit(`public:${ip}`, LIMITS.publicToken.max, LIMITS.publicToken.windowMs, now);
     if (!r.ok) return tooMany(r.retryAfter, false);
@@ -158,6 +159,18 @@ export async function noteOutcome(req: Request, res: Response, rl = limiter, now
 }
 
 export async function handle(pc: PagesContext): Promise<Response> {
+  // Public market data (prices and grid carbon) works with or without Supabase, cached at the edge.
+  if (new URL(pc.request.url).pathname.startsWith("/api/public/")) {
+    const blocked = await guard(pc.request, limiter, Date.now(), sharedLimits(pc.env));
+    if (blocked) return withSecurityHeaders(blocked);
+    const edge = (globalThis as unknown as { caches?: { default?: { match(r: Request): Promise<Response | undefined>; put(r: Request, res: Response): Promise<void> } } }).caches?.default;
+    const key = new Request(pc.request.url, { method: "GET" });
+    const hit = edge ? await edge.match(key).catch(() => undefined) : undefined;
+    if (hit) return withSecurityHeaders(hit);
+    const res = await handlePublicMarket(pc.request, { mode: "live", now: () => new Date(), transport: (r) => fetch(r) });
+    if (edge && res.ok) pc.waitUntil(edge.put(key, res.clone()).catch(() => undefined));
+    return withSecurityHeaders(res);
+  }
   if (!isConfigured(pc.env)) return withSecurityHeaders(unconfigured(pc));
   try {
     const shared = sharedLimits(pc.env);

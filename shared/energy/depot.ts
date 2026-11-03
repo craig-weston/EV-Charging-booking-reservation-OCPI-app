@@ -2,6 +2,7 @@
 // tariff and how the chargers are controlled. Stored per fleet (fleet_energy.config).
 import type { Tariff } from "../ocpi/types";
 import { uuid } from "../util";
+import { OCTOPUS_REGIONS, validProduct, type SupplySource } from "./suppliers";
 import { DEFAULT_V2G, cleanV2g, type V2gPilot } from "./v2g";
 import { DEFAULT_DEPOT_FLEX, DEFAULT_PROVIDER, cleanDepotFlex, cleanProvider, type DepotFlex, type FlexProvider } from "./flex";
 
@@ -10,14 +11,21 @@ export type DepotGoal = "cost" | "balanced" | "carbon";
 export interface DepotRate { price: number; start: string; end: string; days?: string[] }
 
 export interface DepotTariff {
-  /** flat: one rate; tou: timed rates over a standard rate; agile: Octopus Agile half-hourly prices. */
-  kind: "flat" | "tou" | "agile";
-  /** £/kWh ex VAT: the all-day rate (and the fallback for agile). */
+  /** Where prices come from (shared/energy/suppliers.ts). */
+  kind: SupplySource;
+  /** The supplier's name, for fixed rates and price feeds (e.g. "EDF Energy"). */
+  supplier?: string;
+  /** £/kWh ex VAT: the all-day rate for fixed rates; the fallback for live sources. */
   standard: number;
+  /** Fixed rates: timed rates over the all-day rate (empty for a single rate). */
   rates: DepotRate[];
-  /** Octopus Agile: product code and region letter (A–P). */
-  agile_product?: string;
-  agile_region?: string;
+  /** Octopus: product code, and region letter (A–P) or "auto" from the depot's postcode. */
+  octopus_product?: string;
+  octopus_region?: string;
+  /** Wholesale-linked: £/kWh added to the wholesale price for non-energy costs (networks, levies, margin). */
+  uplift?: number;
+  /** Price feed: an https URL returning half-hourly prices. */
+  feed_url?: string;
 }
 
 export interface DepotCharger {
@@ -87,7 +95,7 @@ export interface DepotVisit {
 
 export const EMPTY_ENERGY: EnergyConfig = { depots: [], flex_provider: DEFAULT_PROVIDER };
 
-export const DEFAULT_TARIFF: DepotTariff = { kind: "tou", standard: 0.26, rates: [{ price: 0.15, start: "00:30", end: "07:30" }] };
+export const DEFAULT_TARIFF: DepotTariff = { kind: "fixed", standard: 0.26, rates: [{ price: 0.15, start: "00:30", end: "07:30" }] };
 
 export function newDepot(name = "Main depot"): Depot {
   return {
@@ -111,7 +119,11 @@ export function cleanEnergy(x: unknown): EnergyConfig {
     flex_provider: cleanProvider((x as EnergyConfig)?.flex_provider),
     depots: depots.slice(0, 20).map((d): Depot => {
       const t = (d?.tariff ?? {}) as Partial<DepotTariff>;
-      const kind = t.kind === "flat" || t.kind === "agile" ? t.kind : "tou";
+      // Earlier versions: flat / tou → fixed, agile → octopus.
+      const raw = t as Omit<Partial<DepotTariff>, "kind"> & { kind?: string; agile_product?: string; agile_region?: string };
+      const kind: SupplySource = raw.kind === "octopus" || raw.kind === "agile" ? "octopus" : raw.kind === "wholesale" ? "wholesale" : raw.kind === "feed" ? "feed" : "fixed";
+      const product = (raw.octopus_product ?? raw.agile_product ?? "").toString().toUpperCase();
+      const region = (raw.octopus_region ?? raw.agile_region ?? "auto").toString();
       const c = (d?.control ?? { kind: "simulated" }) as DepotControl;
       let control: DepotControl = { kind: "simulated" };
       if (c.kind === "citrineos" && /^https:\/\//.test(str(c.base_url, 300))) control = { kind: "citrineos", base_url: str(c.base_url, 300).replace(/\/+$/, ""), tenant_id: str(c.tenant_id, 40) || "1", ...(c.token_hint ? { token_hint: str(c.token_hint, 12) } : {}) };
@@ -125,11 +137,14 @@ export function cleanEnergy(x: unknown): EnergyConfig {
         tariff: {
           kind,
           standard: num(t.standard, 0.26, 0, 5),
-          rates: kind === "tou" ? (Array.isArray(t.rates) ? t.rates : []).slice(0, 8).filter((r) => HHMM.test(r?.start) && HHMM.test(r?.end)).map((r) => ({
+          ...(str(raw.supplier, 60) ? { supplier: str(raw.supplier, 60) } : {}),
+          rates: kind === "fixed" ? (Array.isArray(t.rates) ? t.rates : []).slice(0, 8).filter((r) => HHMM.test(r?.start) && HHMM.test(r?.end)).map((r) => ({
             price: num(r.price, 0.15, -1, 5), start: r.start, end: r.end,
             ...(Array.isArray(r.days) && r.days.length ? { days: r.days.filter((x) => DAYS.includes(x)) } : {}),
           })) : [],
-          ...(kind === "agile" ? { agile_product: str(t.agile_product, 40) || "AGILE-24-10-01", agile_region: /^[A-P]$/.test(str(t.agile_region, 1).toUpperCase()) ? str(t.agile_region, 1).toUpperCase() : "B" } : {}),
+          ...(kind === "octopus" ? { octopus_product: validProduct(product) ? product : "AGILE-BUS-25-02-05", octopus_region: (OCTOPUS_REGIONS as readonly string[]).includes(region.toUpperCase()) ? region.toUpperCase() : "auto" } : {}),
+          ...(kind === "wholesale" ? { uplift: num(raw.uplift, 0.12, 0, 2) } : {}),
+          ...(kind === "feed" && /^https:\/\//.test(str(raw.feed_url, 300)) ? { feed_url: str(raw.feed_url, 300) } : {}),
         },
         goal: d?.goal === "cost" || d?.goal === "carbon" ? d.goal : "balanced",
         chargers: (Array.isArray(d?.chargers) ? d.chargers : []).slice(0, 200).map((ch, i) => ({
@@ -152,7 +167,7 @@ export function cleanEnergy(x: unknown): EnergyConfig {
 /** The depot tariff as OCPI-style tariff elements, so the same time-of-use pricing code applies. */
 export function depotTariffAsOcpi(t: DepotTariff): Tariff[] {
   const elements: Tariff["elements"] = [
-    ...(t.kind === "tou" ? t.rates.map((r) => ({ price_components: [{ type: "ENERGY" as const, price: r.price, step_size: 1 }], restrictions: { start_time: r.start, end_time: r.end, ...(r.days ? { day_of_week: r.days } : {}) } })) : []),
+    ...(t.kind === "fixed" ? t.rates.map((r) => ({ price_components: [{ type: "ENERGY" as const, price: r.price, step_size: 1 }], restrictions: { start_time: r.start, end_time: r.end, ...(r.days ? { day_of_week: r.days } : {}) } })) : []),
     { price_components: [{ type: "ENERGY", price: t.standard, step_size: 1 }] },
   ];
   return [{ country_code: "GB", party_id: "DPT", id: "depot", currency: "GBP", tax_included: "NO", elements, last_updated: "2026-01-01T00:00:00Z" } as Tariff];

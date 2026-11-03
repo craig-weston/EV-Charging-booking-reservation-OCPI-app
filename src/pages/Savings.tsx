@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { VehicleType } from "../../shared/ocpi/types";
 import { VEHICLE_TYPE_LABEL } from "../../shared/booking/labels";
+import { DataSources } from "../components/DataSources";
 import { DEFAULT_SAVINGS, cleanAssumptions, computeSavings, savingsCsv, type SavingsAssumptions } from "../../shared/savings";
 import { monthPeriod, monthOf, previousMonth } from "../../shared/billing";
 import { useApp } from "../app/state";
@@ -193,11 +194,12 @@ export function SavingsPage() {
               <li><b>Diesel carbon:</b> {a.diesel_kgco2e_per_litre} kg CO₂e per litre (UK government conversion factors 2026, average biofuel blend).</li>
               <li><b>Grid carbon:</b> {a.grid_kgco2e_per_kwh} kg CO₂e per kWh (UK government conversion factors 2026, UK electricity). Renewable-backed charging would be lower; transmission losses aren't included.</li>
               <li><b>Energy use:</b> {TYPES.map((ty) => `${VEHICLE_TYPE_LABEL[ty].toLowerCase()} ${a.kwh_per_km[ty]} kWh/km vs ${a.litres_per_100km[ty]} L/100 km`).join("; ")}. Articulated diesel HGVs average about 7.9 mpg (36 L/100 km).</li>
-              <li><b>Charging times:</b> the headline CO₂e uses the government's annual grid factor, as carbon reporting standards expect. The "cleaner, cheaper times" section uses half-hourly regional carbon intensity from NESO's Carbon Intensity API{timing?.modelled ? " (modelled where NESO data wasn't available)" : ""} and each operator's time-of-use rates.</li>
+              <li><b>Charging times:</b> the headline CO₂e uses the government's annual grid factor, as carbon reporting standards expect. The "cleaner, cheaper times" section uses half-hourly regional carbon intensity from the Carbon Intensity API (NESO, developed with Environmental Defense Fund Europe, the University of Oxford and WWF){timing?.modelled ? ", modelled where its data wasn't available," : ""} and each operator's time-of-use rates.</li>
               <li>Public charging often costs more per mile than diesel today; the gap narrows with depot charging and off-peak tariffs, which aren't included here.</li>
               <li>Only charges booked through this platform are counted, not depot or home charging.{s.defaulted ? ` ${s.defaulted} charges had no truck type, so rigid figures were used.` : ""}</li>
             </ul>
           )}
+          {!editing && <DataSources />}
         </div>
       </section>
     </div>
@@ -210,7 +212,7 @@ function TimingSection({ r }: { r: NonNullable<ReturnType<typeof timingReport>> 
     <section className="panel section">
       <div className="panel-head">
         <h2>Charging at cleaner, cheaper times</h2>
-        <span className="right xs muted">{r.modelled ? "Modelled grid carbon" : "NESO regional grid carbon"}</span>
+        <span className="right xs muted">{r.modelled ? "Modelled grid carbon" : "Carbon Intensity API (NESO) regional data"}</span>
       </div>
       <div className="panel-body stack gap-16">
         <div className="timing-tiles">

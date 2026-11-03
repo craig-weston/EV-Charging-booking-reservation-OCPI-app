@@ -81,6 +81,8 @@ export interface Ctx {
   waitUntil(p: Promise<unknown>): void;
   /** Outbound HTTP. Requests to `baseUrl` are dispatched in-process (no network hop). */
   transport(req: Request): Promise<Response>;
+  /** The in-browser demo on a real deployment: this app's origin, for its public market-data endpoints. */
+  marketUrl?: string;
   verifyUser(req: Request): Promise<AuthUser | null>;
   /** Per-request cache (e.g. authenticated partner). */
   cache: Map<string, unknown>;

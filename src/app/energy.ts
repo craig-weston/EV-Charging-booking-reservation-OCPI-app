@@ -61,7 +61,7 @@ export function useCarbonMany(requests: { key: string; postcode: string; from: D
 const EMPTY = new Map<string, CarbonSeries>();
 
 export const SOURCE_NOTE: Record<CarbonSeries["source"], string> = {
-  neso: "NESO regional carbon forecast",
-  mixed: "NESO forecast, modelled beyond 48 hours",
-  modelled: "Modelled carbon (typical GB pattern)",
+  neso: "Carbon Intensity API (NESO) regional forecast",
+  mixed: "Carbon Intensity API (NESO), modelled beyond 48 hours",
+  modelled: "Modelled grid carbon (typical GB day)",
 };

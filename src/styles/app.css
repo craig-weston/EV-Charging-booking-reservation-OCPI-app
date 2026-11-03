@@ -1556,3 +1556,21 @@ mark.unset { background: var(--pending-bg); color: var(--pending); border-radius
 .v2g-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .v2g-results > div { display: flex; flex-direction: column; gap: 2px; background: var(--surface-2); border-radius: var(--r-sm); padding: 10px 12px; }
 .v2g-results b { font-size: var(--fs-xl); font-variant-numeric: tabular-nums; }
+
+/* choice cards (one question, a few answers) */
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+.pick { display: flex; flex-direction: row; gap: 10px; align-items: flex-start; text-align: left; padding: 12px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.pick:hover { border-color: var(--faint); }
+.pick b { display: block; font-size: var(--fs-md); }
+.pick .pick-dot { flex: none; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; border: 1.5px solid var(--line-2); background: var(--surface); }
+.pick[aria-checked="true"] { border-color: var(--brand); background: var(--brand-softer); }
+.pick[aria-checked="true"] .pick-dot { border: 5px solid var(--brand); }
+.rate-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rate-line .input { width: 72px; }
+.rate-line input[type="time"] { width: 104px; }
+
+/* data-source credits: one quiet line that opens */
+.data-sources { margin-top: 4px; }
+.data-sources summary { cursor: pointer; width: fit-content; }
+.data-sources summary:hover { color: var(--ink-2); }
+.data-sources ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; max-width: 72ch; }
