@@ -1,4 +1,4 @@
-import type { DepotVisit } from "../../shared/energy/depot";
+import { cleanEnergy, type DepotVisit } from "../../shared/energy/depot";
 import type { FlexEvent } from "../../shared/energy/flex";
 // Store backed by Supabase Postgres through PostgREST (plain fetch, no SDK — runs on Workers).
 // Uses the service-role / secret key, so it bypasses RLS: the API layer enforces fleet access.
@@ -213,15 +213,16 @@ export class SupabaseStore implements Store {
 
   // API keys -----------------------------------------------------------------------
   // depot energy
+  // Settings saved by an older version (one rate, time of use, Agile) are read in today's shape.
   async getEnergy(fleetId: string) {
     const [r] = await this.rest.select<FleetEnergyRow>("fleet_energy", `select=*&fleet_id=eq.${enc(fleetId)}`);
-    return r ?? null;
+    return r ? { ...r, config: cleanEnergy(r.config) } : null;
   }
   async saveEnergy(row: FleetEnergyRow) {
     await this.rest.insert("fleet_energy", row, { onConflict: "fleet_id", returning: false });
   }
-  listEnergy() {
-    return this.rest.select<FleetEnergyRow>("fleet_energy", "select=*");
+  async listEnergy() {
+    return (await this.rest.select<FleetEnergyRow>("fleet_energy", "select=*")).map((r) => ({ ...r, config: cleanEnergy(r.config) }));
   }
   listDepotVisits(fleetId: string, fromIso: string) {
     return this.rest.select<DepotVisit>("depot_visits", `select=*&fleet_id=eq.${enc(fleetId)}&depart_at=gte.${enc(fromIso)}&order=arrive_at.asc&limit=500`);

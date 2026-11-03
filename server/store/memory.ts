@@ -1,4 +1,4 @@
-import type { DepotVisit } from "../../shared/energy/depot";
+import { cleanEnergy, type DepotVisit } from "../../shared/energy/depot";
 import type { FlexEvent } from "../../shared/energy/flex";
 // In-memory Store — used by the browser demo (persisted to localStorage) and by the tests.
 import type {
@@ -178,9 +178,10 @@ export class MemoryStore implements Store {
     this.changed();
   }
   // depot energy ---------------------------------------------------------------------
+  // Settings saved by an older version (one rate, time of use, Agile) are read in today's shape.
   async getEnergy(fleetId: string) {
     const r = (this.data.energy ?? []).find((e) => e.fleet_id === fleetId);
-    return r ? clone(r) : null;
+    return r ? { ...clone(r), config: cleanEnergy(r.config) } : null;
   }
   async saveEnergy(row: FleetEnergyRow) {
     const list = (this.data.energy ??= []);
@@ -189,7 +190,7 @@ export class MemoryStore implements Store {
     this.changed();
   }
   async listEnergy() {
-    return clone(this.data.energy ?? []);
+    return clone(this.data.energy ?? []).map((r) => ({ ...r, config: cleanEnergy(r.config) }));
   }
   async listDepotVisits(fleetId: string, fromIso: string) {
     return clone((this.data.depotVisits ?? []).filter((v) => v.fleet_id === fleetId && v.depart_at >= fromIso).sort((a, b) => a.arrive_at.localeCompare(b.arrive_at)));
