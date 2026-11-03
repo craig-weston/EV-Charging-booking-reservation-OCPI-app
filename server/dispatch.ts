@@ -23,6 +23,8 @@ export interface LocalCtx extends Ctx {
 export function createLocalCtx(opts: {
   store: Store;
   baseUrl?: string;
+  /** Origin of a real deployment the demo can ask for public market data (server/market.ts). */
+  marketUrl?: string;
   env?: Env;
   simDelayMs?: number;
   now?: () => Date;
@@ -37,6 +39,7 @@ export function createLocalCtx(opts: {
     env,
     store: opts.store,
     baseUrl,
+    marketUrl: opts.marketUrl,
     party: partyFromEnv(env),
     simulatorEnabled: env.ENABLE_CPO_SIMULATOR === "true",
     simDelayMs: opts.simDelayMs ?? 0,

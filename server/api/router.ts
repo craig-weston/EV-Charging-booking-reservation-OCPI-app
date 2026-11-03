@@ -20,6 +20,7 @@ import { sampleDrivers, sampleVehicles } from "./samples";
 import { notifyChannels, notifyDriver } from "../notify";
 import { redactPath, reportError, scrub } from "../alerts";
 import { carbonFor } from "../energy";
+import { handlePublicMarket } from "../market";
 import { depotPlan, dispatchDepot, energyRow } from "../depot";
 import { closeEndedEvents, decide, handleFlexInbound, simulateEvent } from "../flex";
 import { PROGRAMME_LABEL } from "../../shared/energy/flex";
@@ -110,6 +111,8 @@ export async function handleApi(req: Request, ctx: Ctx): Promise<Response> {
     if (seg[0] === "config" && req.method === "GET") return json(await config(ctx));
     if (seg[0] === "pass" && seg[1] && req.method === "GET") return json(await passView(ctx, seg[1]));
     if (seg[0] === "health") return json({ ok: true, mode: ctx.mode, time: iso(ctx.now()) });
+    // Public market data (prices, carbon), cached; also served before the Supabase check in server/live.ts.
+    if (seg[0] === "public") return await handlePublicMarket(req, ctx);
     // Errors from the app in people's browsers (src/app/errors.ts). Rate limited in server/live.ts.
     if (seg[0] === "client-errors" && req.method === "POST") return json(await clientError(ctx, req), 202);
     // Grid flexibility aggregators push events here, authenticated by an HMAC signature (server/flex.ts).

@@ -3,15 +3,18 @@
 // going over the site's grid connection. Schedules are sent to the chargers over OCPP.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DepotDispatch, EnergyState } from "../../shared/model";
-import { cleanEnergy, newDepot, type Depot, type DepotGoal, type DepotRate, type DepotVisit, type EnergyConfig } from "../../shared/energy/depot";
+import { cleanEnergy, newDepot, type Depot, type DepotGoal, type DepotVisit, type EnergyConfig } from "../../shared/energy/depot";
 import { carbonBand } from "../../shared/energy/carbon";
 import { PROGRAMME_LABEL, type FlexEvent, type FlexProgramme } from "../../shared/energy/flex";
 import type { DepotPlanView } from "../../server/depot";
 import { useApp } from "../app/state";
 import { ApiFailure } from "../app/backend";
-import { fmtDay, fmtMoney, fmtTime } from "../app/format";
+import { fmtDateTime, fmtDay, fmtMoney, fmtTime } from "../app/format";
+import { SOURCE_NOTE } from "../app/energy";
+import { DataSources } from "../components/DataSources";
 import { localToUtc, localDateKey, uuid } from "../../shared/util";
 import { Drawer, Empty, Field, Icon, Plate, Seg, Spinner, Switch } from "../ui/ui";
+import { SupplierPicker } from "../components/SupplierPicker";
 
 type EnergyView = { config: EnergyConfig; state: EnergyState; has_secret: Record<string, boolean> };
 type PlanResponse = DepotPlanView & { dispatch: DepotDispatch | null };
@@ -103,7 +106,7 @@ export function EnergyPage() {
           <section className="panel section">
             <div className="panel-head">
               <h2>Charging plan</h2>
-              <span className="right xs muted">{plan.price_source === "agile" ? "Octopus Agile prices" : plan.price_source === "agile-modelled" ? "Modelled dynamic prices" : "Your tariff"}, {plan.carbon_source === "neso" ? "NESO carbon forecast" : plan.carbon_source === "mixed" ? "NESO forecast, modelled beyond 48 h" : "modelled grid carbon"}</span>
+              <span className="right xs muted">{plan.price.label}{plan.price.estimated_from && !plan.price.modelled ? `, estimated from ${fmtDateTime(plan.price.estimated_from, now)} until published` : ""}. {SOURCE_NOTE[plan.carbon_source ?? "modelled"]}.</span>
             </div>
             <div className="panel-body">
               {plan.visits.length ? <LoadChart plan={plan} now={now} /> : <p className="muted small" style={{ margin: 0 }}>No trucks due at this depot in the next three days.</p>}
@@ -116,6 +119,7 @@ export function EnergyPage() {
           <V2gPanel depot={depot} plan={plan} vehicles={vehicles} isOwner={role === "owner"} onSettings={() => setSettingsOpen(true)} />
           <FlexPanel depot={depot} events={flex.filter((x) => x.depot_id === depot.id)} provider={energy.config.flex_provider} now={now} canDecide={canPlan} isOwner={role === "owner"} onSettings={() => setSettingsOpen(true)} onChanged={load} />
           <DispatchPanel depot={depot} plan={plan} canSend={canPlan} sending={sending} onSend={send} isOwner={role === "owner"} onSettings={() => setSettingsOpen(true)} />
+          <DataSources />
         </>
       )}
 
@@ -413,8 +417,13 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
   const [err, setErr] = useState<string | null>(null);
   const d = cfg.depots.find((x) => x.id === id) ?? cfg.depots[0];
   const set = (patch: Partial<Depot>) => setCfg({ ...cfg, depots: cfg.depots.map((x) => (x.id === d.id ? { ...x, ...patch } : x)) });
-  const setRate = (i: number, patch: Partial<DepotRate>) => set({ tariff: { ...d.tariff, rates: d.tariff.rates.map((r, j) => (j === i ? { ...r, ...patch } : r)) } });
   const hasSecret = energy.has_secret[d.id];
+  const [region, setRegion] = useState<string | null>(null);
+  useEffect(() => {
+    if (!d.postcode || d.postcode.length < 2) { setRegion(null); return; }
+    const t = setTimeout(() => { void api<{ region: string | null }>("GET", `/public/region?postcode=${encodeURIComponent(d.postcode)}`).then((r) => setRegion(r.region)).catch(() => setRegion(null)); }, 400);
+    return () => clearTimeout(t);
+  }, [api, d.postcode]);
 
   const save = async () => {
     setBusy(true); setErr(null);
@@ -448,32 +457,8 @@ function DepotSettings({ energy, depotId, onClose, onSaved }: { energy: EnergyVi
         </div>
 
         <div className="stack gap-12">
-          <h3>Electricity tariff</h3>
-          <Seg<"flat" | "tou" | "agile"> label="Tariff type" full value={d.tariff.kind} onChange={(k) => set({ tariff: { ...d.tariff, kind: k, rates: k === "tou" && !d.tariff.rates.length ? [{ price: 0.15, start: "00:30", end: "07:30" }] : d.tariff.rates } })}
-            options={[{ value: "flat", label: "One rate" }, { value: "tou", label: "Time of use" }, { value: "agile", label: "Half-hourly (Agile)" }]} />
-          <Field label={d.tariff.kind === "agile" ? "Fallback rate, £ per kWh ex VAT" : d.tariff.kind === "tou" ? "Standard rate, £ per kWh ex VAT" : "Rate, £ per kWh ex VAT"}>{(fid) => <input id={fid} className="input" inputMode="decimal" value={d.tariff.standard} onChange={(e) => set({ tariff: { ...d.tariff, standard: Number(e.target.value) } })} />}</Field>
-          {d.tariff.kind === "tou" && (
-            <div className="stack gap-8">
-              {d.tariff.rates.map((r, i) => (
-                <div key={i} className="rate-row">
-                  <input className="input" aria-label="Rate £ per kWh" inputMode="decimal" value={r.price} onChange={(e) => setRate(i, { price: Number(e.target.value) })} />
-                  <span className="small muted">from</span>
-                  <input className="input" aria-label="From" type="time" value={r.start} onChange={(e) => setRate(i, { start: e.target.value })} />
-                  <span className="small muted">to</span>
-                  <input className="input" aria-label="To" type="time" value={r.end} onChange={(e) => setRate(i, { end: e.target.value })} />
-                  <label className="small row gap-4"><input type="checkbox" checked={!!r.days} onChange={(e) => setRate(i, { days: e.target.checked ? ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"] : undefined })} />Weekdays</label>
-                  <button className="btn sm ghost icon-only" aria-label="Remove rate" onClick={() => set({ tariff: { ...d.tariff, rates: d.tariff.rates.filter((_, j) => j !== i) } })}><Icon name="x" size="sm" /></button>
-                </div>
-              ))}
-              {d.tariff.rates.length < 8 && <button className="btn sm" onClick={() => set({ tariff: { ...d.tariff, rates: [...d.tariff.rates, { price: 0.3, start: "16:00", end: "19:00" }] } })}><Icon name="plus" size="sm" />Add a timed rate</button>}
-            </div>
-          )}
-          {d.tariff.kind === "agile" && (
-            <div className="two" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
-              <Field label="Octopus product code">{(fid) => <input id={fid} className="input" value={d.tariff.agile_product ?? "AGILE-24-10-01"} onChange={(e) => set({ tariff: { ...d.tariff, agile_product: e.target.value } })} />}</Field>
-              <Field label="Region (A–P)">{(fid) => <input id={fid} className="input" maxLength={1} value={d.tariff.agile_region ?? "B"} onChange={(e) => set({ tariff: { ...d.tariff, agile_region: e.target.value.toUpperCase() } })} />}</Field>
-            </div>
-          )}
+          <h3>Electricity supplier</h3>
+          <SupplierPicker value={d.tariff} onChange={(tariff) => set({ tariff })} regionFromPostcode={region} />
         </div>
 
         <div className="stack gap-12">

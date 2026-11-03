@@ -78,6 +78,10 @@ export async function createDemoBackend(base?: Partial<AppConfig>, opts: { publi
   const ctx = createLocalCtx({
     store,
     baseUrl: "https://demo.depotcharge.local",
+    // On a real deployment (it answered /api/config), live Octopus prices and NESO carbon come from
+    // the app's own cached public endpoints (server/market.ts). Without an API (static preview,
+    // file://) they're modelled, and nothing is requested.
+    marketUrl: base && typeof location !== "undefined" && /^https?:$/.test(location.protocol) ? location.origin : undefined,
     user: USER,
     simDelayMs: 0,
     now: () => (fakeNow != null ? new Date(fakeNow) : new Date()),
@@ -301,7 +305,8 @@ async function seedDepot(api: Api, now: Date, fleet: Fleet, vehicles: Vehicle[],
   const v = (name: string) => vehicles.find((x) => x.name === name)!.id;
   await api("PUT", `/fleets/${fleet.id}/energy`, { config: { depots: [{
     id: depotId, name: "Northampton yard", postcode: "NN4 7AB", import_limit_kw: 400, site_load_kw: 60, goal: "balanced",
-    tariff: { kind: "tou", standard: 0.24, rates: [{ price: 0.13, start: "00:30", end: "07:30" }, { price: 0.34, start: "16:00", end: "19:00", days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"] }] },
+    // Octopus's half-hourly Shape Shifters: Agile tariff for businesses, region from the postcode.
+    tariff: { kind: "octopus", octopus_product: "AGILE-BUS-25-02-05", octopus_region: "auto", standard: 0.24, rates: [] },
     chargers: [ch(1), ch(2), ch(3), ch(4)], control: { kind: "simulated" }, auto_dispatch: false,
     flex: { enabled: true, programmes: ["DFS", "DNO"], auto_accept: true, min_price_mwh: 100 },
     v2g: { enabled: true, vehicle_ids: [v("Rigid 03")], min_soc: 35, max_discharge_kw: 100, mode: "behind_meter", export_limit_kw: 0, wear_per_kwh: 0.06, warranty_confirmed: true },

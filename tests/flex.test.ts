@@ -19,7 +19,7 @@ function inputs(needKwh: number, headroom = 300): PlanInputs {
   return {
     depot: { id: "d", goal: "cost" } as PlanInputs["depot"], now: t0, slots, headroom,
     rows: [{ v: { id: "v1", charger_id: null, arrive_at: new Date(t0).toISOString(), depart_at: new Date(t0 + 12 * H).toISOString() } as PlanInputs["rows"][number]["v"], veh: null, battery: 600, maxKw: 150, need: needKwh }],
-    chargers: [], carbonSource: null, priceSource: "tariff",
+    chargers: [], carbonSource: null, price: { source: "fixed", label: "Test", estimated_from: null, modelled: false },
   };
 }
 const ev = (start: string, end: string, direction: "down" | "up" = "down", price = 600): FlexEvent =>

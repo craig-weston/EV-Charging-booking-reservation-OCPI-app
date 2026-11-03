@@ -1,7 +1,8 @@
 // Grid carbon intensity for a site, half-hourly. Live mode asks NESO's free Carbon Intensity API
 // (https://carbonintensity.org.uk, no key needed) for the postcode district and fills any gaps,
-// such as beyond its 48-hour forecast, with the modelled series. Demo mode is fully modelled so it
-// works offline and never calls out from a visitor's browser.
+// such as beyond its 48-hour forecast, with the modelled series. The in-browser demo asks this
+// app's own public, cached endpoint (server/market.ts) when it runs on a real deployment, so
+// visitors' browsers never call NESO directly; offline it's modelled.
 import type { Ctx } from "./context";
 import { HALF_HOUR, completeSeries, floorHalfHour, modelledSeries, outcode, parseNeso, type CarbonSeries } from "../shared/energy/carbon";
 
@@ -14,7 +15,7 @@ const cache = new Map<string, { at: number; value: Promise<{ region: string | nu
 
 const isoMin = (t: number) => new Date(t).toISOString().slice(0, 16) + "Z";
 
-async function nesoChunk(ctx: Ctx, area: string, from: number, to: number) {
+async function nesoChunk(ctx: Pick<Ctx, "now" | "transport">, area: string, from: number, to: number) {
   const key = `${area}|${from}|${to}`;
   const now = ctx.now().getTime();
   const hit = cache.get(key);
@@ -38,7 +39,7 @@ async function nesoChunk(ctx: Ctx, area: string, from: number, to: number) {
   return value;
 }
 
-export async function carbonFor(ctx: Ctx, postcode: string | null, fromIso: string | null, toIso: string | null): Promise<CarbonSeries> {
+export async function carbonFor(ctx: Pick<Ctx, "mode" | "now" | "transport"> & { marketUrl?: string }, postcode: string | null, fromIso: string | null, toIso: string | null): Promise<CarbonSeries> {
   const now = ctx.now().getTime();
   let from = fromIso ? new Date(fromIso).getTime() : now - HALF_HOUR;
   let to = toIso ? new Date(toIso).getTime() : now + 48 * 60 * 60_000;
@@ -48,6 +49,16 @@ export async function carbonFor(ctx: Ctx, postcode: string | null, fromIso: stri
   to = floorHalfHour(to - 1) + HALF_HOUR;
   const area = outcode(postcode);
   const seed = area ?? "GB";
+  if (ctx.mode !== "live" && ctx.marketUrl && area) {
+    // The demo on a real deployment: the app's own cached copy of NESO's data.
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 5000);
+    try {
+      const res = await ctx.transport(new Request(`${ctx.marketUrl.replace(/\/+$/, "")}/api/public/carbon?postcode=${encodeURIComponent(area)}&from=${new Date(from).toISOString()}&to=${new Date(to).toISOString()}`, { signal: ctl.signal }));
+      const j = res.ok ? ((await res.json()) as { data?: CarbonSeries }) : null;
+      if (j?.data?.points?.length) return j.data;
+    } catch { /* fall back to modelled */ } finally { clearTimeout(timer); }
+  }
   if (ctx.mode !== "live" || !area) return { ...modelledSeries(new Date(from), new Date(to), seed), region: null };
 
   const parts: Promise<Awaited<ReturnType<typeof nesoChunk>>>[] = [];
