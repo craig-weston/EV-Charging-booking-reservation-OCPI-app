@@ -5,12 +5,11 @@ import { useApp } from "../app/state";
 import { fmtDateTime, fmtDay, fmtKw, fmtKwh, fmtLongDate, fmtMoney, fmtRange, fmtRelative, fmtTime, greeting } from "../app/format";
 import { chargerStatus, findLocation, operatorFor, shortSiteName } from "../app/network";
 import { href, navigate } from "../app/router";
-import { marginAt, priceLine } from "../../shared/billing";
-import { change, computeKpis, fleetOverview, keptRate, pricePerKwh, recentCharges, type TruckOverview } from "../app/kpis";
+import { change, computeKpis, fleetOverview, keptRate, pricePerKwh, type TruckOverview } from "../app/kpis";
 import { LaneBoard } from "../components/LaneBoard";
 import { Sparkline } from "../components/Sparkline";
 import { BatteryMeter, ChargeKey } from "../components/Battery";
-import { Empty, Icon, Modal, Plate, StatusBadge } from "../ui/ui";
+import { Empty, Icon, Modal, Plate } from "../ui/ui";
 import { ChargeStory } from "../components/art/ChargeStory";
 import { TruckArt } from "../components/art/Mini";
 import { truckKindOf } from "../components/art/scene";
@@ -43,7 +42,6 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
   const margins = fleet?.margin_history;
   const kpis = useMemo(() => computeKpis(bookings, now, 7, undefined, margins), [bookings, now, margins]);
   const trucks = useMemo(() => fleetOverview(vehicles, bookings, now, (b) => chargerStatus(network, b)), [vehicles, bookings, now, network]);
-  const recent = useMemo(() => recentCharges(bookings, 5), [bookings]);
 
   const attention = useMemo(() => {
     const since = now.getTime() - 36 * 3_600_000;
@@ -54,10 +52,6 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
       .slice(0, 4);
   }, [bookings, dismissed, now]);
 
-  const upcoming = bookings
-    .filter((b) => (b.reservation_status === "RESERVED" || b.reservation_status === "PENDING") && new Date(b.end_at) > now)
-    .slice(0, 6);
-  const todayCount = bookings.filter((b) => fmtDay(b.start_at, now) === "Today" && !["CANCELED", "REJECTED", "FAILED"].includes(b.reservation_status)).length;
 
   const dismiss = (id: string) => {
     const next = [...dismissed, id].slice(-200);
@@ -81,12 +75,24 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
   const faults = trucks.filter((t) => t.state === "fault");
   const nextArrival = trucks.map((t) => t.state === "due" ? t.current : t.next).filter(Boolean).sort((a, b) => a!.start_at.localeCompare(b!.start_at))[0] ?? null;
 
+  // One sentence for "is everything all right?": faults first, then what's charging, then what's next.
+  const StatusLine = () => {
+    const next = nextArrival ? `${vehicle(nextArrival.vehicle_id)?.name ?? nextArrival.plate} at ${siteName(nextArrival).replace(/\s*\(.*\)$/, "")}, ${fmtDateTime(nextArrival.start_at, now)}` : null;
+    return (
+      <>
+        {faults.length > 0 && <span className="dash-fault"><Icon name="alert" size="sm" />{faults.length === 1 ? `${faults[0].vehicle.name}: ${faults[0].fault!.title.toLowerCase()}` : `${faults.length} trucks stopped by a fault`}. </span>}
+        {charging.length > 0 ? `${charging.length} ${charging.length === 1 ? "truck" : "trucks"} charging, ${fmtKw(kpis.liveKw)} now. ` : faults.length ? "" : "Nothing charging right now. "}
+        {next ? `Next: ${next}.` : "Nothing else booked."}
+      </>
+    );
+  };
+
   return (
     <div className="page dashboard">
       <div className="page-head">
         <div>
           <h1>Dashboard</h1>
-          <div className="sub">{greeting(now)}. {fmtLongDate(now)}{loaded.bookings ? `. ${todayCount} ${todayCount === 1 ? "booking" : "bookings"} today` : ""}.</div>
+          <div className="sub">{greeting(now)}. {loaded.bookings && vehicles.length > 0 ? <StatusLine /> : `${fmtLongDate(now)}.`}</div>
         </div>
         <div className="actions">
           <button className="btn ghost" onClick={() => setHow(true)}><Icon name="circleHelp" size="sm" />How charging works</button>
@@ -131,48 +137,7 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
         </Modal>
       )}
 
-      {loaded.bookings && vehicles.length > 0 && (
-        <section className="kpis" aria-label={`Key figures, last ${kpis.days} days`}>
-          <KpiTile
-            label="Energy delivered"
-            value={hasHistory ? NUM.format(kpis.current.kwh) : "0"}
-            unit="kWh"
-            delta={change(kpis.current.kwh, kpis.previous.kwh)}
-            tone="neutral"
-            sub={`${kpis.current.sessions} ${kpis.current.sessions === 1 ? "charge" : "charges"}, last ${kpis.days} days`}
-            spark={{ title: "Energy per day", format: (v) => fmtKwh(v), points: kpis.daily.map((d) => ({ label: fmtDay(d.start, now), value: d.kwh })), split: kpis.days }}
-          />
-          <KpiTile
-            label="Charging spend"
-            value={fmtMoney(Math.round(kpis.current.cost), kpis.currency)}
-            unit="ex VAT"
-            delta={change(kpis.current.cost, kpis.previous.cost)}
-            tone="neutral"
-            sub={pricePerKwh(kpis.current) != null ? `${fmtMoney(Math.round(pricePerKwh(kpis.current)! * 100) / 100, kpis.currency)} per kWh on average` : "No charge records yet"}
-            spark={{ title: "Spend per day", format: (v) => fmtMoney(Math.round(v), kpis.currency), points: kpis.daily.map((d) => ({ label: fmtDay(d.start, now), value: d.cost })), split: kpis.days }}
-          />
-          <KpiTile
-            label="Bookings kept"
-            value={keptRate(kpis.current) != null ? pct(keptRate(kpis.current)!) : "—"}
-            delta={keptRate(kpis.current) != null && keptRate(kpis.previous) != null ? keptRate(kpis.current)! - keptRate(kpis.previous)! : null}
-            deltaAsPoints
-            tone="up-good"
-            sub={keptSummary(kpis.current)}
-          />
-          <KpiTile
-            label="On charge now"
-            value={String(charging.length)}
-            unit={charging.length === 1 ? "truck" : "trucks"}
-            sub={charging.length
-              ? `${fmtKw(kpis.liveKw)} drawn now${charging.length === 1 && charging[0].current ? ` at ${siteName(charging[0].current).replace(/\s*\(.*\)$/, "")}` : ""}`
-              : nextArrival ? `Next: ${vehicle(nextArrival.vehicle_id)?.name ?? nextArrival.plate}, ${fmtDateTime(nextArrival.start_at, now)}` : "Nothing booked"}
-            sub2={charging.length && nextArrival ? `Next arrival: ${vehicle(nextArrival.vehicle_id)?.name ?? nextArrival.plate}, ${fmtDateTime(nextArrival.start_at, now)}` : undefined}
-            alert={faults.length ? `${faults.length === 1 ? `${faults[0].vehicle.name}: ${faults[0].fault!.title.toLowerCase()}` : `${faults.length} trucks stopped by a fault`}` : undefined}
-            live={charging.length > 0}
-          />
-        </section>
-      )}
-      {hasHistory && <a className="savings-link" href={href("/savings")}><Icon name="leaf" size="sm" />See the fuel and CO₂e your trucks avoided<Icon name="chevronRight" size="sm" /></a>}
+
 
       {loaded.bookings && bookings.length === 0 && vehicles.length > 0 && (
         <section className="panel first-run" aria-label="How charging works">
@@ -204,7 +169,7 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
           </section>
 
           <section className="section" aria-labelledby="plan-h">
-            <div className="section-head"><h2 id="plan-h">Today's plan</h2><span className="right xs muted">Pick an empty stretch of a lane to book that truck</span></div>
+            <div className="section-head"><h2 id="plan-h">Today's plan</h2><span className="right xs muted">Pick an empty stretch to book that truck · <a href={href("/bookings")}>All bookings</a></span></div>
             <LaneBoard
               vehicles={vehicles}
               bookings={bookings}
@@ -217,51 +182,40 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
         </>
       )}
 
-      <div className="today-grid">
-        <section className="panel">
-          <div className="panel-head"><h2>Coming up</h2><a className="right small" href={href("/bookings")}>All bookings</a></div>
-          {upcoming.length === 0 ? (
-            <Empty art={<TruckArt label="" />} title="Nothing booked yet">Book a slot and it will appear here, with the pass to send your driver.</Empty>
-          ) : (
-            <ul className="list">
-              {upcoming.map((b) => (
-                <li key={b.id}>
-                  <button className="booking-row compact" onClick={() => openBooking(b.id)}>
-                    <span className="time">{fmtRange(b.start_at, b.end_at)}<span className="xs muted" style={{ display: "block", fontWeight: 400 }}>{fmtDay(b.start_at, now)}</span></span>
-                    <span className="plate-cell"><Plate plate={vehicle(b.vehicle_id)?.plate ?? b.plate} size="sm" /></span>
-                    <span className="site-cell ellipsis">{siteName(b)}</span>
-                    <span className="status-cell"><StatusBadge booking={b} /></span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+      {loaded.bookings && vehicles.length > 0 && (
+        <section className="section" aria-labelledby="week-h">
+          <div className="section-head"><h2 id="week-h">Last {kpis.days} days</h2>{hasHistory && <a className="right small" href={href("/savings")}><Icon name="leaf" size="sm" /> Fuel and CO₂e avoided</a>}</div>
+          <div className="kpis three">
+          <KpiTile
+            label="Energy delivered"
+            value={hasHistory ? NUM.format(kpis.current.kwh) : "0"}
+            unit="kWh"
+            delta={change(kpis.current.kwh, kpis.previous.kwh)}
+            tone="neutral"
+            sub={`${kpis.current.sessions} ${kpis.current.sessions === 1 ? "charge" : "charges"}, last ${kpis.days} days`}
+            spark={{ title: "Energy per day", format: (v) => fmtKwh(v), points: kpis.daily.map((d) => ({ label: fmtDay(d.start, now), value: d.kwh })), split: kpis.days }}
+          />
+          <KpiTile
+            label="Charging spend"
+            value={fmtMoney(Math.round(kpis.current.cost), kpis.currency)}
+            unit="ex VAT"
+            delta={change(kpis.current.cost, kpis.previous.cost)}
+            tone="neutral"
+            sub={pricePerKwh(kpis.current) != null ? `${fmtMoney(Math.round(pricePerKwh(kpis.current)! * 100) / 100, kpis.currency)} per kWh on average` : "No charge records yet"}
+            spark={{ title: "Spend per day", format: (v) => fmtMoney(Math.round(v), kpis.currency), points: kpis.daily.map((d) => ({ label: fmtDay(d.start, now), value: d.cost })), split: kpis.days }}
+          />
+          <KpiTile
+            label="Bookings kept"
+            value={keptRate(kpis.current) != null ? pct(keptRate(kpis.current)!) : "—"}
+            delta={keptRate(kpis.current) != null && keptRate(kpis.previous) != null ? keptRate(kpis.current)! - keptRate(kpis.previous)! : null}
+            deltaAsPoints
+            tone="up-good"
+            sub={keptSummary(kpis.current)}
+          />
+          </div>
         </section>
-        <section className="panel">
-          <div className="panel-head"><h2>Recent charges</h2><span className="right xs muted">From operators' charge records</span></div>
-          {recent.length === 0 ? (
-            <Empty icon="zap" title="No charges yet">Each finished charge shows its energy, cost and battery level here.</Empty>
-          ) : (
-            <ul className="list">
-              {recent.map((b) => (
-                <li key={b.id}>
-                  <button className="charge-row" onClick={() => openBooking(b.id)}>
-                    <span className="plate-cell"><Plate plate={vehicle(b.vehicle_id)?.plate ?? b.plate} size="sm" /></span>
-                    <span className="grow" style={{ minWidth: 0 }}>
-                      <span className="ellipsis" style={{ display: "block" }}>{siteName(b)}</span>
-                      <span className="xs muted">{fmtDateTime(b.cdr?.end_date_time ?? b.session?.end_date_time ?? b.end_at, now)}{b.session?.soc != null && b.session.soc_start != null ? `. Battery ${Math.round(b.session.soc_start)}% to ${Math.round(b.session.soc)}%` : ""}</span>
-                    </span>
-                    <span className="charge-figs">
-                      <span className="num">{fmtKwh(b.cdr?.total_energy ?? b.session?.kwh ?? 0)}</span>
-                      <span className="xs muted num">{b.cdr ? fmtMoney(priceLine(b.cdr, marginAt(margins, b.cdr.end_date_time)).net, b.cdr.currency) : "Awaiting record"}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
+      )}
+
       {how && (
         <Modal title="How charging works" onClose={() => setHow(false)} wide>
           <ChargeStory audience="planner" truck={truckKindOf(vehicles[0]?.vehicle_type)} start={vehicles[0]?.start_method ?? "PLUG_AND_CHARGE"} plate={vehicles[0]?.plate ?? "PN74 EVH"} />
