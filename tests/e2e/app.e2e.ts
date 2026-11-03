@@ -180,6 +180,13 @@ test("settings and team pages pass accessibility checks; keyboard reaches the ma
   await page.goto(`${base}/#/network`);
   await page.getByRole("heading", { name: "Network", level: 1 }).waitFor({ timeout: 15_000 });
   await axe(page, "network");
+  await page.goto(`${base}/#/compliance`);
+  await page.getByRole("heading", { name: "Security & compliance", level: 1 }).waitFor({ timeout: 15_000 });
+  await page.getByText(/Cyber Essentials readiness/).waitFor({ timeout: 15_000 });
+  await axe(page, "compliance");
+  await page.evaluate(() => document.querySelectorAll("details.more-row").forEach((d) => ((d as HTMLDetailsElement).open = true)));
+  await page.waitForTimeout(500);
+  await axe(page, "compliance, every row open");
   await page.goto(`${base}/#/operators`);
   await page.getByRole("heading", { name: "Fill your HGV bays with booked trucks" }).waitFor({ timeout: 15_000 });
   await axe(page, "for operators");
