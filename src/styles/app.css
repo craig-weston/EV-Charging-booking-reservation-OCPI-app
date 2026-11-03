@@ -989,7 +989,11 @@ details.disclose[open] > summary .icon { transform: rotate(90deg); }
 
 /* ---------------------------------------------------------------- dashboard */
 .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-top: 4px; }
-@media (max-width: 1180px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpis.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1180px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kpis.three { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .kpis.three { grid-template-columns: minmax(0, 1fr); } }
+.dash-fault { color: var(--bad); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+.dash-fault .icon { width: 15px; height: 15px; }
 @media (max-width: 420px) { .kpis { gap: 10px; } }
 .kpi {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 16px 12px;
