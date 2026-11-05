@@ -73,6 +73,7 @@ export interface DemoClock {
 export async function createDemoBackend(base?: Partial<AppConfig>, opts: { publicDemo?: boolean } = {}): Promise<Backend> {
   const saved = loadData();
   const store = new MemoryStore(saved ?? undefined);
+  const publicApi = base && typeof location !== "undefined" && /^https?:$/.test(location.protocol) ? location.origin : undefined;
   store.maxLogs = 160;
   let fakeNow: number | null = null;
   const ctx = createLocalCtx({
@@ -81,7 +82,7 @@ export async function createDemoBackend(base?: Partial<AppConfig>, opts: { publi
     // On a real deployment (it answered /api/config), live Octopus prices and NESO carbon come from
     // the app's own cached public endpoints (server/market.ts). Without an API (static preview,
     // file://) they're modelled, and nothing is requested.
-    marketUrl: base && typeof location !== "undefined" && /^https?:$/.test(location.protocol) ? location.origin : undefined,
+    marketUrl: publicApi,
     user: USER,
     simDelayMs: 0,
     now: () => (fakeNow != null ? new Date(fakeNow) : new Date()),
@@ -129,6 +130,7 @@ export async function createDemoBackend(base?: Partial<AppConfig>, opts: { publi
     auth: null,
     api,
     publicDemo: opts.publicDemo ? { exit: () => leaveDemo("#/"), signUp: () => leaveDemo("#/signup") } : undefined,
+    publicApi,
     onChange: (cb) => store.onChange(cb),
     async reset() {
       try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(SEEDED_KEY); } catch { /* ignore */ }

@@ -16,6 +16,8 @@ import { DEFAULT_TZ, fmtDateTime, fmtDay, fmtDuration, fmtKw, fmtMiles, fmtMoney
 import { rankSites, type Site, type SiteOption } from "../app/network";
 import { href, navigate, useRoute } from "../app/router";
 import { NetworkMap, type MapPin } from "../components/NetworkMap";
+import { useOpenSites } from "../app/opendata";
+import { openSiteFit, type OpenSite, type OpenSource } from "../../shared/opendata/sites";
 import { SlotPicker, type EnergyCell } from "../components/SlotPicker";
 import { ApiFailure } from "../app/backend";
 import { Empty, Icon, Plate, Seg, Spinner, StatusBadge, Switch } from "../ui/ui";
@@ -38,7 +40,7 @@ function atLocal(day: Date, hhmm: string) {
 }
 
 export function BookPage() {
-  const { vehicles, drivers, network, now, api, toast, upsertBooking, bookings, loaded, fleetId, refreshNetwork } = useApp();
+  const { vehicles, drivers, network, now, api, toast, upsertBooking, bookings, loaded, fleetId, refreshNetwork, backend } = useApp();
   const route = useRoute();
   const p = route.params;
   const active = vehicles.filter((v) => v.active);
@@ -63,6 +65,8 @@ export function BookPage() {
   const [showUnfit, setShowUnfit] = useState(false);
   const [sort, setSort] = useState<"time" | "price" | "near">("time");
   const [hoverKey, setHoverKey] = useState<string | null>(null);
+  const [showOpen, setShowOpen] = useState(true);
+  const [openId, setOpenId] = useState<string | null>(null);
   const sideRef = useRef<HTMLDivElement>(null);
 
   // Start with a truck that doesn't already have charge lined up.
@@ -84,6 +88,12 @@ export function BookPage() {
   }, [day, arrive, now]);
 
   const sites = useMemo(() => (network && vehicle ? rankSites(network, { vehicle, desired, durationMin: duration, near, now }) : []), [network, vehicle, desired, duration, near, now]);
+  // Public sites from open data: shown on the map, not bookable here. Ones this truck can't use,
+  // and copies of sites already bookable here, are left out.
+  const openFile = useOpenSites(backend.publicApi);
+  const openSites = useMemo(() => (openFile?.sites ?? []).filter((o) => openSiteFit(o, vehicle).ok
+    && !sites.some((b) => Math.abs(b.lat - o.lat) < 0.0015 && Math.abs(b.lon - o.lon) < 0.0025)), [openFile, vehicle, sites]);
+  const openSite = openId ? openSites.find((o) => o.id === openId) ?? null : null;
   const shown = sites.filter((s) => s.fits && (!zeroTouchOnly || s.zeroTouch));
   const needsAction = zeroTouchOnly ? sites.filter((s) => s.fits && !s.zeroTouch) : [];
   const unfit = sites.filter((s) => !s.fits);
@@ -210,12 +220,21 @@ export function BookPage() {
       rank: byPrice.indexOf(s),
     };
   });
-  const legend = byPrice.length > 0 ? (
+  if (showOpen) {
+    for (const o of openSites) pins.push({ key: `open:${o.id}`, lat: o.lat, lon: o.lon, label: o.name, state: o.id === openId ? "opensel" : "open", tone: o.hgv });
+  }
+  const openKey = openSites.length > 0 ? (
+    <button type="button" className="open-key" aria-pressed={showOpen} onClick={() => { setShowOpen(!showOpen); setOpenId(null); }}>
+      <i aria-hidden="true" />{N0.format(openSites.length)} more public {openSites.length === 1 ? "site" : "sites"}, not bookable here yet <u>{showOpen ? "Hide" : "Show"}</u>
+    </button>
+  ) : null;
+  const legend = byPrice.length > 0 || openKey ? (
     <>
-      <b>Energy price{vatNote ? `, ${vatNote}` : ""} · {fmtDay(desired, now) === "Today" ? "" : `${fmtDay(desired, now)} `}{fmtTime(desired, TZ)}</b>
+      {byPrice.length > 0 && <b>Energy price{vatNote ? `, ${vatNote}` : ""} · {fmtDay(desired, now) === "Today" ? "" : `${fmtDay(desired, now)} `}{fmtTime(desired, TZ)}</b>}
       {byPrice.length > 1
         ? <span><strong>{pence(prices.get(cheapest!.key)!.perKwh!)}</strong> at {cheapest!.shortName.replace(/\s*\(.*\)$/, "")}, up to {pence(prices.get(priciest!.key)!.perKwh!)} per kWh</span>
-        : <span><strong>{pence(prices.get(cheapest!.key)!.perKwh!)}</strong> per kWh at {cheapest!.shortName}</span>}
+        : byPrice.length === 1 ? <span><strong>{pence(prices.get(cheapest!.key)!.perKwh!)}</strong> per kWh at {cheapest!.shortName}</span> : null}
+      {openKey}
     </>
   ) : null;
 
@@ -297,7 +316,9 @@ export function BookPage() {
             </Switch>
           </section>}
 
-          {site && bl && vehicle ? (
+          {openSite && !site ? (
+            <OpenSitePanel site={openSite} source={openFile?.sources.find((x) => x.id === openSite.source) ?? null} vehicle={vehicle} onBack={() => setOpenId(null)} />
+          ) : site && bl && vehicle ? (
             <SitePanel
               site={site} option={option!} vehicle={vehicle} onBack={() => { setSelectedKey(null); setResultId(null); }}
               onOption={(id) => { setOptionId(id); setResultId(null); }}
@@ -363,8 +384,14 @@ export function BookPage() {
           )}
         </div>
         <div className="planner-map">
-          <NetworkMap pins={pins} near={near} onSelect={(k) => { const s = sites.find((x) => x.key === k); if (s) selectSite(s); }} focusKey={selectedKey}
-            hoverKey={hoverKey} onHover={setHoverKey} legend={!site ? legend : null} />
+          <NetworkMap pins={pins} near={near} fitKeys={sites.map((x) => x.key)}
+            onSelect={(k) => {
+              if (k.startsWith("open:")) { setOpenId(k.slice(5)); setSelectedKey(null); setResultId(null); return; }
+              const s = sites.find((x) => x.key === k); if (s) { setOpenId(null); selectSite(s); }
+            }}
+            focusKey={openId ? `open:${openId}` : selectedKey}
+            hoverKey={hoverKey} onHover={setHoverKey} legend={!site && !openSite ? legend : null}
+            credit={showOpen && openSites.length > 0 ? <>Sites: operators' open data{openFile?.sources.some((x) => x.id === "ocm") ? ", Open Charge Map (CC BY 4.0)" : ""}</> : null} />
         </div>
       </div>
     </div>
@@ -476,6 +503,48 @@ function ResultItem({ site, desired, now, price, cheapest, duration, hot, showSi
         {showSim && site.isSimulator && <span className="tag">Simulated</span>}
       </div>
     </div></li>
+  );
+}
+
+/** A public site from open data: what it has, whether this truck should go there, and how to get
+ *  there. It can't be booked here yet; drivers pay on site. */
+function OpenSitePanel({ site, source, vehicle, onBack }: { site: OpenSite; source: OpenSource | null; vehicle: Vehicle | null; onBack(): void }) {
+  const fit = openSiteFit(site, vehicle);
+  const where = [site.address, [site.city, site.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const updated = site.updated && Number.isFinite(Date.parse(site.updated)) ? new Date(site.updated).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
+  return (
+    <section className="panel" aria-label={site.name}>
+      <div className="panel-head">
+        <button className="btn ghost sm" onClick={onBack}><Icon name="chevronLeft" size="sm" />All sites</button>
+        <span className="right tag">Public site</span>
+      </div>
+      <div className="site-head">
+        <span className="op-mark">{initials(site.operator)}</span>
+        <div className="grow">
+          <h2 style={{ fontSize: "var(--fs-xl)" }}>{site.name}</h2>
+          <div className="small muted">{site.operator}{where ? `, ${where}` : ""}</div>
+        </div>
+      </div>
+      <div style={{ padding: "0 16px 16px" }} className="stack gap-16">
+        <div className="row gap-8 wrap">
+          <span className={`tag ${site.hgv === "trucks" ? "ok" : "warn"}`}>{site.hgv === "trucks" ? `Built for trucks: ${site.hgv_why}` : "Bay size not published"}</span>
+          <span className="tag">Up to {N0.format(site.max_kw)} kW</span>
+          {site.connectors.map((c) => <span key={c} className="tag">{c}</span>)}
+          {site.evses > 0 && <span className="tag">{site.evses} charge {site.evses === 1 ? "point" : "points"}</span>}
+          {site.drive_through && <span className="tag">Drive-through</span>}
+          {site.max_length_cm && <span className="tag">Bays up to {N0.format(site.max_length_cm / 100)} m</span>}
+        </div>
+        <div className="callout">
+          <b>Not bookable here yet.</b> Drivers pay on site by card or with the operator's app.{fit.note && vehicle ? ` ${fit.note.replace("an HGV", `${vehicle.plate}`)}.` : ""}
+        </div>
+        <div className="row gap-8 wrap">
+          <a className="btn" href={`https://www.google.com/maps/dir/?api=1&destination=${site.lat},${site.lon}`} target="_blank" rel="noopener noreferrer"><Icon name="route" size="sm" />Directions</a>
+        </div>
+        <p className="xs muted" style={{ margin: 0 }}>
+          Source: {source ? source.attribution : site.source}{site.provider ? `, record from ${site.provider}` : ""}{updated ? `. Updated ${updated}` : ""}.
+        </p>
+      </div>
+    </section>
   );
 }
 

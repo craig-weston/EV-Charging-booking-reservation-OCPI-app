@@ -18,6 +18,10 @@ export function DataSources() {
           <b>Wholesale prices:</b> Market Index Data from Elexon's Insights Solution. Contains BMRS data © Elexon Limited copyright and database right {year}{" "}
           ({link("https://www.elexon.co.uk/data/balancing-mechanism-reporting-agent/copyright-licence-bmrs-data/", "licence")}).
         </li>
+        <li>
+          <b>Public charging sites</b> on the booking map: UK operators' open data, published under the Public Charge Point Regulations 2023, and{" "}
+          {link("https://openchargemap.org", "Open Charge Map")} contributors ({link("https://creativecommons.org/licenses/by/4.0/", "CC BY 4.0")}; records imported from other providers keep their terms). Refreshed daily; each site shows its source.
+        </li>
         <li>Used under each provider's public terms; no partnership or endorsement is implied.</li>
       </ul>
     </details>

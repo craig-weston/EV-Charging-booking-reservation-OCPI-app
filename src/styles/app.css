@@ -61,6 +61,7 @@
   --map-land-2: #f1f2f0;
   --map-coast: #c9ced4;
   --map-road: #8d99a8;
+  --map-truck: #0f8a7e;
   --map-trunk: #d9dde2;
 
   --shadow-overlay: 0 18px 48px rgba(20, 26, 36, 0.18), 0 2px 6px rgba(20, 26, 36, 0.08);
@@ -115,6 +116,7 @@
     --map-land-2: #1b2026;
     --map-coast: #343b45;
     --map-road: #5f6b7b;
+    --map-truck: #3cc7b4;
     --map-trunk: #2d333c;
     --brand-strong: color-mix(in oklab, var(--brand) 80%, #fff);
     --brand-soft: color-mix(in oklab, var(--brand) 20%, var(--surface));
@@ -154,6 +156,7 @@
   --map-land-2: #1b2026;
   --map-coast: #343b45;
   --map-road: #5f6b7b;
+  --map-truck: #3cc7b4;
   --map-trunk: #2d333c;
   --brand-strong: color-mix(in oklab, var(--brand) 80%, #fff);
   --brand-soft: color-mix(in oklab, var(--brand) 20%, var(--surface));
@@ -522,6 +525,7 @@ p { margin: 0; }
 .price .l3, .energy-key.price .l3 { background: color-mix(in oklab, var(--brand) 20%, var(--surface)); }
 .price .l4, .energy-key.price .l4 { background: color-mix(in oklab, var(--brand) 7%, var(--surface-3)); }
 .energy-note { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; }
+.callout { padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--line); font-size: var(--fs-sm); line-height: 1.45; }
 .energy-note > .grow { flex: 1 1 0; min-width: 200px; }
 .energy-key { display: inline-flex; gap: 2px; flex: none; }
 .energy-key i { display: block; width: 12px; height: 10px; border-radius: 2px; }
@@ -631,7 +635,18 @@ p { margin: 0; }
 .map .pin .name { font-weight: 650; fill: var(--ink); paint-order: stroke; stroke: var(--map-land); stroke-width: 3.5px; stroke-linejoin: round; }
 .map .pin.dot circle.ring { fill: var(--surface); stroke: var(--ink); }
 .map .pin.dot.hot circle.ring { stroke: var(--brand); }
-.map .pin:focus-visible { outline: none; }
+/* public sites from open data: hollow diamonds, quieter than bookable pins; teal when built for trucks */
+.map .pin.open .ring { fill: var(--surface); stroke: color-mix(in oklab, var(--ink) 45%, var(--surface)); vector-effect: non-scaling-stroke; }
+.map .pin.open.trucks .ring { stroke: var(--map-truck); }
+.map .pin.open.hot .ring { stroke: var(--brand); }
+.map .pin.open.sel .ring { fill: var(--brand); stroke: var(--surface); }
+.map .pin.open:focus-visible .ring { stroke: var(--focus); stroke-width: 3; }
+.map-legend .open-key { display: inline-flex; align-items: center; gap: 8px; border: 0; padding: 2px 0; background: none; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.map-legend .open-key i { width: 9px; height: 9px; border: 1.75px solid color-mix(in oklab, var(--ink) 45%, var(--surface)); background: var(--surface); transform: rotate(45deg); border-radius: 1.5px; flex: none; }
+.map-legend .open-key[aria-pressed="false"] { color: var(--muted); }
+.map-legend .open-key[aria-pressed="false"] i { opacity: 0.4; }
+.map-legend .open-key u { text-decoration: none; color: var(--brand-text); font-weight: 600; margin-left: 2px; }
+.map .pin:focus, .map .pin:focus-visible { outline: none; }
 .map .pin:focus-visible .ptag, .map .pin:focus-visible circle.ring { stroke: var(--focus); stroke-width: 3; }
 .map-legend { position: absolute; left: 10px; bottom: 10px; max-width: min(320px, calc(100% - 70px)); display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: var(--r-md); background: color-mix(in oklab, var(--surface) 92%, transparent); box-shadow: var(--shadow-pop); font-size: var(--fs-sm); line-height: 1.35; backdrop-filter: blur(4px); }
 .map-legend b { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 650; }

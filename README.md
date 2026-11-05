@@ -125,6 +125,9 @@ final charge record with energy and cost, all from the operator's OCPI data.
 - **Dashboard:** energy, spend and price per kWh, bookings kept, trucks on charge, and every
   truck's battery level, live or as it left its last charge.
 - **Planning:** a lane board of the day for every truck; drag a gap to book it.
+- **Booking map:** prices compared site by site, only bays that fit the truck, and real public sites
+  from UK operators' open data and Open Charge Map shown as "not bookable here yet"
+  ([open data](docs/open-data.md)).
 - **Bookings:** confirmations, changes, cancellations with reasons, no-shows, and the operator's
   terms in plain English.
 - **Driver messages:** the pass link by text or WhatsApp, sent automatically when a booking is

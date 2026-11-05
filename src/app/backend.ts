@@ -20,6 +20,8 @@ export interface Backend {
   reset?(): Promise<void>;
   /** The public "Try the demo" on a live deployment: sample data in this browser, no account. */
   publicDemo?: { exit(): void; signUp(): void };
+  /** Origin of this deployment's public data endpoints (/api/public/…), when there is a server. */
+  publicApi?: string;
 }
 
 async function parse<T>(res: Response): Promise<T> {
@@ -75,5 +77,5 @@ export function createLiveBackend(config: AppConfig): Backend {
     }
     return parse<T>(res);
   };
-  return { mode: "live", config, auth, api: (m, p, b) => call(m, p, b, true) };
+  return { mode: "live", config, auth, api: (m, p, b) => call(m, p, b, true), publicApi: typeof location !== "undefined" ? location.origin : undefined };
 }
