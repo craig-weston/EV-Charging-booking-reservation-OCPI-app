@@ -82,6 +82,8 @@ export interface Store {
   listEnergy(): Promise<FleetEnergyRow[]>;
   /** Visits that leave at or after `fromIso`, earliest arrival first. */
   listDepotVisits(fleetId: string, fromIso: string): Promise<DepotVisit[]>;
+  /** One visit by id, whichever fleet it belongs to (callers check the fleet). */
+  getDepotVisit(id: string): Promise<DepotVisit | null>;
   upsertDepotVisit(v: DepotVisit): Promise<DepotVisit>;
   deleteDepotVisit(id: string): Promise<void>;
   /** Grid flexibility events that end at or after `fromIso`, earliest first. */

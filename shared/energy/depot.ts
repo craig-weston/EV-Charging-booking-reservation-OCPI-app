@@ -1,5 +1,6 @@
 // Depot energy settings: a fleet's own sites, their chargers, grid connection limit, electricity
 // tariff and how the chargers are controlled. Stored per fleet (fleet_energy.config).
+import { cleanTelematics, type TelematicsConfig } from "./telematics";
 import type { Tariff } from "../ocpi/types";
 import { uuid } from "../util";
 import { OCTOPUS_REGIONS, validProduct, type SupplySource } from "./suppliers";
@@ -71,6 +72,8 @@ export interface EnergyConfig {
   depots: Depot[];
   /** Who sends grid flexibility events (an aggregator, or the simulator). */
   flex_provider: FlexProvider;
+  /** Where battery levels come from: the trucks' rFMS API (or none; the push API always works). */
+  telematics?: TelematicsConfig;
 }
 
 export type VisitStatus = "planned" | "plugged_in" | "done" | "cancelled";
@@ -112,11 +115,15 @@ const num = (v: unknown, d: number, lo: number, hi: number) => {
 };
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
+/** Stored secrets are keyed by depot id, beside these two. */
+const RESERVED_IDS = new Set(["flex", "telematics"]);
+
 /** Validate and normalise what the settings screen sends. Secrets are never part of the config. */
 export function cleanEnergy(x: unknown): EnergyConfig {
   const depots = Array.isArray((x as EnergyConfig)?.depots) ? (x as EnergyConfig).depots : [];
   return {
     flex_provider: cleanProvider((x as EnergyConfig)?.flex_provider),
+    telematics: cleanTelematics((x as EnergyConfig)?.telematics),
     depots: depots.slice(0, 20).map((d): Depot => {
       const t = (d?.tariff ?? {}) as Partial<DepotTariff>;
       // Earlier versions: flat / tou → fixed, agile → octopus.
@@ -129,7 +136,7 @@ export function cleanEnergy(x: unknown): EnergyConfig {
       if (c.kind === "citrineos" && /^https:\/\//.test(str(c.base_url, 300))) control = { kind: "citrineos", base_url: str(c.base_url, 300).replace(/\/+$/, ""), tenant_id: str(c.tenant_id, 40) || "1", ...(c.token_hint ? { token_hint: str(c.token_hint, 12) } : {}) };
       if (c.kind === "webhook" && /^https:\/\//.test(str(c.url, 300))) control = { kind: "webhook", url: str(c.url, 300), ...(c.secret_hint ? { secret_hint: str(c.secret_hint, 12) } : {}) };
       return {
-        id: str(d?.id, 60) || uuid(),
+        id: ((id) => (id && !RESERVED_IDS.has(id) ? id : uuid()))(str(d?.id, 60)),
         name: str(d?.name, 80) || "Depot",
         postcode: str(d?.postcode, 10).toUpperCase(),
         import_limit_kw: num(d?.import_limit_kw, 500, 1, 100_000),

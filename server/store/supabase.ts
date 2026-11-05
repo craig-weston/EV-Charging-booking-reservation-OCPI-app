@@ -227,6 +227,10 @@ export class SupabaseStore implements Store {
   listDepotVisits(fleetId: string, fromIso: string) {
     return this.rest.select<DepotVisit>("depot_visits", `select=*&fleet_id=eq.${enc(fleetId)}&depart_at=gte.${enc(fromIso)}&order=arrive_at.asc&limit=500`);
   }
+  async getDepotVisit(id: string) {
+    const [r] = await this.rest.select<DepotVisit>("depot_visits", `select=*&id=eq.${enc(id)}`);
+    return r ?? null;
+  }
   async upsertDepotVisit(v: DepotVisit) {
     const [row] = await this.rest.insert<DepotVisit>("depot_visits", v, { onConflict: "id" });
     return row ?? v;

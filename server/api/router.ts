@@ -27,6 +27,10 @@ import { PROGRAMME_LABEL } from "../../shared/energy/flex";
 import { SMART_MODES, clearSmartCharging, requestSmartCharging } from "../emsp/smart";
 import type { SmartMode } from "../../shared/model";
 import { cleanEnergy, type DepotVisit } from "../../shared/energy/depot";
+import { cleanReading, type Telemetry } from "../../shared/energy/telematics";
+import { matchVehicle, pollFleet, recordTelemetry } from "../telematics";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify({ data }), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
@@ -89,7 +93,7 @@ function apiKeyAllows(key: NonNullable<AuthUser["apiKey"]>, method: string, seg:
   if (seg[0] !== "fleets" || seg[1] !== key.fleet_id) return false;
   if (seg.length === 2) return method === "GET";
   if (seg[2] === "depots" && method === "GET") return true; // read depot charging plans
-  return ["vehicles", "drivers", "bookings", "depot-visits"].includes(seg[2]);
+  return ["vehicles", "drivers", "bookings", "depot-visits", "telemetry"].includes(seg[2]);
 }
 
 async function clientError(ctx: Ctx, req: Request): Promise<{ ref: string }> {
@@ -131,7 +135,7 @@ export async function handleApi(req: Request, ctx: Ctx): Promise<Response> {
     const keyUser = await apiKeyUser(ctx, req);
     if (keyUser === "invalid") return err(401, "This API key isn't valid. It may have been revoked or expired.", "INVALID_API_KEY");
     if (keyUser?.apiKey && !apiKeyAllows(keyUser.apiKey, req.method, seg)) {
-      return err(403, "API keys can read the network and work with their own fleet's vehicles, drivers and bookings only", "API_KEY_SCOPE");
+      return err(403, "API keys can read the network and work with their own fleet's vehicles, drivers, bookings, depot visits and battery readings only", "API_KEY_SCOPE");
     }
     const user = keyUser ?? (await ctx.verifyUser(req));
     if (!user) return err(401, "Please sign in again", "UNAUTHENTICATED");
@@ -357,13 +361,24 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
   if (res === "energy" && !id) return energyRoutes(req, ctx, user, fleetId, role);
   if (write && role === "viewer") throw new ApiError(403, user.apiKey ? "This API key is read-only" : "Your role is view-only");
   if (res === "depot-visits") return visitRoutes(req, ctx, user, fleetId, id);
+  if (res === "telemetry") return telemetryRoutes(req, ctx, fleetId);
+  if (res === "telematics" && id === "test" && m === "POST") {
+    if (user.apiKey || role !== "owner") throw new ApiError(403, "Only fleet owners can set up truck data");
+    const row = await energyRow(ctx, fleetId);
+    if (row.config.telematics?.kind !== "rfms") throw new ApiError(409, "Choose rFMS and save first");
+    try {
+      return json(await pollFleet(ctx, row));
+    } catch (e) {
+      throw new ApiError(502, (e as Error).message || "Couldn't reach the truck data service");
+    }
+  }
   if (res === "depots" && id && action === "plan" && m === "GET") {
     const row = await energyRow(ctx, fleetId);
     const depot = row.config.depots.find((d) => d.id === id);
     if (!depot) throw new ApiError(404, "Depot not found");
     await closeEndedEvents(ctx, fleetId);
     const [visits, vehicles, events] = await Promise.all([ctx.store.listDepotVisits(fleetId, iso(ctx.now())), ctx.store.listVehicles(fleetId), ctx.store.listFlexEvents(fleetId, iso(ctx.now()))]);
-    return json({ ...(await depotPlan(ctx, depot, visits, vehicles, events)), dispatch: row.state?.dispatch?.[depot.id] ?? null });
+    return json({ ...(await depotPlan(ctx, depot, visits, vehicles, events, row.state?.telemetry)), dispatch: row.state?.dispatch?.[depot.id] ?? null });
   }
   if (res === "flex") return flexRoutes(req, ctx, user, fleetId, id, action);
   if (res === "depots" && id && action === "dispatch" && m === "POST") {
@@ -372,7 +387,7 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
     if (!depot) throw new ApiError(404, "Depot not found");
     if (!depot.chargers.length) throw new ApiError(409, "Add the depot's chargers first");
     const [visits, vehicles, events] = await Promise.all([ctx.store.listDepotVisits(fleetId, iso(ctx.now())), ctx.store.listVehicles(fleetId), ctx.store.listFlexEvents(fleetId, iso(ctx.now()))]);
-    const view = await depotPlan(ctx, depot, visits, vehicles, events);
+    const view = await depotPlan(ctx, depot, visits, vehicles, events, row.state?.telemetry);
     const d = await dispatchDepot(ctx, row, depot, view, "manual");
     await audit(ctx, req, user, { fleet_id: fleetId, action: "depot.dispatch", target: depot.name, data: { depot_id: depot.id, ok: d.ok, chargers: d.results.length } });
     return json(d);
@@ -671,13 +686,29 @@ async function energyRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: str
   for (const d of config.depots) if (row.secrets?.[d.id]) secrets[d.id] = row.secrets[d.id];
   if (row.secrets?.flex && config.flex_provider.kind === "aggregator") { secrets.flex = row.secrets.flex; config.flex_provider.secret_hint = row.config.flex_provider?.secret_hint; }
   if (config.flex_provider.kind === "aggregator" && config.flex_provider.report_url) checkOperatorUrl(config.flex_provider.report_url, ctx, "The aggregator's report address", "https://aggregator.example/depotcharge/reports");
+  // Truck data (rFMS): the password or client secret is sealed like the others.
+  const tel = config.telematics?.kind === "rfms" ? config.telematics.rfms : undefined;
+  if (tel) {
+    checkOperatorUrl(tel.base_url, ctx, "The rFMS address", "https://api.truckmaker.example/rfms");
+    if (tel.token_url) checkOperatorUrl(tel.token_url, ctx, "The token address", "https://auth.truckmaker.example/token");
+    // The stored password only goes to the addresses it was entered for: a new host needs it again.
+    const prev = row.config.telematics?.kind === "rfms" ? row.config.telematics.rfms : undefined;
+    const host = (u?: string) => { try { return u ? new URL(u).host : ""; } catch { return ""; } };
+    const sameHosts = !!prev && host(prev.base_url) === host(tel.base_url) && host(prev.token_url) === host(tel.token_url);
+    if (row.secrets?.telematics && sameHosts) { secrets.telematics = row.secrets.telematics; tel.secret_hint = prev.secret_hint; }
+  }
+  if (b.secrets && "telematics" in b.secrets) {
+    const v = (b.secrets.telematics ?? "").toString().trim().slice(0, 500);
+    if (v && tel) { secrets.telematics = (await sealSecret(v, ctx.env.DATA_ENCRYPTION_KEY))!; tel.secret_hint = hint(v) ?? ""; }
+    else { delete secrets.telematics; if (tel) delete tel.secret_hint; }
+  }
   if (b.secrets && "flex" in b.secrets) {
     const v = (b.secrets.flex ?? "").toString().trim().slice(0, 500);
     if (v) { secrets.flex = (await sealSecret(v, ctx.env.DATA_ENCRYPTION_KEY))!; config.flex_provider.secret_hint = hint(v) ?? ""; }
     else { delete secrets.flex; delete config.flex_provider.secret_hint; }
   }
   for (const [depotId, value] of Object.entries(b.secrets ?? {})) {
-    if (depotId === "flex") continue;
+    if (depotId === "flex" || depotId === "telematics") continue;
     const d = config.depots.find((x) => x.id === depotId);
     if (!d) continue;
     if (value === null || value === "") { delete secrets[depotId]; if (d.control.kind === "citrineos") delete d.control.token_hint; if (d.control.kind === "webhook") delete d.control.secret_hint; continue; }
@@ -727,6 +758,32 @@ async function flexRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: strin
   return err(404, "Not found");
 }
 
+/** Battery readings from the trucks. GET: the latest per vehicle. POST: readings from any telematics
+ *  system, matched by vehicle_id, plate or VIN (docs/telematics.md). */
+async function telemetryRoutes(req: Request, ctx: Ctx, fleetId: string): Promise<Response> {
+  const row = await energyRow(ctx, fleetId);
+  if (req.method === "GET") return json(row.state?.telemetry ?? {});
+  if (req.method !== "POST") return err(405, "Use GET or POST");
+  const b = await body<{ readings?: unknown }>(req);
+  const list = Array.isArray(b.readings) ? b.readings : Array.isArray(b) ? (b as unknown[]) : [];
+  if (!list.length) throw new ApiError(400, "Send { readings: [{ plate, soc_pct, at }] }");
+  if (list.length > 500) throw new ApiError(400, "At most 500 readings at a time");
+  const vehicles = await ctx.store.listVehicles(fleetId);
+  const vins = row.config.telematics?.kind === "rfms" ? row.config.telematics.rfms?.vins ?? {} : {};
+  const vinToId = Object.fromEntries(Object.entries(vins).map(([id, vin]) => [vin, id]));
+  const accepted: Record<string, Telemetry> = {};
+  const rejected: { index: number; reason: string }[] = [];
+  list.forEach((x, index) => {
+    const v = matchVehicle(vehicles, vinToId, (x ?? {}) as Record<string, unknown>);
+    if (!v) return void rejected.push({ index, reason: "No vehicle with that id, plate or VIN" });
+    const t = cleanReading(x, ctx.now(), "api");
+    if (!t) return void rejected.push({ index, reason: "soc_pct must be 0–100 and at must not be in the future" });
+    if (!accepted[v.id] || accepted[v.id].at < t.at) accepted[v.id] = t;
+  });
+  await recordTelemetry(ctx, fleetId, accepted);
+  return json({ accepted: Object.keys(accepted).length, rejected }, rejected.length && !Object.keys(accepted).length ? 400 : 200);
+}
+
 async function visitRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: string, id: string | undefined): Promise<Response> {
   const m = req.method;
   const now = ctx.now();
@@ -736,13 +793,20 @@ async function visitRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
     return json(await ctx.store.listDepotVisits(fleetId, from && !Number.isNaN(Date.parse(from)) ? new Date(from).toISOString() : iso(new Date(now.getTime() - 24 * 3_600_000))));
   }
   const row = await energyRow(ctx, fleetId);
-  const existing = id ? (await ctx.store.listDepotVisits(fleetId, "1970-01-01T00:00:00Z")).find((v) => v.id === id) : undefined;
-  if (id && !existing) throw new ApiError(404, "Visit not found");
+  const key = id && UUID_RE.test(id) ? id.toLowerCase() : id;
+  const found = key ? await ctx.store.getDepotVisit(key) : null;
+  const existing = found && found.fleet_id === fleetId ? found : undefined;
+  // Another fleet's visit: never reveal or touch it.
+  if (found && !existing) throw m === "PUT" ? new ApiError(409, "That id is already in use. Send a new UUID.") : new ApiError(404, "Visit not found");
+  // PUT with your own id (a UUID) creates or updates: a planning system can send each trip once and
+  // send it again whenever its times change.
+  const putNew = m === "PUT" && !!key && !existing && UUID_RE.test(key);
+  if (key && !existing && !putNew) throw new ApiError(404, "Visit not found");
   if (m === "DELETE" && existing) {
     await ctx.store.deleteDepotVisit(existing.id);
     return json({ ok: true });
   }
-  if ((m === "POST" && !id) || (m === "PATCH" && existing)) {
+  if ((m === "POST" && !id) || ((m === "PATCH" || m === "PUT") && existing) || putNew) {
     const b = await body<Partial<DepotVisit>>(req);
     const merged = { ...(existing ?? {}), ...b } as Partial<DepotVisit>;
     const depot = row.config.depots.find((d) => d.id === merged.depot_id);
@@ -764,7 +828,7 @@ async function visitRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
       if (clash) throw new ApiError(409, `${charger.name} is already taken then. Pick another charger or time.`);
     }
     const v: DepotVisit = {
-      id: existing?.id ?? uuid(), fleet_id: fleetId, depot_id: depot.id, vehicle_id: vehicle.id, charger_id: charger?.id ?? null,
+      id: existing?.id ?? (putNew ? key! : uuid()), fleet_id: fleetId, depot_id: depot.id, vehicle_id: vehicle.id, charger_id: charger?.id ?? null,
       arrive_at: arrive.toISOString(), depart_at: depart.toISOString(), soc_start, soc_target, status,
       created_at: existing?.created_at ?? iso(now), updated_at: iso(now),
     };

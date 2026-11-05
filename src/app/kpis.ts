@@ -1,5 +1,6 @@
 // Dashboard figures, computed from the bookings the app already holds (the last two weeks).
 // Pure functions so they can be tested, and moved server-side when fleets get large.
+import type { Telemetry } from "../../shared/energy/telematics";
 import { marginAt, type MarginChange } from "../../shared/billing";
 import type { BookingRow, Vehicle } from "../../shared/model";
 import type { EVSEStatus } from "../../shared/ocpi/types";
@@ -144,6 +145,9 @@ export interface Battery {
   eta?: Date | null;
   /** Whether the target is reached before the booked slot ends. */
   inTime?: boolean;
+  /** Reported by the truck itself (telematics), not a charger. */
+  fromTruck?: boolean;
+  rangeKm?: number;
 }
 
 export interface TruckOverview {
@@ -181,7 +185,7 @@ const FAULT_REASONS = { BROKEN_CHARGER: "Charger fault", POWER_OUTAGE: "Power cu
  * One row per truck. `chargerStatus` reports what the operator says about the charger a booking is
  * on (from OCPI Locations), so a charger that breaks mid-charge shows as a fault.
  */
-export function fleetOverview(vehicles: Vehicle[], bookings: BookingRow[], now: Date, chargerStatus: (b: BookingRow) => EVSEStatus | null = () => null): TruckOverview[] {
+export function fleetOverview(vehicles: Vehicle[], bookings: BookingRow[], now: Date, chargerStatus: (b: BookingRow) => EVSEStatus | null = () => null, telemetry: Record<string, Telemetry> = {}): TruckOverview[] {
   const t = now.getTime();
   const out: TruckOverview[] = [];
   for (const v of vehicles) {
@@ -205,6 +209,9 @@ export function fleetOverview(vehicles: Vehicle[], bookings: BookingRow[], now: 
         const s = withSoc.session;
         battery = { soc: s.soc!, at: s.end_date_time ?? s.last_updated, live: false, startSoc: s.soc_start ?? null, powerKw: null };
       }
+      // The truck's own reading wins when it's newer than the last charge.
+      const tm = telemetry[v.id];
+      if (tm && (!battery || tm.at > battery.at)) battery = { soc: tm.soc_pct, at: tm.at, live: false, startSoc: null, powerKw: null, fromTruck: true, ...(tm.range_km != null ? { rangeKm: tm.range_km } : {}) };
     }
 
     const since = t - 36 * HOUR;

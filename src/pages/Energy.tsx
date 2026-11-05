@@ -449,12 +449,17 @@ function TruckRow({ v, depot, S, at, t0, now, hoverBar, canEdit, onEdit }: {
   const on = runsOf(v.plan.kw, 1), back = runsOf(v.plan.kw, -1);
   const pct = (j: number) => `${(j / S) * 100}%`;
   const ready = v.plan.readyAt ? fmtTime(new Date(v.plan.readyAt), TZ) : null;
+  // The charge now, from the truck itself when it reported recently (telematics).
+  const truckAt = v.soc_from ? fmtTime(new Date(v.soc_from.at), TZ) : null;
+  const soc = truckAt
+    ? <span className="en-fromtruck" title={`From the truck at ${truckAt}`}><Icon name="wifi" size="sm" />{v.visit.soc_start}%</span>
+    : <>{v.visit.soc_start}%</>;
   const status = v.outcome === "ready"
-    ? <><span className="en-ready"><Icon name="circleCheck" size="sm" />Ready{ready ? ` by ${ready}` : ""}</span><span className="en-sub">{v.visit.soc_start}% → {N0.format(v.soc_ready)}%</span></>
+    ? <><span className="en-ready"><Icon name="circleCheck" size="sm" />Ready{ready ? ` by ${ready}` : ""}</span><span className="en-sub">{soc} → {N0.format(v.soc_ready)}%</span></>
     : v.outcome === "short"
-      ? <><span className="en-short"><Icon name="alert" size="sm" />{N0.format(v.plan.shortfallKwh)} kWh short</span><span className="en-sub">{v.visit.soc_start}% → {N0.format(v.soc_ready)}% of {v.visit.soc_target}%</span></>
-      : <span className="en-sub">{v.battery_kwh ? `Already at ${v.visit.soc_start}%` : "Add its battery size in Fleet"}</span>;
-  const words = `${v.plate}${v.name ? `, ${v.name}` : ""}${ch ? ` on ${ch.name}` : ""}: ${here ? "here now" : `arrives ${when(a, now)}`}, leaves ${when(b, now)}. ${v.outcome === "ready" ? `Ready${ready ? ` by ${ready}` : ""}, ${v.visit.soc_start}% to ${N0.format(v.soc_ready)}%.` : v.outcome === "short" ? `${N0.format(v.plan.shortfallKwh)} kilowatt hours short.` : ""}`;
+      ? <><span className="en-short"><Icon name="alert" size="sm" />{N0.format(v.plan.shortfallKwh)} kWh short</span><span className="en-sub">{soc} → {N0.format(v.soc_ready)}% of {v.visit.soc_target}%</span></>
+      : <span className="en-sub">{v.battery_kwh ? <>Already at {soc}</> : "Add its battery size in Fleet"}</span>;
+  const words = `${v.plate}${v.name ? `, ${v.name}` : ""}${ch ? ` on ${ch.name}` : ""}: ${here ? "here now" : `arrives ${when(a, now)}`}, leaves ${when(b, now)}. ${v.outcome === "ready" ? `Ready${ready ? ` by ${ready}` : ""}, ${v.visit.soc_start}% to ${N0.format(v.soc_ready)}%.` : v.outcome === "short" ? `${N0.format(v.plan.shortfallKwh)} kilowatt hours short.` : ""}${truckAt ? ` Charge reported by the truck at ${truckAt}.` : ""}`;
   const wide = right - left > 24;
   const body = (
     <>
