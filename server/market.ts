@@ -8,13 +8,17 @@
 //   GET /api/public/prices?source=wholesale&from=…&to=…
 //   GET /api/public/region?postcode=NN4 7AB
 //   GET /api/public/carbon?postcode=NN4 7AB&from=…&to=…
+//   GET /api/public/sites  (public charging sites from open data, refreshed daily; docs/open-data.md)
 // Without either (tests, the offline preview) callers fall back to modelled data and say so.
 import type { Ctx } from "./context";
 import { parseElexonMid, parseFeed, parseOctopusRates, validProduct, OCTOPUS_REGIONS, type PriceSeries } from "../shared/energy/suppliers";
 import { outcode } from "../shared/energy/carbon";
 import { carbonFor } from "./energy";
 
-export type MarketDeps = Pick<Ctx, "mode" | "now" | "transport"> & { marketUrl?: string };
+export type MarketDeps = Pick<Ctx, "mode" | "now" | "transport"> & { marketUrl?: string; sitesUrl?: string };
+
+/** The daily open-data snapshot (.github/workflows/opendata.yml); OPEN_SITES_URL overrides it. */
+export const OPEN_SITES_URL = "https://github.com/craig-weston/EV-Charging-booking-reservation-OCPI-app/releases/download/opendata/sites.json";
 
 const OCTOPUS = "https://api.octopus.energy/v1";
 const ELEXON = "https://data.elexon.co.uk/bmrs/api/v1";
@@ -111,11 +115,28 @@ export async function feedRates(d: MarketDeps, url: string): Promise<PriceSeries
 const json = (data: unknown, status = 200, maxAge = 900) =>
   new Response(JSON.stringify(status === 200 ? { data } : { error: data }), { status, headers: { "Content-Type": "application/json", "Cache-Control": status === 200 ? `public, max-age=${maxAge}` : "no-store" } });
 
-/** GET /api/public/{prices,region,carbon}: public data, cached; no account needed. */
+/** The open-data snapshot, passed through without parsing (it can be a few hundred KB). */
+async function openSites(d: MarketDeps): Promise<Response> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const res = await d.transport(new Request(d.sitesUrl || OPEN_SITES_URL, { headers: { Accept: "application/json" }, redirect: "follow", signal: ctl.signal }));
+    const text = res.ok ? await res.text() : "";
+    if (!text.startsWith("{") || text.length > 12_000_000) return json({ message: "Open data isn't available right now" }, 503);
+    return new Response(`{"data":${text}}`, { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" } });
+  } catch {
+    return json({ message: "Open data isn't available right now" }, 503);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** GET /api/public/{prices,region,carbon,sites}: public data, cached; no account needed. */
 export async function handlePublicMarket(req: Request, d: MarketDeps): Promise<Response> {
   if (req.method !== "GET") return json({ message: "Use GET" }, 405);
   const url = new URL(req.url);
   const what = url.pathname.replace(/^\/api\/public\/?/, "").replace(/\/+$/, "");
+  if (what === "sites") return openSites(d);
   const now = d.now().getTime();
   const time = (k: string, dflt: number) => { const t = Date.parse(url.searchParams.get(k) ?? ""); return Number.isFinite(t) ? t : dflt; };
   const from = time("from", now - HALF), to = time("to", now + 36 * 3_600_000);

@@ -167,7 +167,7 @@ export async function handle(pc: PagesContext): Promise<Response> {
     const key = new Request(pc.request.url, { method: "GET" });
     const hit = edge ? await edge.match(key).catch(() => undefined) : undefined;
     if (hit) return withSecurityHeaders(hit);
-    const res = await handlePublicMarket(pc.request, { mode: "live", now: () => new Date(), transport: (r) => fetch(r) });
+    const res = await handlePublicMarket(pc.request, { mode: "live", now: () => new Date(), transport: (r) => fetch(r), sitesUrl: (pc.env as { OPEN_SITES_URL?: string }).OPEN_SITES_URL });
     if (edge && res.ok) pc.waitUntil(edge.put(key, res.clone()).catch(() => undefined));
     return withSecurityHeaders(res);
   }

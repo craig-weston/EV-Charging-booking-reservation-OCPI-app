@@ -9,7 +9,10 @@ export interface MapPin {
   lat: number;
   lon: number;
   label: string;
-  state: "fit" | "unfit" | "sel" | "plain";
+  /** "open" / "opensel": a public site from open data, shown but not bookable here. */
+  state: "fit" | "unfit" | "sel" | "plain" | "open" | "opensel";
+  /** Public sites: built for trucks, or bay size not published. */
+  tone?: "trucks" | "check";
   /** A short price shown on the pin, e.g. "59p". */
   price?: string | null;
   /** The cheapest site: marked so it stands out. */
@@ -23,7 +26,7 @@ interface View { cx: number; cy: number; s: number } // centre (map units) and m
 const PILL_H = 24;
 const pillW = (t: string) => Math.round(t.length * 7.8 + 18);
 
-export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, onHover, legend }: {
+export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, onHover, legend, credit }: {
   pins: MapPin[];
   near?: { lat: number; lon: number } | null;
   onSelect?(key: string): void;
@@ -34,6 +37,8 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, 
   onHover?(key: string | null): void;
   /** A small key or summary in the corner. */
   legend?: ReactNode;
+  /** Credit for data shown on the map, after the base map's. */
+  credit?: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 600, h: 700 });
@@ -154,7 +159,7 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, 
   const u = v.s; // one screen pixel in map units
   const cityRank = k > 4 ? 4 : k > 2.4 ? 3 : k > 1.5 ? 2 : 1;
   const sortedPins = useMemo(() => {
-    const order = { unfit: 0, plain: 1, fit: 2, sel: 3 } as const;
+    const order = { open: -1, unfit: 0, plain: 1, fit: 2, opensel: 3, sel: 3 } as const;
     return [...pins].sort((a, b) => order[a.state] - order[b.state]);
   }, [pins]);
 
@@ -172,10 +177,15 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, 
       pill.set(p.key, !clash);
       if (!clash) taken.push(r);
     }
-    // Draw order: unfit, then dots, then tags, with the important ones last (on top).
+    // Draw order: public sites, unfit, then dots, then tags, with the important ones last (on top).
+    // Public sites outside the view aren't drawn (there can be thousands).
+    const pad = 30 * u;
+    const inView = (x: number, y: number) => x > vb.x - pad && x < vb.x + vb.w + pad && y > vb.y - pad && y < vb.y + vb.h + pad;
+    const layer = (q: MapPin) => (q.state === "open" ? -2 : q.state === "unfit" ? -1 : 0);
     return sortedPins.map((p) => ({ p, x: lonToX(p.lon), y: latToY(p.lat), pill: pill.get(p.key) ?? false }))
-      .sort((a, b) => (a.p.state === "unfit" ? -1 : 0) - (b.p.state === "unfit" ? -1 : 0) || Number(a.pill) - Number(b.pill) || prio(b.p) - prio(a.p));
-  }, [pins, sortedPins, hoverKey, vb.x, vb.y, u]);
+      .filter((q) => q.p.state !== "open" || inView(q.x, q.y))
+      .sort((a, b) => layer(a.p) - layer(b.p) || Number(a.pill) - Number(b.pill) || prio(b.p) - prio(a.p));
+  }, [pins, sortedPins, hoverKey, vb.x, vb.y, vb.w, vb.h, u]);
 
   return (
     <div className="map" ref={box} onWheel={onWheel}>
@@ -210,6 +220,20 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, 
         )}
         {placed.map(({ p, x, y, pill }) => {
           const hot = p.key === hoverKey;
+          if (p.state === "open" || p.state === "opensel") {
+            const sel = p.state === "opensel";
+            const r = (sel ? 7 : hot ? 6 : k > 2.4 ? 5 : 4) * u;
+            return (
+              <g key={p.key} className={`pin open ${p.tone ?? "check"}${sel ? " sel" : ""}${hot ? " hot" : ""}`} transform={`translate(${x} ${y})`}
+                role="button" tabIndex={0} aria-label={`${p.label}, public site, not bookable here yet`}
+                onClick={() => { if (!drag.current?.moved) onSelect?.(p.key); }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(p.key); } }}
+                onMouseEnter={() => onHover?.(p.key)} onMouseLeave={() => onHover?.(null)} onFocus={() => onHover?.(p.key)} onBlur={() => onHover?.(null)}>
+                <rect className="ring" x={-r} y={-r} width={2 * r} height={2 * r} rx={1.5 * u} transform="rotate(45)" strokeWidth={1.75} />
+                {(sel || hot) && <text x={r + 6 * u} y={4 * u} fontSize={12.5 * u}>{p.label}</text>}
+              </g>
+            );
+          }
           const priced = !!p.price && p.state !== "unfit";
           const cls = `pin ${p.state}${p.best ? " best" : ""}${hot ? " hot" : ""}${priced ? (pill ? " pill" : " dot") : ""}`;
           const act = {
@@ -248,7 +272,7 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, 
         <button className="btn sm icon-only" onClick={() => fit(fitKeys)} aria-label="Show all sites"><Icon name="layers" size="sm" /></button>
       </div>
       {legend && <div className="map-legend">{legend}</div>}
-      <div className="map-note">Natural Earth</div>
+      <div className="map-note">Natural Earth{credit ? <> · {credit}</> : null}</div>
     </div>
   );
 }

@@ -1,0 +1,54 @@
+# Refreshes the public charging sites shown on the booking map as "not bookable here yet": UK
+# operators' statutory open data plus Open Charge Map (see docs/open-data.md). Runs daily and
+# publishes one file, sites.json, to the "opendata" release; the app reads it through
+# GET /api/public/sites. Nothing is committed, so it never triggers a deploy.
+#
+# Optional repository secrets (Settings → Secrets and variables → Actions): OCM_API_KEY (free from
+# openchargemap.org) and the operator keys named in shared/opendata/sources.ts. Without them only the
+# feeds that open without a key are used.
+name: Open data
+
+on:
+  schedule:
+    - cron: "41 4 * * *" # daily, 04:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write # to update the release asset
+
+concurrency:
+  group: opendata
+  cancel-in-progress: false
+
+jobs:
+  sites:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci --ignore-scripts
+      - name: Build sites.json
+        run: npx tsx scripts/opendata.ts out/sites.json
+        env:
+          OCM_API_KEY: ${{ secrets.OCM_API_KEY }}
+          OPEN_DATA_GRIDSERVE_KEY: ${{ secrets.OPEN_DATA_GRIDSERVE_KEY }}
+          OPEN_DATA_BP_PULSE_TOKEN: ${{ secrets.OPEN_DATA_BP_PULSE_TOKEN }}
+          OPEN_DATA_IONITY_TOKEN: ${{ secrets.OPEN_DATA_IONITY_TOKEN }}
+          OPEN_DATA_SHELL_TOKEN: ${{ secrets.OPEN_DATA_SHELL_TOKEN }}
+          OPEN_DATA_ALLEGO_TOKEN: ${{ secrets.OPEN_DATA_ALLEGO_TOKEN }}
+          OPEN_DATA_FASTNED_KEY: ${{ secrets.OPEN_DATA_FASTNED_KEY }}
+          OPEN_DATA_OSPREY_BASIC: ${{ secrets.OPEN_DATA_OSPREY_BASIC }}
+      - name: Publish to the opendata release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release view opendata --repo "$REPO" >/dev/null 2>&1 || \
+            gh release create opendata --repo "$REPO" --title "Public charging sites (open data)" --latest=false \
+              --notes "Refreshed daily by the Open data workflow. The booking map reads sites.json through /api/public/sites. See docs/open-data.md."
+          gh release upload opendata out/sites.json --repo "$REPO" --clobber
