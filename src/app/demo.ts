@@ -312,7 +312,7 @@ async function seedDepot(api: Api, now: Date, fleet: Fleet, vehicles: Vehicle[],
     chargers: [ch(1), ch(2), ch(3), ch(4)], control: { kind: "simulated" }, auto_dispatch: false,
     flex: { enabled: true, programmes: ["DFS", "DNO"], auto_accept: true, min_price_mwh: 100 },
     v2g: { enabled: true, vehicle_ids: [v("Rigid 03")], min_soc: 35, max_discharge_kw: 100, mode: "behind_meter", export_limit_kw: 0, wear_per_kwh: 0.06, warranty_confirmed: true },
-  }], flex_provider: { kind: "simulated", name: "Simulated aggregator", report_url: null } } });
+  }], flex_provider: { kind: "simulated", name: "Simulated aggregator", report_url: null }, telematics: { kind: "simulated" } } });
   const tz = "Europe/London";
   const today = startOfLocalDay(now, tz);
   const at = (dayOffset: number, hh: number, mm = 0) => {
@@ -334,6 +334,14 @@ async function seedDepot(api: Api, now: Date, fleet: Fleet, vehicles: Vehicle[],
   for (const x of visits) {
     await api("POST", `/fleets/${fleet.id}/depot-visits`, { depot_id: depotId, vehicle_id: v(x.vehicle), charger_id: x.charger, arrive_at: t(x.arrive), depart_at: t(x.depart), soc_start: x.soc[0], soc_target: x.soc[1] });
   }
+  // The trucks report their own battery level (simulated telematics): the ones in the yard or
+  // about to arrive, a few minutes ago.
+  const soon = now.getTime() + 30 * MINUTE;
+  const readings = visits.filter((x) => Date.parse(t(x.arrive)) <= soon).map((x, i) => ({
+    vehicle_id: v(x.vehicle), soc_pct: x.soc[0], range_km: Math.round(x.soc[0] * 3.2),
+    charging: Date.parse(t(x.arrive)) <= now.getTime() ? "connected" : "idle", at: new Date(now.getTime() - (2 + i) * MINUTE).toISOString(),
+  }));
+  if (readings.length) await api("POST", `/fleets/${fleet.id}/telemetry`, { readings }).catch(() => undefined);
   // Grid flexibility: a local network constraint tonight (accepted automatically) and a NESO
   // turn-up event waiting for a decision.
   await api("POST", `/fleets/${fleet.id}/flex/simulate`, { depot_id: depotId, kind: "dno" }).catch(() => undefined);

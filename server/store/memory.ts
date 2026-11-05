@@ -195,6 +195,9 @@ export class MemoryStore implements Store {
   async listDepotVisits(fleetId: string, fromIso: string) {
     return clone((this.data.depotVisits ?? []).filter((v) => v.fleet_id === fleetId && v.depart_at >= fromIso).sort((a, b) => a.arrive_at.localeCompare(b.arrive_at)));
   }
+  async getDepotVisit(id: string) {
+    return clone((this.data.depotVisits ?? []).find((v) => v.id === id) ?? null);
+  }
   async upsertDepotVisit(v: DepotVisit) {
     const list = (this.data.depotVisits ??= []);
     const i = list.findIndex((x) => x.id === v.id);

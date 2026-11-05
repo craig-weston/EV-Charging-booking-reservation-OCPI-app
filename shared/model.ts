@@ -473,6 +473,8 @@ export interface DepotDispatch { at: string; ok: boolean; by: "auto" | "manual";
 /** What the app remembers about energy control: last schedules sent per depot. */
 export interface EnergyState {
   dispatch: Record<string, DepotDispatch>;
+  /** Latest battery reading per vehicle id, from rFMS, the push API or the demo. */
+  telemetry?: Record<string, import("./energy/telematics").Telemetry>;
 }
 
 export interface FleetEnergyRow {

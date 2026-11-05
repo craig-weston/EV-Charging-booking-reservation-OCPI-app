@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { Telemetry } from "../../shared/energy/telematics";
 import type { BookingRow } from "../../shared/model";
 import { CANCEL_REASON_LABEL, VEHICLE_TYPE_LABEL } from "../../shared/booking/labels";
 import { useApp } from "../app/state";
@@ -26,7 +27,17 @@ const NUM = new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 });
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 export function DashboardPage({ openBooking }: { openBooking(id: string): void }) {
-  const { vehicles, bookings, network, now, loaded, fleet, me, backend, brand, refreshMe, toast } = useApp();
+  const { vehicles, bookings, network, now, loaded, fleet, me, backend, brand, refreshMe, toast, api, fleetId } = useApp();
+  // The trucks' own battery readings (telematics), refreshed every minute.
+  const [telemetry, setTelemetry] = useState<Record<string, Telemetry>>({});
+  useEffect(() => {
+    if (!fleetId) return;
+    let live = true;
+    const load = () => void api<Record<string, Telemetry>>("GET", `/fleets/${fleetId}/telemetry`).then((t) => { if (live) setTelemetry(t ?? {}); }).catch(() => undefined);
+    load();
+    const timer = setInterval(load, 60_000);
+    return () => { live = false; clearInterval(timer); };
+  }, [api, fleetId]);
   const [dismissed, setDismissed] = useState<string[]>(readDismissed);
   const [how, setHow] = useState(false);
   const [enrol, setEnrol] = useState(false);
@@ -41,7 +52,7 @@ export function DashboardPage({ openBooking }: { openBooking(id: string): void }
 
   const margins = fleet?.margin_history;
   const kpis = useMemo(() => computeKpis(bookings, now, 7, undefined, margins), [bookings, now, margins]);
-  const trucks = useMemo(() => fleetOverview(vehicles, bookings, now, (b) => chargerStatus(network, b)), [vehicles, bookings, now, network]);
+  const trucks = useMemo(() => fleetOverview(vehicles, bookings, now, (b) => chargerStatus(network, b), telemetry), [vehicles, bookings, now, network, telemetry]);
 
   const attention = useMemo(() => {
     const since = now.getTime() - 36 * 3_600_000;
@@ -296,6 +307,7 @@ function TruckCard({ t, siteName, onOpen }: { t: TruckOverview; siteName(b: Book
   let batteryText: string;
   if (t.fault) batteryText = t.fault.text;
   else if (!b) batteryText = t.state === "charging" ? "Waiting for the first battery reading" : "No battery reading yet";
+  else if (b.fromTruck) batteryText = `From the truck, ${fmtRelative(b.at, now)}${b.rangeKm != null ? `, about ${NUM.format(b.rangeKm)} km left` : ""}`;
   else if (b.live) {
     const parts = [b.powerKw ? `${fmtKw(b.powerKw)}` : "Charging"];
     if (b.soc >= 99.5) parts.push("full");

@@ -13,6 +13,7 @@ import { ChargingMini } from "../components/art/Mini";
 import { href } from "../app/router";
 import { LEGAL_DOCS } from "../legal/documents";
 import { MoreList, MoreRow } from "../components/More";
+import { TelematicsSettings } from "./Telematics";
 
 /** Jump to a section; a one-tap row opens on the way. */
 function go(id: string) {
@@ -53,6 +54,7 @@ export function SettingsPage() {
             <MoreList label="For developers" className="settings-more">
               <ApiKeySettings />
               <WebhookSettings />
+              <TelematicsSettings />
             </MoreList>
           )}
           {me?.is_admin && <MoreList label="Branding" className="settings-more"><BrandSettings /></MoreList>}

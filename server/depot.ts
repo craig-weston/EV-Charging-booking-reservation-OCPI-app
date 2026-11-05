@@ -9,6 +9,7 @@
 //
 // A profile ends at the last departure, after which chargers fall back to their own defaults, so a
 // lost connection can never leave a charger switched off.
+import { socFromTruck, type Telemetry } from "../shared/energy/telematics";
 import type { Ctx } from "./context";
 import type { ChargerDispatchResult, DepotDispatch, EnergyState, FleetEnergyRow, Vehicle } from "../shared/model";
 import { EMPTY_ENERGY, depotTariffAsOcpi, type Depot, type DepotVisit, type EnergyConfig } from "../shared/energy/depot";
@@ -44,6 +45,8 @@ export interface PlanVisitView {
   plan: DepotPlan["visits"][number];
   /** "ready": full by departure; "short": can't be filled in time; "idle": nothing to do. */
   outcome: "ready" | "short" | "idle";
+  /** The truck's own reading the plan used for its charge now, if any (else the typed-in figure). */
+  soc_from?: Telemetry | null;
 }
 
 export interface DepotPlanView {
@@ -109,7 +112,7 @@ export interface PlanInputs {
   depot: Depot;
   now: number;
   slots: DepotPlan["slots"];
-  rows: { v: DepotVisit; veh: Vehicle | null; battery: number | null; maxKw: number; need: number }[];
+  rows: { v: DepotVisit; veh: Vehicle | null; battery: number | null; maxKw: number; need: number; truck: Telemetry | null }[];
   chargers: { id: string; maxKw: number }[];
   headroom: number;
   carbonSource: CarbonSeries["source"] | null;
@@ -117,7 +120,9 @@ export interface PlanInputs {
 }
 
 /** Everything the planner needs for a depot right now (prices, carbon, trucks). */
-export async function depotInputs(ctx: Ctx, depot: Depot, visits: DepotVisit[], vehicles: Vehicle[]): Promise<PlanInputs> {
+/** `telemetry`: the trucks' own battery readings (energy state); a recent one replaces the typed-in
+ *  charge for trucks at the depot or about to arrive. */
+export async function depotInputs(ctx: Ctx, depot: Depot, visits: DepotVisit[], vehicles: Vehicle[], telemetry: Record<string, Telemetry> = {}): Promise<PlanInputs> {
   const now = ctx.now().getTime();
   const active = visits.filter((v) => v.depot_id === depot.id && (v.status === "planned" || v.status === "plugged_in") && new Date(v.depart_at).getTime() > now);
   const horizonEnd = Math.min(now + MAX_HORIZON_MS, Math.max(now + 12 * 3_600_000, ...active.map((v) => new Date(v.depart_at).getTime())));
@@ -126,13 +131,15 @@ export async function depotInputs(ctx: Ctx, depot: Depot, visits: DepotVisit[], 
   const priceAt = prices.priceAt;
   const headroom = Math.max(0, depot.import_limit_kw - depot.site_load_kw);
   const slots = buildSlots(now, horizonEnd, priceAt, (t) => intensityAt(carbon, new Date(t)), headroom);
-  const rows = active.map((v) => {
+  const rows = active.map((planned) => {
+    const truck = socFromTruck(telemetry[planned.vehicle_id], planned, now);
+    const v = truck ? { ...planned, soc_start: Math.round(truck.soc_pct) } : planned;
     const veh = vehicles.find((x) => x.id === v.vehicle_id) ?? null;
     const ch = depot.chargers.find((c) => c.id === v.charger_id) ?? null;
     const battery = veh?.battery_kwh ?? null;
     const maxKw = Math.min(ch?.max_kw ?? DEFAULT_TRUCK_KW, veh?.max_charge_kw ?? DEFAULT_TRUCK_KW);
     const needBattery = battery ? Math.max(0, ((v.soc_target - v.soc_start) / 100) * battery) : 0;
-    return { v, veh, battery, maxKw, need: needBattery / EFFICIENCY };
+    return { v, veh, battery, maxKw, need: needBattery / EFFICIENCY, truck };
   });
   return { depot, now, slots, rows, chargers: depot.chargers.map((c) => ({ id: c.id, maxKw: c.max_kw })), headroom, carbonSource: carbon.source, price: prices.info };
 }
@@ -193,7 +200,7 @@ export function viewFromPlan(i: PlanInputs, plan: DepotPlan, events: FlexEvent[]
       const socReady = r.battery ? Math.min(100, r.v.soc_start + ((p.deliveredKwh * EFFICIENCY) / r.battery) * 100) : r.v.soc_start;
       return {
         visit: r.v, plate: r.veh?.plate ?? "?", name: r.veh?.name ?? null, battery_kwh: r.battery, max_kw: r.maxKw,
-        need_kwh: Math.round(r.need * 10) / 10, soc_ready: Math.round(socReady), plan: p,
+        need_kwh: Math.round(r.need * 10) / 10, soc_ready: Math.round(socReady), plan: p, soc_from: r.truck,
         outcome: r.need <= 0.05 ? "idle" : p.shortfallKwh > 0 ? "short" : "ready",
       };
     }),
@@ -204,8 +211,8 @@ export function viewFromPlan(i: PlanInputs, plan: DepotPlan, events: FlexEvent[]
   };
 }
 
-export async function depotPlan(ctx: Ctx, depot: Depot, visits: DepotVisit[], vehicles: Vehicle[], events: FlexEvent[] = []): Promise<DepotPlanView> {
-  const inputs = await depotInputs(ctx, depot, visits, vehicles);
+export async function depotPlan(ctx: Ctx, depot: Depot, visits: DepotVisit[], vehicles: Vehicle[], events: FlexEvent[] = [], telemetry: Record<string, Telemetry> = {}): Promise<DepotPlanView> {
+  const inputs = await depotInputs(ctx, depot, visits, vehicles, telemetry);
   return viewFromPlan(inputs, planFromInputs(inputs, events), events);
 }
 
@@ -294,7 +301,7 @@ export async function runDepotDispatch(ctx: Ctx): Promise<number> {
     const [visits, vehicles, events] = await Promise.all([ctx.store.listDepotVisits(row.fleet_id, iso(ctx.now())), ctx.store.listVehicles(row.fleet_id), ctx.store.listFlexEvents(row.fleet_id, iso(ctx.now()))]);
     for (const depot of auto) {
       try {
-        const view = await depotPlan(ctx, depot, visits, vehicles, events);
+        const view = await depotPlan(ctx, depot, visits, vehicles, events, row.state?.telemetry);
         await dispatchDepot(ctx, row, depot, view, "auto");
         sent++;
       } catch (e) {

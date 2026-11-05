@@ -8,7 +8,7 @@ bays and book them through the same API the web app uses, without anyone signing
 A fleet owner creates keys in **Settings → API keys**:
 
 - **Book and read** (planner): reads the network, trucks, drivers and bookings, and books, changes
-  and cancels slots.
+  and cancels slots. It can also send depot visits and battery readings.
 - **Read only** (viewer): reads only.
 
 A key works for one fleet. It can't manage the team, change fleet settings, export data, see the
@@ -62,6 +62,17 @@ result in `data` or an `error` with a `message` and `code`.
    `end_at`; `POST /fleets/{fleet_id}/bookings/{id}/cancel` with an optional `reason`.
 
 Bookings made with a key record the key in `created_by_key`.
+
+## Depot charging and battery levels
+
+- **`PUT /fleets/{fleet_id}/depot-visits/{id}`** sends a truck's stay at your depot. Use your own
+  UUID as the id. Send it again whenever the times change; it updates rather than adding twice.
+- **`POST /fleets/{fleet_id}/telemetry`** sends battery readings from any telematics system. Name
+  each truck by plate, VIN or id.
+- **`GET /fleets/{fleet_id}/depots/{depot_id}/plan`** returns the charging plan.
+
+Details and examples: [battery levels from the trucks](telematics.md) and
+[depot charging](depot-charging.md).
 
 ## Limits
 

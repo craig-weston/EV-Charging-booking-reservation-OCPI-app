@@ -95,7 +95,7 @@ export async function decide(ctx: Ctx, row: FleetEnergyRow, ev: FlexEvent, accep
     next = { ...ev, status: "declined", reason: ev.reason ?? "Declined by the fleet", decided_by: by, updated_at: iso(ctx.now()) };
   } else {
     const [visits, vehicles, events] = await Promise.all([ctx.store.listDepotVisits(ev.fleet_id, iso(ctx.now())), ctx.store.listVehicles(ev.fleet_id), ctx.store.listFlexEvents(ev.fleet_id, iso(ctx.now()))]);
-    const inputs = await depotInputs(ctx, depot, visits, vehicles);
+    const inputs = await depotInputs(ctx, depot, visits, vehicles, row.state?.telemetry);
     const a = assessEvent(inputs, events.filter((x) => x.status === "accepted"), ev);
     next = a.committed_kw >= MIN_COMMIT_KW
       ? { ...ev, status: "accepted", committed_kw: a.committed_kw, cap_kw: a.cap_kw, baseline_kw: a.baseline_kw, reason: null, decided_by: by, updated_at: iso(ctx.now()) }

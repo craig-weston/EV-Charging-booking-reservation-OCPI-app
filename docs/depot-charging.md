@@ -67,6 +67,11 @@ POST /api/fleets/{fleet}/depot-visits
   "soc_start": 21, "soc_target": 90 }
 ```
 
+Send the same trip again with `PUT /api/fleets/{fleet}/depot-visits/{your UUID}` and it is updated
+rather than added twice. Trucks can report their own battery level (rFMS or any telematics system).
+The plan then uses it instead of the typed-in charge once the truck is close. See
+[battery levels from the trucks](telematics.md).
+
 `GET /api/fleets/{fleet}/depots/{depot}/plan` returns the plan. It includes kW per half-hour per
 truck, cost, CO₂, the time each truck will be ready, any shortfall, and the "charge on arrival"
 baseline for comparison.

@@ -123,11 +123,16 @@ final charge record with energy and cost, all from the operator's OCPI data.
 <img src="docs/images/dashboard.png" alt="Dashboard: energy, spend and bookings kept this week, every truck's battery level, and today's charging plan" width="100%">
 
 - **Dashboard:** energy, spend and price per kWh, bookings kept, trucks on charge, and every
-  truck's battery level, live or as it left its last charge.
+  truck's battery level: live while charging, reported by the truck, or as it left its last charge.
 - **Planning:** a lane board of the day for every truck; drag a gap to book it.
 - **Booking map:** prices compared site by site, only bays that fit the truck, and real public sites
   from UK operators' open data and Open Charge Map shown as "not bookable here yet"
   ([open data](docs/open-data.md)).
+- **Depot smart charging:** every truck is charged in the cheapest, cleanest half-hours that still
+  get it out on time, within the site's grid connection
+  ([depot charging](docs/depot-charging.md)). Battery levels come from the trucks themselves (rFMS or
+  any telematics system), and arrival times from your planning system
+  ([battery levels from the trucks](docs/telematics.md)).
 - **Bookings:** confirmations, changes, cancellations with reasons, no-shows, and the operator's
   terms in plain English.
 - **Driver messages:** the pass link by text or WhatsApp, sent automatically when a booking is
