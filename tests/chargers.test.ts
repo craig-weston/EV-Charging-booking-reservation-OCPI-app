@@ -75,7 +75,7 @@ test("simulator: the plan is accepted, then the chosen charger reports a fault a
   assert.deepEqual(sent.data.results.map((r) => [r.charger_id, r.answer]), [["bay-1", "accepted"], ["bay-2", "accepted"]]);
   assert.ok(sent.data.ok);
   let p = await plan(h);
-  assert.equal(p.chargers["bay-2"].state, "occupied", "not yet");
+  assert.equal(p.chargers["bay-2"].state, "available", "its truck isn't in yet, and no fault yet");
   assert.equal(p.chargers["bay-3"].state, "available");
 
   h.clock.now = new Date(Date.parse(NOW) + SIM_FAULT_AFTER_MS + 1000);

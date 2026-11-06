@@ -332,18 +332,21 @@ async function seedDepot(api: Api, now: Date, fleet: Fleet, vehicles: Vehicle[],
     { vehicle: "Tractor 01", charger: "bay-1", arrive: at(eve, 17, 5), depart: at(eve + 1, 5, 15), soc: [21, 90] },
     { vehicle: "Reefer 04", charger: "bay-2", arrive: at(eve, 17, 30), depart: at(eve + 1, 4, 30), soc: [34, 95] },
     { vehicle: "Tanker 05", charger: "bay-3", arrive: at(eve, 17, 50), depart: at(eve + 1, 6, 0), soc: [17, 85] },
-    { vehicle: "Tractor 02", charger: "bay-1", arrive: at(eve + 1, 5, 30), depart: at(eve + 1, 9, 0), soc: [44, 90] },
+    // Back from a night run: a top-up before the morning one, on the bay Tractor 01 has just left.
+    { vehicle: "Tractor 02", charger: "bay-1", arrive: at(eve + 1, 5, 30), depart: at(eve + 1, 9, 0), soc: [70, 90] },
   ];
   for (const x of visits) {
     await api("POST", `/fleets/${fleet.id}/depot-visits`, { depot_id: depotId, vehicle_id: v(x.vehicle), charger_id: x.charger, arrive_at: t(x.arrive), depart_at: t(x.depart), soc_start: x.soc[0], soc_target: x.soc[1] });
   }
   // The trucks report their own battery level (simulated telematics), a few minutes ago: in the
-  // yard, what they arrived with; on the road, a bit more, still to be used on the way back. The
-  // plan only takes a truck's own reading once it's nearly in.
+  // yard, what they arrived with; on the road, using charge steadily from 95% at the 6am start
+  // down to what they'll arrive with. The plan only takes a truck's own reading once it's nearly in.
+  const shiftStart = at(eve, 6, 0).getTime();
   const readings = visits.filter((x) => Date.parse(t(x.arrive)) <= now.getTime() + 20 * 60 * MINUTE).map((x, i) => {
-    const toGo = Math.max(0, (Date.parse(t(x.arrive)) - now.getTime()) / (60 * MINUTE));
-    const soc = Math.min(95, Math.round(x.soc[0] + toGo * 9));
-    return { vehicle_id: v(x.vehicle), soc_pct: soc, range_km: Math.round(soc * 3.2), charging: toGo === 0 ? "connected" : "idle", at: new Date(now.getTime() - (2 + i) * MINUTE).toISOString() };
+    const arrive = Date.parse(t(x.arrive));
+    const left = arrive <= now.getTime() ? 0 : Math.min(1, (arrive - now.getTime()) / Math.max(MINUTE, arrive - shiftStart));
+    const soc = Math.round(x.soc[0] + (95 - x.soc[0]) * left);
+    return { vehicle_id: v(x.vehicle), soc_pct: soc, range_km: Math.round(soc * 3.2), charging: left === 0 ? "connected" : "idle", at: new Date(now.getTime() - (2 + i) * MINUTE).toISOString() };
   });
   if (readings.length) await api("POST", `/fleets/${fleet.id}/telemetry`, { readings }).catch(() => undefined);
   // Grid flexibility: a local network constraint tonight (accepted automatically) and a NESO
