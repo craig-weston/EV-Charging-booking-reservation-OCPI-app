@@ -178,7 +178,8 @@ const steps = (request: Record<string, unknown>) => {
 
 /** The simulator: each charger checks its profile like a real one and answers straight away. The
  *  charger set to develop a fault reports one a few seconds later. */
-export async function simulatorSend(ctx: Ctx, fleetId: string, depot: Depot, profiles: { charger: Depot["chargers"][number]; request: Record<string, unknown> }[], sentAt: string): Promise<ChargerDispatchResult[]> {
+/** `pluggedIn`: chargers with a truck on them now (the others are free, plan or not). */
+export async function simulatorSend(ctx: Ctx, fleetId: string, depot: Depot, profiles: { charger: Depot["chargers"][number]; request: Record<string, unknown> }[], sentAt: string, pluggedIn: Set<string> = new Set()): Promise<ChargerDispatchResult[]> {
   const now = await depotChargers(ctx, fleetId, depot);
   const results: ChargerDispatchResult[] = profiles.map(({ charger, request }) => {
     const check = checkProfile(request, charger.max_kw * 1000);
@@ -187,10 +188,11 @@ export async function simulatorSend(ctx: Ctx, fleetId: string, depot: Depot, pro
       : { charger_id: charger.id, ok: false, status: null, message: `Refused: ${check.reason}`, answer: "rejected", answered_at: sentAt };
   });
   // Chargers report their state when they get a plan (a truck plugged in, or free), unless faulted.
+  // A plan for a truck that's still on the road leaves its charger free until it arrives.
   const facts: Record<string, ChargerStatus> = {};
   for (const ch of depot.chargers) {
     if (now[ch.id]?.state === "faulted" || now[ch.id]?.state === "unavailable") continue;
-    facts[chargerKey(fleetId, depot.id, ch.id, "status")] = { state: profiles.some((p) => p.charger.id === ch.id) ? "occupied" : "available", at: sentAt };
+    facts[chargerKey(fleetId, depot.id, ch.id, "status")] = { state: pluggedIn.has(ch.id) ? "occupied" : "available", at: sentAt };
   }
   if (Object.keys(facts).length) await ctx.store.putLive(facts);
   const f = depot.control.kind === "simulator" ? depot.control.fault_charger_id : undefined;

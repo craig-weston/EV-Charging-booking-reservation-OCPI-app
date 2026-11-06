@@ -618,6 +618,7 @@ p { margin: 0; }
 .map .road-label rect { fill: var(--map-road); }
 .map .road-label text { fill: var(--surface); font-weight: 700; font-stretch: 80%; }
 .map .city text { fill: var(--muted); paint-order: stroke; stroke: var(--map-land); stroke-width: 3px; stroke-linejoin: round; }
+.map .city { pointer-events: none; }
 /* The trip planner's route: blue is the lorry route, dashed grey the straight-line estimate. */
 .trip-map { height: auto; width: auto; aspect-ratio: 16 / 9; margin: 20px 20px 6px; touch-action: auto; }
 .trip-map svg { cursor: default; }

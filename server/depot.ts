@@ -289,7 +289,9 @@ export async function dispatchDepot(ctx: Ctx, row: FleetEnergyRow, depot: Depot,
   if (c.kind === "simulated") {
     results = profiles.map(({ charger, request }) => ({ charger_id: charger.id, ok: true, status: null, message: `Simulated: ${(request.chargingProfile as { chargingSchedule: { chargingSchedulePeriod: unknown[] }[] }).chargingSchedule[0].chargingSchedulePeriod.length} schedule steps` }));
   } else if (c.kind === "simulator") {
-    results = await simulatorSend(ctx, row.fleet_id, depot, profiles, at);
+    const now = Date.parse(at);
+    const pluggedIn = new Set(view.visits.filter((v) => v.visit.charger_id && Date.parse(v.visit.arrive_at) <= now && now < Date.parse(v.visit.depart_at)).map((v) => v.visit.charger_id!));
+    results = await simulatorSend(ctx, row.fleet_id, depot, profiles, at, pluggedIn);
   } else {
     const secret = row.secrets[depot.id] ? await openSecret(row.secrets[depot.id], ctx.env.DATA_ENCRYPTION_KEY, ctx.env.DATA_ENCRYPTION_KEY_PREVIOUS) : null;
     // Where the chargers' answers and status messages come back to (server/chargers.ts).

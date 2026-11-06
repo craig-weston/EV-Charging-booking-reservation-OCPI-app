@@ -24,7 +24,7 @@ test("demo depot: arrivals into the evening peak save around 45% against pluggin
     { vehicle: "Tractor 01", charger: "bay-1", arrive: "2026-11-06T17:05:00Z", depart: "2026-11-07T05:15:00Z", soc: [21, 90] },
     { vehicle: "Reefer 04", charger: "bay-2", arrive: "2026-11-06T17:30:00Z", depart: "2026-11-07T04:30:00Z", soc: [34, 95] },
     { vehicle: "Tanker 05", charger: "bay-3", arrive: "2026-11-06T17:50:00Z", depart: "2026-11-07T06:00:00Z", soc: [17, 85] },
-    { vehicle: "Tractor 02", charger: "bay-1", arrive: "2026-11-07T05:30:00Z", depart: "2026-11-07T09:00:00Z", soc: [44, 90] },
+    { vehicle: "Tractor 02", charger: "bay-1", arrive: "2026-11-07T05:30:00Z", depart: "2026-11-07T09:00:00Z", soc: [70, 90] },
   ];
   for (const s of stays) {
     const r = await h.api("POST", `/api/fleets/${h.fleetId}/depot-visits`, { depot_id: "demo-yard", vehicle_id: v(s.vehicle), charger_id: s.charger, arrive_at: s.arrive, depart_at: s.depart, soc_start: s.soc[0], soc_target: s.soc[1] });

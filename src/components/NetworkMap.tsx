@@ -28,19 +28,33 @@ const pillW = (t: string) => Math.round(t.length * 7.8 + 18);
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 
-/** Place names and road numbers a price tag (or its CHEAPEST caption) would cover: they're hidden,
- *  since the tag is what matters there. `tags` are in screen pixels from the view's corner. */
-export function labelsUnderTags(tags: Box[], vb: { x: number; y: number }, u: number): { hiddenCities: Set<string>; hiddenRoads: Set<string> } {
+export type LabelSide = "right" | "below" | "left" | "lowRight" | "farBelow";
+export const cityFont = (rank: number) => (rank === 1 ? 12.5 : 11.5);
+
+/** Where each place name goes so no price tag (or its CHEAPEST caption) covers it: beside its dot
+ *  on the right as usual, else below it, on the left, low on the right, or further below; hidden
+ *  only if tags cover every place.
+ *  Road numbers under a tag are hidden. `tags` are in screen pixels from the view's corner. */
+export function placeLabels(tags: Box[], vb: { x: number; y: number }, u: number): { cities: Map<string, LabelSide>; hiddenRoads: Set<string> } {
   const covered = (b: Box) => tags.some((t) => b.x0 < t.x1 && b.x1 > t.x0 && b.y0 < t.y1 && b.y1 > t.y0);
-  const hiddenCities = new Set(CITIES.filter((c) => {
-    const sx = (c.x - vb.x) / u, sy = (c.y - vb.y) / u, fs = c.rank === 1 ? 12.5 : 11.5;
-    return covered({ x0: sx - 3, y0: sy - 4 - fs, x1: sx + 5 + c.name.length * fs * 0.58, y1: sy + 3 });
-  }).map((c) => c.name));
+  const cities = new Map<string, LabelSide>();
+  for (const c of CITIES) {
+    const sx = (c.x - vb.x) / u, sy = (c.y - vb.y) / u, fs = cityFont(c.rank), len = c.name.length * fs * 0.58;
+    const boxes: [LabelSide, Box][] = [
+      ["right", { x0: sx - 3, y0: sy - 4 - fs, x1: sx + 5 + len, y1: sy + 3 }],
+      ["below", { x0: sx - len / 2 - 2, y0: sy + 3, x1: sx + len / 2 + 2, y1: sy + 6 + fs }],
+      ["left", { x0: sx - 5 - len - 2, y0: sy - 4 - fs, x1: sx + 3, y1: sy + 3 }],
+      ["lowRight", { x0: sx + 3, y0: sy + 3, x1: sx + 6 + len, y1: sy + 6 + fs }],
+      ["farBelow", { x0: sx - len / 2 - 2, y0: sy + 13, x1: sx + len / 2 + 2, y1: sy + 16 + fs }],
+    ];
+    const side = boxes.find(([, b]) => !covered(b))?.[0];
+    if (side) cities.set(c.name, side);
+  }
   const hiddenRoads = new Set(ROAD_LABELS.filter((r) => {
     const sx = (r.x - vb.x) / u, sy = (r.y - vb.y) / u, w = r.ref.length * 6.4 + 8;
     return covered({ x0: sx - w / 2, y0: sy - 7, x1: sx + w / 2, y1: sy + 7 });
   }).map((r) => r.ref));
-  return { hiddenCities, hiddenRoads };
+  return { cities, hiddenRoads };
 }
 
 export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, onHover, legend, credit }: {
@@ -202,8 +216,57 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, 
     const list = sortedPins.map((p) => ({ p, x: lonToX(p.lon), y: latToY(p.lat), pill: pill.get(p.key) ?? false }))
       .filter((q) => q.p.state !== "open" || inView(q.x, q.y))
       .sort((a, b) => layer(a.p) - layer(b.p) || Number(a.pill) - Number(b.pill) || prio(b.p) - prio(a.p));
-    return { list, ...labelsUnderTags(taken, vb, u) };
+    return { list, ...placeLabels(taken, vb, u) };
   }, [pins, sortedPins, hoverKey, vb.x, vb.y, vb.w, vb.h, u]);
+
+  // One site on the map: a public site (hollow diamond), or a bookable one with its price tag or dot.
+  const drawPin = ({ p, x, y, pill }: (typeof placed.list)[number]) => {
+    const hot = p.key === hoverKey;
+    if (p.state === "open" || p.state === "opensel") {
+      const sel = p.state === "opensel";
+      const r = (sel ? 7 : hot ? 6 : k > 2.4 ? 5 : 4) * u;
+      return (
+        <g key={p.key} className={`pin open ${p.tone ?? "check"}${sel ? " sel" : ""}${hot ? " hot" : ""}`} transform={`translate(${x} ${y})`}
+          role="button" tabIndex={0} aria-label={`${p.label}, public site, not bookable here yet`}
+          onClick={() => { if (!drag.current?.moved) onSelect?.(p.key); }}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(p.key); } }}
+          onMouseEnter={() => onHover?.(p.key)} onMouseLeave={() => onHover?.(null)} onFocus={() => onHover?.(p.key)} onBlur={() => onHover?.(null)}>
+          <rect className="ring" x={-r} y={-r} width={2 * r} height={2 * r} rx={1.5 * u} transform="rotate(45)" strokeWidth={1.75} />
+          {(sel || hot) && <text x={r + 6 * u} y={4 * u} fontSize={12.5 * u}>{p.label}</text>}
+        </g>
+      );
+    }
+    const priced = !!p.price && p.state !== "unfit";
+    const cls = `pin ${p.state}${p.best ? " best" : ""}${hot ? " hot" : ""}${priced ? (pill ? " pill" : " dot") : ""}`;
+    const act = {
+      role: "button" as const, tabIndex: 0, "aria-label": `${p.label}${p.price ? `, ${p.price} per kWh` : ""}${p.best ? ", cheapest" : ""}`,
+      onClick: () => { if (!drag.current?.moved) onSelect?.(p.key); },
+      onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(p.key); } },
+      onMouseEnter: () => onHover?.(p.key), onMouseLeave: () => onHover?.(null), onFocus: () => onHover?.(p.key), onBlur: () => onHover?.(null),
+    };
+    const name = (p.state === "sel" || hot || (!priced && k > 2.2 && p.state !== "unfit")) ? p.label : null;
+    if (priced && pill) {
+      const w = pillW(p.price!) * u, h = PILL_H * u, lift = 9 * u;
+      return (
+        <g key={p.key} className={cls} transform={`translate(${x} ${y})`} {...act}>
+          <circle className="spot" r={3 * u} />
+          <path className="tail" d={`M ${-5 * u} ${-lift - 0.5 * u} L 0 ${-3 * u} L ${5 * u} ${-lift - 0.5 * u} Z`} />
+          <rect className="ptag-shadow" x={-w / 2} y={-lift - h + 1.5 * u} width={w} height={h} rx={h / 2} />
+          <rect className="ptag" x={-w / 2} y={-lift - h} width={w} height={h} rx={h / 2} />
+          <text className="price" x={0} y={-lift - h / 2} textAnchor="middle" dominantBaseline="central" fontSize={13 * u}>{p.price}</text>
+          {p.best && <text className="best-cap" x={0} y={-lift - h - 6 * u} textAnchor="middle" fontSize={10.5 * u}>CHEAPEST</text>}
+          {name && <text className="name" x={0} y={14 * u} textAnchor="middle" fontSize={12 * u}>{name}</text>}
+        </g>
+      );
+    }
+    const r = (p.state === "sel" ? 8 : p.state === "unfit" ? 4.5 : priced ? 5.5 : 6) * u;
+    return (
+      <g key={p.key} className={cls} transform={`translate(${x} ${y})`} {...act}>
+        <circle className="ring" r={r} strokeWidth={2} />
+        {name && <text x={r + 5 * u} y={4 * u} fontSize={12.5 * u}>{name}</text>}
+      </g>
+    );
+  };
 
   return (
     <div className="map" ref={box} onWheel={onWheel}>
@@ -225,64 +288,28 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, 
             </g>
           );
         })}
-        {CITIES.filter((c) => c.rank <= cityRank && !placed.hiddenCities.has(c.name)).map((c) => (
-          <g key={c.name} className="city">
-            <circle cx={c.x} cy={c.y} r={2 * u} />
-            <text x={c.x + 5 * u} y={c.y - 4 * u} fontSize={(c.rank === 1 ? 12.5 : 11.5) * u}>{c.name}</text>
-          </g>
-        ))}
+        {/* Public sites first, then place names over them (they're easy to read through), then the
+            bookable sites and their price tags on top. */}
+        {placed.list.filter((q) => q.p.state === "open").map(drawPin)}
+        {CITIES.filter((c) => c.rank <= cityRank && placed.cities.has(c.name)).map((c) => {
+          const side = placed.cities.get(c.name)!, fs = cityFont(c.rank);
+          const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = side === "below" ? [c.x, c.y + (3 + fs) * u, "middle"]
+            : side === "farBelow" ? [c.x, c.y + (13 + fs) * u, "middle"]
+            : side === "lowRight" ? [c.x + 6 * u, c.y + (3 + fs) * u, "start"]
+            : side === "left" ? [c.x - 5 * u, c.y - 4 * u, "end"] : [c.x + 5 * u, c.y - 4 * u, "start"];
+          return (
+            <g key={c.name} className="city">
+              <circle cx={c.x} cy={c.y} r={2 * u} />
+              <text x={x} y={y} textAnchor={anchor} fontSize={fs * u}>{c.name}</text>
+            </g>
+          );
+        })}
         {near && (
           <g className="near">
             <circle cx={lonToX(near.lon)} cy={latToY(near.lat)} r={16 * u} strokeWidth={1.5} />
           </g>
         )}
-        {placed.list.map(({ p, x, y, pill }) => {
-          const hot = p.key === hoverKey;
-          if (p.state === "open" || p.state === "opensel") {
-            const sel = p.state === "opensel";
-            const r = (sel ? 7 : hot ? 6 : k > 2.4 ? 5 : 4) * u;
-            return (
-              <g key={p.key} className={`pin open ${p.tone ?? "check"}${sel ? " sel" : ""}${hot ? " hot" : ""}`} transform={`translate(${x} ${y})`}
-                role="button" tabIndex={0} aria-label={`${p.label}, public site, not bookable here yet`}
-                onClick={() => { if (!drag.current?.moved) onSelect?.(p.key); }}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(p.key); } }}
-                onMouseEnter={() => onHover?.(p.key)} onMouseLeave={() => onHover?.(null)} onFocus={() => onHover?.(p.key)} onBlur={() => onHover?.(null)}>
-                <rect className="ring" x={-r} y={-r} width={2 * r} height={2 * r} rx={1.5 * u} transform="rotate(45)" strokeWidth={1.75} />
-                {(sel || hot) && <text x={r + 6 * u} y={4 * u} fontSize={12.5 * u}>{p.label}</text>}
-              </g>
-            );
-          }
-          const priced = !!p.price && p.state !== "unfit";
-          const cls = `pin ${p.state}${p.best ? " best" : ""}${hot ? " hot" : ""}${priced ? (pill ? " pill" : " dot") : ""}`;
-          const act = {
-            role: "button" as const, tabIndex: 0, "aria-label": `${p.label}${p.price ? `, ${p.price} per kWh` : ""}${p.best ? ", cheapest" : ""}`,
-            onClick: () => { if (!drag.current?.moved) onSelect?.(p.key); },
-            onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(p.key); } },
-            onMouseEnter: () => onHover?.(p.key), onMouseLeave: () => onHover?.(null), onFocus: () => onHover?.(p.key), onBlur: () => onHover?.(null),
-          };
-          const name = (p.state === "sel" || hot || (!priced && k > 2.2 && p.state !== "unfit")) ? p.label : null;
-          if (priced && pill) {
-            const w = pillW(p.price!) * u, h = PILL_H * u, lift = 9 * u;
-            return (
-              <g key={p.key} className={cls} transform={`translate(${x} ${y})`} {...act}>
-                <circle className="spot" r={3 * u} />
-                <path className="tail" d={`M ${-5 * u} ${-lift - 0.5 * u} L 0 ${-3 * u} L ${5 * u} ${-lift - 0.5 * u} Z`} />
-                <rect className="ptag-shadow" x={-w / 2} y={-lift - h + 1.5 * u} width={w} height={h} rx={h / 2} />
-                <rect className="ptag" x={-w / 2} y={-lift - h} width={w} height={h} rx={h / 2} />
-                <text className="price" x={0} y={-lift - h / 2} textAnchor="middle" dominantBaseline="central" fontSize={13 * u}>{p.price}</text>
-                {p.best && <text className="best-cap" x={0} y={-lift - h - 6 * u} textAnchor="middle" fontSize={10.5 * u}>CHEAPEST</text>}
-                {name && <text className="name" x={0} y={14 * u} textAnchor="middle" fontSize={12 * u}>{name}</text>}
-              </g>
-            );
-          }
-          const r = (p.state === "sel" ? 8 : p.state === "unfit" ? 4.5 : priced ? 5.5 : 6) * u;
-          return (
-            <g key={p.key} className={cls} transform={`translate(${x} ${y})`} {...act}>
-              <circle className="ring" r={r} strokeWidth={2} />
-              {name && <text x={r + 5 * u} y={4 * u} fontSize={12.5 * u}>{name}</text>}
-            </g>
-          );
-        })}
+        {placed.list.filter((q) => q.p.state !== "open").map(drawPin)}
       </svg>
       <div className="map-ctrl">
         <button className="btn sm icon-only" onClick={() => zoomAt(1.5)} aria-label="Zoom in"><Icon name="plus" size="sm" /></button>
