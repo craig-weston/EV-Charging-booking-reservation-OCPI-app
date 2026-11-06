@@ -14,8 +14,9 @@ import type { Ctx } from "./context";
 import { parseElexonMid, parseFeed, parseOctopusRates, validProduct, OCTOPUS_REGIONS, type PriceSeries } from "../shared/energy/suppliers";
 import { outcode } from "../shared/energy/carbon";
 import { carbonFor } from "./energy";
+import { RouteUnavailable, truckRoute } from "./routing";
 
-export type MarketDeps = Pick<Ctx, "mode" | "now" | "transport"> & { marketUrl?: string; sitesUrl?: string };
+export type MarketDeps = Pick<Ctx, "mode" | "now" | "transport"> & { marketUrl?: string; sitesUrl?: string; env?: { ORS_API_KEY?: string }; store?: Ctx["store"] };
 
 /** The daily open-data snapshot (.github/workflows/opendata.yml); OPEN_SITES_URL overrides it. */
 export const OPEN_SITES_URL = "https://github.com/craig-weston/EV-Charging-booking-reservation-OCPI-app/releases/download/opendata/sites.json";
@@ -137,6 +138,15 @@ export async function handlePublicMarket(req: Request, d: MarketDeps): Promise<R
   const url = new URL(req.url);
   const what = url.pathname.replace(/^\/api\/public\/?/, "").replace(/\/+$/, "");
   if (what === "sites") return openSites(d);
+  // Lorry routes for the trip planner (server/routing.ts), kept a week.
+  if (what === "route") {
+    try {
+      return json(await truckRoute(d, url.searchParams), 200, 7 * 86400);
+    } catch (e) {
+      if (e instanceof RouteUnavailable) return json({ message: e.message }, e.status);
+      throw e;
+    }
+  }
   const now = d.now().getTime();
   const time = (k: string, dflt: number) => { const t = Date.parse(url.searchParams.get(k) ?? ""); return Number.isFinite(t) ? t : dflt; };
   const from = time("from", now - HALF), to = time("to", now + 36 * 3_600_000);

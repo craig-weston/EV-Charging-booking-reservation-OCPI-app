@@ -618,6 +618,18 @@ p { margin: 0; }
 .map .road-label rect { fill: var(--map-road); }
 .map .road-label text { fill: var(--surface); font-weight: 700; font-stretch: 80%; }
 .map .city text { fill: var(--muted); paint-order: stroke; stroke: var(--map-land); stroke-width: 3px; stroke-linejoin: round; }
+/* The trip planner's route: blue is the lorry route, dashed grey the straight-line estimate. */
+.trip-map { height: auto; width: auto; aspect-ratio: 16 / 9; margin: 20px 20px 6px; touch-action: auto; }
+.trip-map svg { cursor: default; }
+.trip-map svg:active { cursor: default; }
+.trip-map .trip-line { fill: none; stroke: var(--brand); stroke-width: 3.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.trip-map .trip-line.estimate { stroke: var(--muted); stroke-width: 2.5; stroke-dasharray: 7 6; }
+.trip-map-stop circle { fill: var(--brand); stroke: var(--surface); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.trip-map-stop text { fill: #fff; font-weight: 700; }
+.trip-map-end circle { fill: var(--ink); stroke: var(--surface); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.trip-map-end text { fill: var(--ink); font-weight: 650; paint-order: stroke; stroke: var(--map-land); stroke-width: 3px; stroke-linejoin: round; }
+.trip-map-note { margin: 0 20px; }
+@media (max-width: 640px) { .trip-map { margin: 16px 14px 6px; } .trip-map-note { margin: 0 14px; } }
 .map .city circle { fill: var(--faint); }
 .map .pin { cursor: pointer; }
 .map .pin circle.ring { fill: var(--surface); stroke: var(--ink); vector-effect: non-scaling-stroke; }
