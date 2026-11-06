@@ -293,7 +293,7 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, 
         {placed.list.filter((q) => q.p.state === "open").map(drawPin)}
         {CITIES.filter((c) => c.rank <= cityRank && placed.cities.has(c.name)).map((c) => {
           const side = placed.cities.get(c.name)!, fs = cityFont(c.rank);
-          const [x, y, anchor] = side === "below" ? [c.x, c.y + (3 + fs) * u, "middle"]
+          const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = side === "below" ? [c.x, c.y + (3 + fs) * u, "middle"]
             : side === "farBelow" ? [c.x, c.y + (13 + fs) * u, "middle"]
             : side === "lowRight" ? [c.x + 6 * u, c.y + (3 + fs) * u, "start"]
             : side === "left" ? [c.x - 5 * u, c.y - 4 * u, "end"] : [c.x + 5 * u, c.y - 4 * u, "start"];
