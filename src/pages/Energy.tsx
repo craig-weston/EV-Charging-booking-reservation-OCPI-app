@@ -8,6 +8,7 @@ import { cleanEnergy, newDepot, type Depot, type DepotGoal, type DepotVisit, typ
 import { carbonBand } from "../../shared/energy/carbon";
 import { PROGRAMME_LABEL, type FlexEvent, type FlexProgramme } from "../../shared/energy/flex";
 import type { DepotPlanView, PlanVisitView } from "../../server/depot";
+import { cannotCharge, type ChargerNow } from "../../shared/energy/chargers";
 import { useApp } from "../app/state";
 import { ApiFailure } from "../app/backend";
 import { fmtDay, fmtMoney, fmtTime } from "../app/format";
@@ -19,7 +20,7 @@ import { MoreList, MoreRow } from "../components/More";
 import { SupplierPicker } from "../components/SupplierPicker";
 
 type EnergyView = { config: EnergyConfig; state: EnergyState; has_secret: Record<string, boolean> };
-type PlanResponse = DepotPlanView & { dispatch: DepotDispatch | null };
+type PlanResponse = DepotPlanView & { dispatch: DepotDispatch | null; chargers?: Record<string, ChargerNow> };
 
 const N0 = new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 });
 const TZ = "Europe/London";
@@ -29,7 +30,14 @@ const GOALS: { value: DepotGoal; label: string; hint: string }[] = [
   { value: "balanced", label: "Balanced", hint: "Cheap first, and cleaner when prices are close (carbon valued at £100 a tonne)." },
   { value: "carbon", label: "Lowest carbon", hint: "Cleanest half-hours, accepting a little extra cost." },
 ];
-const CONTROL_LABEL = { simulated: "Not connected yet", citrineos: "CitrineOS", webhook: "Depot operator's system" } as const;
+const CONTROL_LABEL = { simulated: "Not connected yet", simulator: "Simulated chargers", citrineos: "CitrineOS", webhook: "Depot operator's system" } as const;
+
+/** A working charger free for the truck's whole stay, to move it to when its own has a fault. */
+function freeBay(depot: Depot, plan: PlanResponse, all: DepotVisit[], v: PlanVisitView): Depot["chargers"][number] | null {
+  const a = Date.parse(v.visit.arrive_at), b = Date.parse(v.visit.depart_at);
+  return depot.chargers.find((c) => c.id !== v.visit.charger_id && !cannotCharge(plan.chargers?.[c.id])
+    && !all.some((x) => x.id !== v.visit.id && x.depot_id === depot.id && x.charger_id === c.id && (x.status === "planned" || x.status === "plugged_in") && Date.parse(x.arrive_at) < b && Date.parse(x.depart_at) > a)) ?? null;
+}
 
 /** 23.4p: how British energy prices are quoted. */
 const pence = (gbp: number) => `${(gbp * 100).toFixed(1)}p`;
@@ -75,19 +83,49 @@ export function EnergyPage() {
   useEffect(() => { const t = setInterval(() => void load(), 5 * 60_000); return () => clearInterval(t); }, [load]);
 
   const depot = energy?.config.depots.find((d) => d.id === depotId) ?? null;
+  // Connected chargers report back: check every 30 seconds, and every 2 seconds just after a send.
+  const [fastUntil, setFastUntil] = useState(0);
+  const refreshPlan = useCallback(async () => {
+    if (!fleetId || !depotId) return;
+    try { setPlan(await api<PlanResponse>("GET", `/fleets/${fleetId}/depots/${encodeURIComponent(depotId)}/plan`)); } catch { /* the next refresh tries again */ }
+  }, [api, fleetId, depotId]);
+  const live = !!depot && depot.control.kind !== "simulated";
+  useEffect(() => {
+    const fast = fastUntil > Date.now();
+    if (!live && !fast) return;
+    const t = setInterval(() => {
+      void refreshPlan();
+      if (fast && Date.now() > fastUntil) setFastUntil(0);
+    }, fast ? 2000 : 30_000);
+    return () => clearInterval(t);
+  }, [live, fastUntil, refreshPlan]);
   const events = depot ? flex.filter((x) => x.depot_id === depot.id) : [];
   const offered = events.filter((e) => e.status === "offered" && Date.parse(e.end_at) > now.getTime());
 
-  const send = async () => {
+  const send = async (done?: string) => {
     if (!depot || !fleetId) return;
     setSending(true);
     try {
       const d = await api<DepotDispatch>("POST", `/fleets/${fleetId}/depots/${encodeURIComponent(depot.id)}/dispatch`);
-      toast(d.ok ? `Plan sent to ${d.results.length} charger${d.results.length === 1 ? "" : "s"}` : "Some chargers didn't accept the plan", d.ok ? undefined : "bad");
+      toast(!d.ok ? "Some chargers didn't accept the plan" : done ?? `Plan sent to ${d.results.length} charger${d.results.length === 1 ? "" : "s"}`, d.ok ? undefined : "bad");
       await load();
+      setFastUntil(Date.now() + 15_000);
     } catch (e) {
       toast(e instanceof ApiFailure ? e.message : "Couldn't send the plan", "bad");
     } finally { setSending(false); }
+  };
+  /** Moves a truck off a charger that can't charge, then sends the new plan if the chargers are connected. */
+  const move = async (v: PlanVisitView, to: Depot["chargers"][number]) => {
+    if (!depot || !fleetId) return;
+    try {
+      await api("PATCH", `/fleets/${fleetId}/depot-visits/${v.visit.id}`, { charger_id: to.id });
+      if (depot.control.kind !== "simulated" && plan?.dispatch && canPlan) {
+        await send(`${v.plate} moved to ${to.name}, and the new plan sent`);
+      } else {
+        await load();
+        toast(`${v.plate} moved to ${to.name}`);
+      }
+    } catch (e) { toast(e instanceof ApiFailure ? e.message : "Couldn't move it", "bad"); }
   };
   const setGoal = async (goal: DepotGoal) => {
     if (!energy || !depot || goal === depot.goal || !fleetId) return;
@@ -136,10 +174,11 @@ export function EnergyPage() {
         : (
           <>
             <PlanStory plan={plan} depot={depot} now={now} canPlan={canPlan} offered={offered} deciding={deciding} onDecide={decide} onEdit={(v) => setEditVisit(v)} onAdd={() => setEditVisit("new")}
-              isOwner={isOwner} goalBusy={goalBusy} onGoal={setGoal} />
+              isOwner={isOwner} goalBusy={goalBusy} onGoal={setGoal} visits={visits} onMove={move} />
             {plan.visits.length > 0 && <PlanTimeline plan={plan} depot={depot} now={now} canEdit={canPlan} onEdit={(v) => setEditVisit(v)} onSettings={isOwner ? (f) => setSettingsOpen(f) : undefined} />}
             <MoreFromDepot depot={depot} plan={plan} events={events} provider={energy.config.flex_provider} vehicles={vehicles} now={now} canPlan={canPlan} isOwner={isOwner}
-              sending={sending} onSend={send} onSettings={(f) => setSettingsOpen(f ?? "top")} onChanged={load} deciding={deciding} onDecide={decide} />
+              sending={sending} onSend={() => void send()} onSettings={(f) => setSettingsOpen(f ?? "top")} onChanged={load} deciding={deciding} onDecide={decide} visits={visits} onMove={move}
+              onReset={async () => { await api("POST", `/fleets/${fleetId}/depots/${encodeURIComponent(depot.id)}/reset-chargers`); await refreshPlan(); toast("The simulated chargers are back to normal"); }} />
             <DataSources />
           </>
         )}
@@ -174,11 +213,13 @@ function SetupInvite({ isOwner, onStart }: { isOwner: boolean; onStart(): void }
 
 // ---- the headline -------------------------------------------------------------------------------
 
-function PlanStory({ plan, depot, now, canPlan, offered, deciding, onDecide, onEdit, onAdd, isOwner, goalBusy, onGoal }: {
+function PlanStory({ plan, depot, now, canPlan, offered, deciding, onDecide, onEdit, onAdd, isOwner, goalBusy, onGoal, visits: allVisits, onMove }: {
   plan: PlanResponse; depot: Depot; now: Date; canPlan: boolean; offered: FlexEvent[]; deciding: string | null;
   onDecide(e: FlexEvent, accept: boolean): void; onEdit(v: DepotVisit): void; onAdd(): void;
   isOwner: boolean; goalBusy: boolean; onGoal(g: DepotGoal): void;
+  visits: DepotVisit[]; onMove(v: PlanVisitView, to: Depot["chargers"][number]): Promise<void>;
 }) {
+  const [moving, setMoving] = useState<string | null>(null);
   const visits = plan.visits;
   if (!visits.length) {
     return (
@@ -218,13 +259,25 @@ function PlanStory({ plan, depot, now, canPlan, offered, deciding, onDecide, onE
       </div>
       {(short.length > 0 || offered.length > 0) && (
         <ul className="en-asks">
-          {short.map((v) => (
-            <li key={v.visit.id}>
-              <span className="en-ask-icon warn"><Icon name="batteryLow" size="sm" /></span>
-              <span className="grow"><b>{v.plate}</b> would leave at {N0.format(v.soc_ready)}%, not {v.visit.soc_target}%. Give it longer, or a faster charger.</span>
-              {canPlan && <button className="btn sm" onClick={() => onEdit(v.visit)}>Change</button>}
-            </li>
-          ))}
+          {short.map((v) => {
+            const ch = depot.chargers.find((c) => c.id === v.visit.charger_id);
+            const to = v.charger_fault ? freeBay(depot, plan, allVisits, v) : null;
+            return v.charger_fault ? (
+              <li key={v.visit.id}>
+                <span className="en-ask-icon bad"><Icon name="alert" size="sm" /></span>
+                <span className="grow"><b>{ch?.name ?? "Its charger"}</b> has a fault: {v.charger_fault.charAt(0).toLowerCase() + v.charger_fault.slice(1)}. <b>{v.plate}</b> can't charge there{to ? <>, but {to.name} is free for its whole stay.</> : ", and no other charger is free for its whole stay."}</span>
+                {canPlan && (to
+                  ? <button className="btn sm primary" disabled={moving === v.visit.id} onClick={async () => { setMoving(v.visit.id); try { await onMove(v, to); } finally { setMoving(null); } }}>{moving === v.visit.id && <Spinner />}Move to {to.name}</button>
+                  : <button className="btn sm" onClick={() => onEdit(v.visit)}>Change</button>)}
+              </li>
+            ) : (
+              <li key={v.visit.id}>
+                <span className="en-ask-icon warn"><Icon name="batteryLow" size="sm" /></span>
+                <span className="grow"><b>{v.plate}</b> would leave at {N0.format(v.soc_ready)}%, not {v.visit.soc_target}%. Give it longer, or a faster charger.</span>
+                {canPlan && <button className="btn sm" onClick={() => onEdit(v.visit)}>Change</button>}
+              </li>
+            );
+          })}
           {offered.map((e) => (
             <li key={e.id}>
               <span className="en-ask-icon"><Icon name={e.direction === "down" ? "trendDown" : "trendUp"} size="sm" /></span>
@@ -454,12 +507,14 @@ function TruckRow({ v, depot, S, at, t0, now, hoverBar, canEdit, onEdit }: {
   const soc = truckAt
     ? <span className="en-fromtruck" title={`From the truck at ${truckAt}`}><Icon name="wifi" size="sm" />{v.visit.soc_start}%</span>
     : <>{v.visit.soc_start}%</>;
-  const status = v.outcome === "ready"
+  const status = v.charger_fault
+    ? <><span className="en-fault"><Icon name="alert" size="sm" />{ch ? `${ch.name} fault` : "Charger fault"}</span><span className="en-sub">{soc} → {N0.format(v.soc_ready)}% of {v.visit.soc_target}%</span></>
+    : v.outcome === "ready"
     ? <><span className="en-ready"><Icon name="circleCheck" size="sm" />Ready{ready ? ` by ${ready}` : ""}</span><span className="en-sub">{soc} → {N0.format(v.soc_ready)}%</span></>
     : v.outcome === "short"
       ? <><span className="en-short"><Icon name="alert" size="sm" />{N0.format(v.plan.shortfallKwh)} kWh short</span><span className="en-sub">{soc} → {N0.format(v.soc_ready)}% of {v.visit.soc_target}%</span></>
       : <span className="en-sub">{v.battery_kwh ? <>Already at {soc}</> : "Add its battery size in Fleet"}</span>;
-  const words = `${v.plate}${v.name ? `, ${v.name}` : ""}${ch ? ` on ${ch.name}` : ""}: ${here ? "here now" : `arrives ${when(a, now)}`}, leaves ${when(b, now)}. ${v.outcome === "ready" ? `Ready${ready ? ` by ${ready}` : ""}, ${v.visit.soc_start}% to ${N0.format(v.soc_ready)}%.` : v.outcome === "short" ? `${N0.format(v.plan.shortfallKwh)} kilowatt hours short.` : ""}${truckAt ? ` Charge reported by the truck at ${truckAt}.` : ""}`;
+  const words = `${v.plate}${v.name ? `, ${v.name}` : ""}${ch ? ` on ${ch.name}` : ""}: ${here ? "here now" : `arrives ${when(a, now)}`}, leaves ${when(b, now)}. ${v.charger_fault ? `Its charger has a fault: ${v.charger_fault}. ` : ""}${v.outcome === "ready" ? `Ready${ready ? ` by ${ready}` : ""}, ${v.visit.soc_start}% to ${N0.format(v.soc_ready)}%.` : v.outcome === "short" ? `${N0.format(v.plan.shortfallKwh)} kilowatt hours short.` : ""}${truckAt ? ` Charge reported by the truck at ${truckAt}.` : ""}`;
   const wide = right - left > 24;
   const body = (
     <>
@@ -484,9 +539,10 @@ function TruckRow({ v, depot, S, at, t0, now, hoverBar, canEdit, onEdit }: {
 
 // ---- everything else, one tap away -------------------------------------------------------------
 
-function MoreFromDepot({ depot, plan, events, provider, vehicles, now, canPlan, isOwner, sending, onSend, onSettings, onChanged, deciding, onDecide }: {
+function MoreFromDepot({ depot, plan, events, provider, vehicles, now, canPlan, isOwner, sending, onSend, onSettings, onChanged, deciding, onDecide, visits, onMove, onReset }: {
   depot: Depot; plan: PlanResponse; events: FlexEvent[]; provider: EnergyConfig["flex_provider"]; vehicles: { id: string; plate: string; name: string }[]; now: Date;
   canPlan: boolean; isOwner: boolean; sending: boolean; onSend(): void; onSettings(f?: SettingsFocus): void; onChanged(): Promise<void>; deciding: string | null; onDecide(e: FlexEvent, accept: boolean): void;
+  visits: DepotVisit[]; onMove(v: PlanVisitView, to: Depot["chargers"][number]): Promise<void>; onReset(): Promise<void>;
 }) {
   // Grid flexibility, in one line.
   const t = now.getTime();
@@ -504,18 +560,24 @@ function MoreFromDepot({ depot, plan, events, provider, vehicles, now, canPlan, 
     : r && r.dischargedKwh > 0.5 ? `${pilots.map((v) => v.plate).join(", ") || "The pilot truck"} gives back ${N0.format(r.dischargedKwh)} kWh at the peak: ${fmtMoney(r.net)} net`
     : "On. Nothing to give back in this plan.";
 
-  // Chargers, in one line. A charger that refused the plan is a fault (red).
+  // Chargers, in one line. A fault, or a charger that refused the plan, is red.
   const d = plan.dispatch;
-  const failed = d ? d.results.filter((x) => !x.ok).length : 0;
+  const answers = d ? d.results.map((x) => answerOf(x, plan.chargers?.[x.charger_id], d)) : [];
+  const refused = answers.filter((a) => a === "rejected" || a === "failed").length;
+  const waitingN = answers.filter((a) => a === "waiting").length;
+  const faulted = depot.chargers.filter((c) => cannotCharge(plan.chargers?.[c.id]));
+  const sentWhen = d ? when(d.at, now) : "";
   const chargerSummary = depot.control.kind === "simulated" ? "Not connected yet: the plan is worked out, not sent"
-    : failed ? `${failed} charger${failed === 1 ? "" : "s"} didn't accept the plan`
-    : d ? `${CONTROL_LABEL[depot.control.kind]}, plan sent ${when(d.at, now)}${depot.auto_dispatch ? ", updated every 15 minutes" : ""}`
+    : faulted.length ? `${faulted.map((c) => c.name).join(", ")} ${faulted.length === 1 ? "has" : "have"} a fault`
+    : refused ? `${refused} charger${refused === 1 ? "" : "s"} didn't accept the plan`
+    : d && waitingN ? `${CONTROL_LABEL[depot.control.kind]}, plan sent ${sentWhen}: waiting for ${waitingN} to answer`
+    : d ? `${CONTROL_LABEL[depot.control.kind]}, plan ${answers.length && answers.every((a) => a === "accepted") ? "accepted" : "sent"} ${sentWhen}${depot.auto_dispatch ? ", updated every 15 minutes" : ""}`
     : `${CONTROL_LABEL[depot.control.kind]}, not sent yet`;
 
   return (
     <MoreList label="More from this depot">
-      <MoreRow icon="plug" title="Chargers" summary={chargerSummary} tone={failed ? "bad" : d && depot.control.kind !== "simulated" ? "ok" : undefined}>
-        <ChargersBody depot={depot} plan={plan} canSend={canPlan} sending={sending} onSend={onSend} isOwner={isOwner} onSettings={() => onSettings("connect")} now={now} />
+      <MoreRow icon="plug" title="Chargers" summary={chargerSummary} tone={faulted.length || refused ? "bad" : d && depot.control.kind !== "simulated" && !waitingN ? "ok" : undefined}>
+        <ChargersBody depot={depot} plan={plan} canSend={canPlan} sending={sending} onSend={onSend} isOwner={isOwner} onSettings={() => onSettings("connect")} now={now} visits={visits} onMove={onMove} onReset={onReset} />
       </MoreRow>
       <MoreRow icon="activity" title="Grid flexibility" summary={flexSummary} tone={waiting ? "warn" : earned > 0 ? "ok" : undefined}>
         <FlexBody depot={depot} events={events} provider={provider} now={now} canDecide={canPlan} isOwner={isOwner} onSettings={() => onSettings("flex")} onChanged={onChanged} deciding={deciding} onDecide={onDecide} />
@@ -528,25 +590,76 @@ function MoreFromDepot({ depot, plan, events, provider, vehicles, now, canPlan, 
   );
 }
 
-function ChargersBody({ depot, plan, canSend, sending, onSend, isOwner, onSettings, now }: { depot: Depot; plan: PlanResponse; canSend: boolean; sending: boolean; onSend(): void; isOwner: boolean; onSettings(): void; now: Date }) {
+/** A charger's answer to the latest plan: from the charger itself when it has replied (CitrineOS
+ *  passes it on), else what happened when it was sent. */
+function answerOf(r: DepotDispatch["results"][number], live: ChargerNow | undefined, d: DepotDispatch): "accepted" | "rejected" | "waiting" | "failed" | "sent" {
+  if (!r.ok && r.answer !== "rejected") return "failed";
+  if (live?.answer && live.answer.sent_at === d.at) return live.answer.answer;
+  return r.answer ?? "sent";
+}
+
+const STATE_TEXT: Record<NonNullable<ChargerNow["state"]>, string> = {
+  available: "Free", occupied: "Truck plugged in", charging: "Charging", faulted: "Fault", unavailable: "Out of service",
+  offline: "Lost contact: it charges on its own settings until it's back",
+};
+
+function ChargersBody({ depot, plan, canSend, sending, onSend, isOwner, onSettings, now, visits, onMove, onReset }: {
+  depot: Depot; plan: PlanResponse; canSend: boolean; sending: boolean; onSend(): void; isOwner: boolean; onSettings(): void; now: Date;
+  visits: DepotVisit[]; onMove(v: PlanVisitView, to: Depot["chargers"][number]): Promise<void>; onReset(): Promise<void>;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
   const d = plan.dispatch;
-  const name = (id: string) => depot.chargers.find((c) => c.id === id)?.name ?? id;
+  const kind = depot.control.kind;
+  const ctl = depot.control;
+  const faultOn = ctl.kind === "simulator" ? depot.chargers.find((c) => c.id === ctl.fault_charger_id) : undefined;
+  const anyFault = depot.chargers.some((c) => cannotCharge(plan.chargers?.[c.id]));
+  const run = async (key: string, f: () => Promise<void>) => { setBusy(key); try { await f(); } finally { setBusy(null); } };
   return (
     <div className="stack gap-12">
       <p className="small" style={{ margin: 0 }}>
-        {depot.control.kind === "simulated"
-          ? <>The plan is worked out but not sent anywhere yet. {isOwner ? "Connect the chargers through CitrineOS (free and open source) or your depot operator's system." : "Ask a fleet owner to connect the chargers."}</>
-          : <>Each charger is sent its power limit for every half-hour (an OCPP 2.0.1 charging profile). If the connection drops, chargers fall back to their own settings.</>}
+        {kind === "simulated"
+          ? <>The plan is worked out but not sent anywhere yet. {isOwner ? "Connect the chargers through CitrineOS (free and open source) or your depot operator's system, or try simulated chargers." : "Ask a fleet owner to connect the chargers."}</>
+          : kind === "simulator"
+            ? <>Simulated chargers: each one checks its plan like a real OCPP charger and answers.{faultOn ? <> {faultOn.name} is set to develop a fault a few seconds after it gets a plan, to show what happens.</> : null}</>
+            : <>Each charger is sent its power limit for every half-hour (an OCPP charging profile) and answers back. A charger that reports a fault is planned around. If the connection drops, chargers fall back to their own settings.</>}
       </p>
-      {d && (
-        <ul className="dispatch-list">
-          {d.results.map((x) => <li key={x.charger_id} className={x.ok ? "" : "bad"}><Icon name={x.ok ? "circleCheck" : "circleX"} size="sm" /><b>{name(x.charger_id)}</b><span className="muted small">{x.message}</span></li>)}
+      {kind !== "simulated" && depot.chargers.length > 0 && (
+        <ul className="charger-list">
+          {depot.chargers.map((c) => {
+            const live = plan.chargers?.[c.id];
+            const r = d?.results.find((x) => x.charger_id === c.id);
+            const ans = r && d ? answerOf(r, live, d) : null;
+            const fault = cannotCharge(live);
+            const truck = plan.visits.find((v) => v.visit.charger_id === c.id && v.charger_fault);
+            const to = truck ? freeBay(depot, plan, visits, truck) : null;
+            const tone = fault || ans === "rejected" || ans === "failed" ? "bad" : ans === "accepted" ? "ok" : "";
+            const icon: IconName = fault ? "alert" : ans === "accepted" ? "circleCheck" : ans === "rejected" || ans === "failed" ? "circleX" : ans === "waiting" ? "clock" : "plug";
+            const answerText = !r ? (plan.visits.some((v) => v.visit.charger_id === c.id) ? "Hasn't had the plan yet" : "Nothing planned")
+              : ans === "accepted" ? `Took the plan${live?.answer?.sent_at === d?.at && live?.answer ? ` at ${fmtTime(new Date(live.answer.at), TZ)}` : ""}`
+              : ans === "rejected" ? `Refused the plan${live?.answer?.reason ? `: ${live.answer.reason}` : r.message.startsWith("Refused") ? `: ${r.message.replace(/^Refused:?\s*/, "")}` : ""}`
+              : ans === "waiting" ? (d && now.getTime() - Date.parse(d.at) > 2 * 60_000 ? "No answer from the charger yet" : "Plan sent, waiting for its answer")
+              : r.message;
+            return (
+              <li key={c.id} className={tone}>
+                <span className="charger-icon"><Icon name={icon} size="sm" /></span>
+                <span className="grow stack">
+                  <span><b>{c.name}</b> <span className="xs muted">{N0.format(c.max_kw)} kW{kind !== "simulator" ? ` · ${c.station_id}` : ""}</span></span>
+                  <span className="small">{fault ? `${live?.state === "unavailable" ? "Out of service" : "Fault"}${live?.at ? ` since ${when(live.at, now)}` : ""}: ${live?.fault}` : live?.state ? STATE_TEXT[live.state] : kind === "simulator" ? "Free" : "No report yet"}</span>
+                  <span className="xs muted">{answerText}</span>
+                </span>
+                {truck && canSend && to && (
+                  <button className="btn sm primary" disabled={!!busy} onClick={() => void run(c.id, () => onMove(truck, to))}>{busy === c.id && <Spinner />}Move {truck.plate} to {to.name}</button>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       {(canSend || isOwner) && (
         <div className="row gap-8 wrap" style={{ alignItems: "center" }}>
-          {isOwner && depot.control.kind === "simulated" && <button className="btn sm" onClick={onSettings}><Icon name="plug" size="sm" />Connect the chargers</button>}
-          {canSend && <button className={`btn sm ${depot.control.kind === "simulated" ? "ghost" : "primary"}`} disabled={sending || !plan.visits.length} onClick={onSend}>{sending ? <Spinner label="Sending" /> : <Icon name="zap" size="sm" />}Send the plan to the chargers</button>}
+          {isOwner && kind === "simulated" && <button className="btn sm" onClick={onSettings}><Icon name="plug" size="sm" />Connect the chargers</button>}
+          {canSend && <button className={`btn sm ${kind === "simulated" ? "ghost" : "primary"}`} disabled={sending || !plan.visits.length} onClick={() => onSend()}>{sending ? <Spinner label="Sending" /> : <Icon name="zap" size="sm" />}Send the plan to the chargers</button>}
+          {canSend && kind === "simulator" && anyFault && <button className="btn sm ghost" disabled={!!busy} onClick={() => void run("reset", onReset)}>{busy === "reset" && <Spinner />}Clear the simulated fault</button>}
           {canSend && <span className="xs muted">{d ? `Last sent ${when(d.at, now)} (${d.by === "auto" ? "automatically" : "by hand"})` : "Not sent yet"}</span>}
         </div>
       )}
@@ -889,17 +1002,34 @@ function DepotSettings({ energy, depotId, focus, onClose, onSaved }: { energy: E
         {!setup && (
           <div className="stack gap-8">
             <Adv id="set-connect" open={focus === "connect"} title="Connect the chargers" summary={CONTROL_LABEL[d.control.kind]}>
-              <Seg<"simulated" | "citrineos" | "webhook"> label="How the chargers are controlled" full value={d.control.kind}
-                onChange={(k) => set({ control: k === "citrineos" ? { kind: "citrineos", base_url: "", tenant_id: "1" } : k === "webhook" ? { kind: "webhook", url: "" } : { kind: "simulated" } })}
-                options={[{ value: "simulated", label: "Not yet" }, { value: "citrineos", label: "CitrineOS" }, { value: "webhook", label: "Operator's system" }]} />
+              <Seg<"simulated" | "simulator" | "citrineos" | "webhook"> label="How the chargers are controlled" full value={d.control.kind}
+                onChange={(k) => set({ control: k === "citrineos" ? { kind: "citrineos", base_url: "", tenant_id: "1" } : k === "webhook" ? { kind: "webhook", url: "" } : k === "simulator" ? { kind: "simulator" } : { kind: "simulated" } })}
+                options={[{ value: "simulated", label: "Not yet" }, { value: "simulator", label: "Simulated" }, { value: "citrineos", label: "CitrineOS" }, { value: "webhook", label: "Operator's system" }]} />
               {d.control.kind === "simulated" && <p className="small muted" style={{ margin: 0 }}>The plan is worked out but nothing is sent. Good for trying it out before the chargers are connected.</p>}
+              {d.control.kind === "simulator" && (
+                <>
+                  <p className="small muted" style={{ margin: 0 }}>Simulated chargers take the plan like real OCPP chargers: each checks it and answers. Nothing leaves the app. To see what happens when one breaks down, choose a charger to develop a fault a few seconds after it gets a plan.</p>
+                  <Field label="Develop a fault on">
+                    {(fid) => (
+                      <select id={fid} className="select" value={d.control.kind === "simulator" ? d.control.fault_charger_id ?? "" : ""}
+                        onChange={(e) => set({ control: { kind: "simulator", ...(e.target.value ? { fault_charger_id: e.target.value } : {}) } })}>
+                        <option value="">No charger</option>
+                        {d.chargers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    )}
+                  </Field>
+                </>
+              )}
               {d.control.kind === "citrineos" && (
                 <>
-                  <p className="small muted" style={{ margin: 0 }}>CitrineOS is a free, open-source charger management system (OCPP 2.0.1). Connect the chargers to it, and each charger's plan is sent through it.</p>
+                  <p className="small muted" style={{ margin: 0 }}>CitrineOS is a free, open-source charger management system. Connect the chargers to it, and each charger's plan is sent through it. CitrineOS passes back each charger's answer and its status, so a fault shows here within seconds.</p>
                   <div className="two" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
                     <Field label="CitrineOS address">{(fid) => <input id={fid} className="input" placeholder="https://csms.example.com" value={d.control.kind === "citrineos" ? d.control.base_url : ""} onChange={(e) => d.control.kind === "citrineos" && set({ control: { ...d.control, base_url: e.target.value } })} />}</Field>
                     <Field label="Tenant id">{(fid) => <input id={fid} className="input" value={d.control.kind === "citrineos" ? d.control.tenant_id : ""} onChange={(e) => d.control.kind === "citrineos" && set({ control: { ...d.control, tenant_id: e.target.value } })} />}</Field>
                   </div>
+                  <Seg<"2.0.1" | "2.1"> label="OCPP version the chargers use" value={d.control.ocpp_version ?? "2.0.1"}
+                    onChange={(v) => d.control.kind === "citrineos" && set({ control: { ...d.control, ...(v === "2.1" ? { ocpp_version: "2.1" as const } : { ocpp_version: undefined }) } })}
+                    options={[{ value: "2.0.1", label: "2.0.1" }, { value: "2.1", label: "2.1" }]} />
                   <Field label="API token (optional)" hint={hasSecret ? `Saved (ending ${d.control.token_hint ?? "…"}). Type a new one to replace it.` : "Sent as a Bearer token. Stored encrypted; never shown again."}>{(fid) => <input id={fid} className="input" type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />}</Field>
                 </>
               )}
@@ -910,16 +1040,14 @@ function DepotSettings({ energy, depotId, focus, onClose, onSaved }: { energy: E
                   <Field label="Signing secret" hint={hasSecret ? `Saved (ending ${d.control.secret_hint ?? "…"}). Type a new one to replace it.` : "Agree a secret with the operator. Stored encrypted."}>{(fid) => <input id={fid} className="input" type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />}</Field>
                 </>
               )}
-              {d.control.kind !== "simulated" && (
-                <>
-                  <div className="field"><span className="label">OCPP station ids</span>
-                    {d.chargers.map((c, i) => (
-                      <div key={c.id} className="row gap-8" style={{ alignItems: "center" }}><span className="small" style={{ minWidth: 80 }}>{c.name}</span><input className="input" aria-label={`${c.name} OCPP station id`} placeholder="Station id" value={c.station_id} onChange={(e) => set({ chargers: d.chargers.map((x, j) => (j === i ? { ...x, station_id: e.target.value } : x)) })} /></div>
-                    ))}
-                  </div>
-                  <Switch checked={d.auto_dispatch} onChange={(v) => set({ auto_dispatch: v })}>Send updated plans automatically every 15 minutes</Switch>
-                </>
+              {(d.control.kind === "citrineos" || d.control.kind === "webhook") && (
+                <div className="field"><span className="label">OCPP station ids</span>
+                  {d.chargers.map((c, i) => (
+                    <div key={c.id} className="row gap-8" style={{ alignItems: "center" }}><span className="small" style={{ minWidth: 80 }}>{c.name}</span><input className="input" aria-label={`${c.name} OCPP station id`} placeholder="Station id" value={c.station_id} onChange={(e) => set({ chargers: d.chargers.map((x, j) => (j === i ? { ...x, station_id: e.target.value } : x)) })} /></div>
+                  ))}
+                </div>
               )}
+              {d.control.kind !== "simulated" && <Switch checked={d.auto_dispatch} onChange={(v) => set({ auto_dispatch: v })}>Send updated plans automatically every 15 minutes</Switch>}
             </Adv>
 
             <Adv id="set-flex" open={focus === "flex"} title="Grid flexibility" summary={flexOn}>

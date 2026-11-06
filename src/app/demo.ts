@@ -11,8 +11,8 @@ import { MemoryStore, type MemoryData } from "../../server/store/memory";
 import { tick } from "../../server/sim/cpo";
 import { ApiFailure, type Backend } from "./backend";
 
-const STORAGE_KEY = "depotcharge.demo.v3";
-const SEEDED_KEY = "depotcharge.demo.seeded.v3";
+const STORAGE_KEY = "depotcharge.demo.v4";
+const SEEDED_KEY = "depotcharge.demo.seeded.v4";
 /** Sample history is relative to the day it was made; after this long it's rebuilt so "today" stays today. */
 const FRESH_FOR_MS = 18 * 60 * 60 * 1000;
 const TRY_FLAG = "depotcharge.try-demo";
@@ -300,7 +300,9 @@ async function seedHistory(api: Api, clock: DemoClock, flush: () => Promise<void
   store.data.logs = store.data.logs.filter((l) => logsBefore.has(l.id));
 }
 
-/** The fleet's own yard: four 150 kW chargers on a 400 kW connection, five trucks overnight. */
+/** The fleet's own yard: five 150 kW chargers (one kept spare) on a 400 kW connection, five trucks
+ *  overnight. The chargers are simulated: send them the plan and Bay 3 develops a fault a few
+ *  seconds later, so the planner can move Tanker 05 to the spare bay. */
 async function seedDepot(api: Api, now: Date, fleet: Fleet, vehicles: Vehicle[], store: MemoryStore) {
   const depotId = "demo-yard";
   const ch = (n: number) => ({ id: `bay-${n}`, name: `Bay ${n}`, station_id: `YARD-CP0${n}`, evse_id: 1, max_kw: 150, ...(n === 4 ? { bidirectional: true } : {}) });
@@ -309,7 +311,7 @@ async function seedDepot(api: Api, now: Date, fleet: Fleet, vehicles: Vehicle[],
     id: depotId, name: "Northampton yard", postcode: "NN4 7AB", import_limit_kw: 400, site_load_kw: 60, goal: "balanced",
     // Octopus's half-hourly Shape Shifters: Agile tariff for businesses, region from the postcode.
     tariff: { kind: "octopus", octopus_product: "AGILE-BUS-25-02-05", octopus_region: "auto", standard: 0.24, rates: [] },
-    chargers: [ch(1), ch(2), ch(3), ch(4)], control: { kind: "simulated" }, auto_dispatch: false,
+    chargers: [ch(1), ch(2), ch(3), ch(4), ch(5)], control: { kind: "simulator", fault_charger_id: "bay-3" }, auto_dispatch: false,
     flex: { enabled: true, programmes: ["DFS", "DNO"], auto_accept: true, min_price_mwh: 100 },
     v2g: { enabled: true, vehicle_ids: [v("Rigid 03")], min_soc: 35, max_discharge_kw: 100, mode: "behind_meter", export_limit_kw: 0, wear_per_kwh: 0.06, warranty_confirmed: true },
   }], flex_provider: { kind: "simulated", name: "Simulated aggregator", report_url: null }, telematics: { kind: "simulated" } } });

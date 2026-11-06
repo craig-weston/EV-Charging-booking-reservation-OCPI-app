@@ -23,6 +23,7 @@ export interface MemoryData {
   logs: OcpiLogEntry[];
   sim: Record<string, unknown>;
   settings: Record<string, unknown>;
+  live?: Record<string, unknown>;
   audit: AuditEntry[];
   apiKeys: ApiKeyRow[];
   webhooks?: FleetWebhookRow[];
@@ -109,6 +110,7 @@ export class MemoryStore implements Store {
     this.data.energy = (this.data.energy ?? []).filter((e) => e.fleet_id !== id);
     this.data.depotVisits = (this.data.depotVisits ?? []).filter((v) => v.fleet_id !== id);
     this.data.flexEvents = (this.data.flexEvents ?? []).filter((e) => e.fleet_id !== id);
+    this.data.live = Object.fromEntries(Object.entries(this.data.live ?? {}).filter(([k]) => !k.startsWith(`${id}/`)));
     for (const l of this.data.logs) if (l.booking_id && bookingIds.has(l.booking_id)) l.booking_id = null;
     this.changed();
   }
@@ -445,6 +447,19 @@ export class MemoryStore implements Store {
   }
   async setSetting<T>(key: string, value: T) {
     this.data.settings[key] = clone(value);
+    this.changed();
+  }
+  async listLive<T>(prefix: string) {
+    const out: Record<string, T> = {};
+    for (const [k, v] of Object.entries(this.data.live ?? {})) if (k.startsWith(prefix)) out[k.slice(prefix.length)] = clone(v as T);
+    return out;
+  }
+  async putLive<T>(entries: Record<string, T>) {
+    this.data.live = { ...(this.data.live ?? {}), ...clone(entries) };
+    this.changed();
+  }
+  async deleteLive(prefix: string) {
+    this.data.live = Object.fromEntries(Object.entries(this.data.live ?? {}).filter(([k]) => !k.startsWith(prefix)));
     this.changed();
   }
   async addAudit(entry: AuditEntry) {

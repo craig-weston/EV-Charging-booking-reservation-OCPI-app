@@ -467,7 +467,17 @@ export type { Booking, BookingRequest, CDR, Session };
 
 // ---- Depot energy (shared/energy/depot.ts holds the settings shape) --------------------------
 
-export interface ChargerDispatchResult { charger_id: string; ok: boolean; status: number | null; message: string }
+export interface ChargerDispatchResult {
+  charger_id: string;
+  /** The plan went out (and, from the simulator, was accepted). */
+  ok: boolean;
+  status: number | null;
+  message: string;
+  /** The charger's own answer. "waiting": CitrineOS passes it on when the charger replies (see the
+   *  live charger state for it). */
+  answer?: "waiting" | "accepted" | "rejected";
+  answered_at?: string;
+}
 export interface DepotDispatch { at: string; ok: boolean; by: "auto" | "manual"; results: ChargerDispatchResult[] }
 
 /** What the app remembers about energy control: last schedules sent per depot. */

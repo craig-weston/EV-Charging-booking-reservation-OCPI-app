@@ -209,6 +209,13 @@ test("settings and team pages pass accessibility checks; keyboard reaches the ma
   await axe(page, "depot smart charging");
   for (const t of ["Chargers", "Grid flexibility", "Vehicle-to-grid pilot"]) await page.locator("summary", { hasText: t }).first().click();
   await axe(page, "depot smart charging, details open");
+  // The plan reaches the (simulated) chargers; Bay 3 reports a fault and the plan works around it.
+  await page.getByRole("button", { name: "Send the plan to the chargers" }).click();
+  await page.getByText("Bay 3 has a fault").first().waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Move to Bay 5" }).waitFor({ timeout: 5_000 });
+  await axe(page, "depot smart charging, a charger fault");
+  await page.getByRole("button", { name: "Move to Bay 5" }).click();
+  await page.getByText(/All \d+ trucks will be ready on time/).first().waitFor({ timeout: 15_000 });
   await page.goto(`${base}/#/statements`);
   await page.getByRole("heading", { name: "Charging statement" }).waitFor({ timeout: 15_000 });
   await page.getByText("Total incl. VAT").first().waitFor({ timeout: 15_000 });
