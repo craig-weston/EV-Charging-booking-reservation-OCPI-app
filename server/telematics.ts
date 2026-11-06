@@ -3,21 +3,26 @@
 import type { Ctx } from "./context";
 import type { FleetEnergyRow, Vehicle } from "../shared/model";
 import { mergeTelemetry, parseRfmsStatuses, plateKey, type RfmsSettings, type Telemetry } from "../shared/energy/telematics";
-import { energyRow } from "./depot";
+import { telemetryKey, telemetryPrefix, unseg } from "./livekeys";
 import { openSecret } from "./security";
-import { iso } from "../shared/util";
 
 const TIMEOUT_MS = 10_000;
 const ACCEPT_V4 = "application/json; rfms=vehiclestatuses.v4.0";
 const ACCEPT_V21 = "application/vnd.fmsstandard.com.vehiclestatuses.v2.1+json; UTF-8";
 
-/** Adds readings (by vehicle id) to the fleet's latest-reading store. */
+/** The latest reading per vehicle id. Each truck's reading is its own record, so readings sent at
+ *  the same moment never overwrite each other. (`row`: readings kept in the energy state before.) */
+export async function fleetTelemetry(ctx: Ctx, fleetId: string, row?: FleetEnergyRow | null): Promise<Record<string, Telemetry>> {
+  const live = await ctx.store.listLive<Telemetry>(telemetryPrefix(fleetId));
+  return mergeTelemetry(row?.state?.telemetry, Object.fromEntries(Object.entries(live).map(([k, t]) => [unseg(k), t])));
+}
+
+/** Adds readings (by vehicle id). An older reading never replaces a newer one. */
 export async function recordTelemetry(ctx: Ctx, fleetId: string, readings: Record<string, Telemetry>): Promise<void> {
   if (!Object.keys(readings).length) return;
-  const row = await energyRow(ctx, fleetId);
-  row.state = { ...(row.state ?? { dispatch: {} }), dispatch: row.state?.dispatch ?? {}, telemetry: mergeTelemetry(row.state?.telemetry, readings) };
-  row.updated_at = iso(ctx.now());
-  await ctx.store.saveEnergy(row);
+  const cur = await fleetTelemetry(ctx, fleetId);
+  const newer = Object.entries(readings).filter(([id, t]) => !cur[id] || cur[id].at <= t.at);
+  if (newer.length) await ctx.store.putLive(Object.fromEntries(newer.map(([id, t]) => [telemetryKey(fleetId, id), t])));
 }
 
 /** Which vehicle a pushed reading is for: its id, its plate, or its VIN (from the rFMS settings). */

@@ -42,9 +42,14 @@ export interface DepotCharger {
 }
 
 export type DepotControl =
+  /** Not connected: the plan is worked out, not sent. */
   | { kind: "simulated" }
-  /** CitrineOS (open source CSMS): POST {base_url}/ocpp/2.0.1/smartcharging/setChargingProfile. */
-  | { kind: "citrineos"; base_url: string; tenant_id: string; token_hint?: string }
+  /** Simulated OCPP chargers: they check each plan like real ones and answer. One can be set to
+   *  develop a fault a few seconds after a plan arrives, to see what happens. */
+  | { kind: "simulator"; fault_charger_id?: string }
+  /** CitrineOS (open source CSMS): POST {base_url}/ocpp/{ocpp_version}/smartcharging/setChargingProfile.
+   *  Plans that give power back always use OCPP 2.1. */
+  | { kind: "citrineos"; base_url: string; tenant_id: string; ocpp_version?: "2.0.1" | "2.1"; token_hint?: string }
   /** A depot operator's own system: we POST OCPP 2.0.1 SetChargingProfile requests, HMAC-signed. */
   | { kind: "webhook"; url: string; secret_hint?: string };
 
@@ -133,7 +138,12 @@ export function cleanEnergy(x: unknown): EnergyConfig {
       const region = (raw.octopus_region ?? raw.agile_region ?? "auto").toString();
       const c = (d?.control ?? { kind: "simulated" }) as DepotControl;
       let control: DepotControl = { kind: "simulated" };
-      if (c.kind === "citrineos" && /^https:\/\//.test(str(c.base_url, 300))) control = { kind: "citrineos", base_url: str(c.base_url, 300).replace(/\/+$/, ""), tenant_id: str(c.tenant_id, 40) || "1", ...(c.token_hint ? { token_hint: str(c.token_hint, 12) } : {}) };
+      if (c.kind === "citrineos" && /^https:\/\//.test(str(c.base_url, 300))) control = { kind: "citrineos", base_url: str(c.base_url, 300).replace(/\/+$/, ""), tenant_id: str(c.tenant_id, 40) || "1", ...(c.ocpp_version === "2.1" ? { ocpp_version: "2.1" as const } : {}), ...(c.token_hint ? { token_hint: str(c.token_hint, 12) } : {}) };
+      if (c.kind === "simulator") {
+        const f = str(c.fault_charger_id, 60);
+        const ids = (Array.isArray(d?.chargers) ? d.chargers : []).map((x) => str(x?.id, 60));
+        control = { kind: "simulator", ...(f && ids.includes(f) ? { fault_charger_id: f } : {}) };
+      }
       if (c.kind === "webhook" && /^https:\/\//.test(str(c.url, 300))) control = { kind: "webhook", url: str(c.url, 300), ...(c.secret_hint ? { secret_hint: str(c.secret_hint, 12) } : {}) };
       return {
         id: ((id) => (id && !RESERVED_IDS.has(id) ? id : uuid()))(str(d?.id, 60)),

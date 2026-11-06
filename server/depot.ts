@@ -23,6 +23,9 @@ import type { FlexEvent } from "../shared/energy/flex";
 import { v2gPass, type V2gVisit } from "../shared/energy/v2g";
 import { openSecret } from "./security";
 import { signature } from "./webhooks";
+import { cannotCharge, type ChargerNow } from "../shared/energy/chargers";
+import { answerUrl, depotChargers, hookToken, reportUrl, simulatorSend, subscribeStations } from "./chargers";
+import { fleetTelemetry } from "./telematics";
 import { iso } from "../shared/util";
 
 /** Charging efficiency, grid to battery. */
@@ -47,6 +50,8 @@ export interface PlanVisitView {
   outcome: "ready" | "short" | "idle";
   /** The truck's own reading the plan used for its charge now, if any (else the typed-in figure). */
   soc_from?: Telemetry | null;
+  /** Its charger can't charge now (it reported a fault, or is out of service): what's wrong. */
+  charger_fault?: string | null;
 }
 
 export interface DepotPlanView {
@@ -114,15 +119,18 @@ export interface PlanInputs {
   slots: DepotPlan["slots"];
   rows: { v: DepotVisit; veh: Vehicle | null; battery: number | null; maxKw: number; need: number; truck: Telemetry | null }[];
   chargers: { id: string; maxKw: number }[];
+  /** Chargers that can't charge now, and why (from what they reported). */
+  faults: Record<string, string>;
   headroom: number;
   carbonSource: CarbonSeries["source"] | null;
   price: PriceInfo;
 }
 
-/** Everything the planner needs for a depot right now (prices, carbon, trucks). */
-/** `telemetry`: the trucks' own battery readings (energy state); a recent one replaces the typed-in
- *  charge for trucks at the depot or about to arrive. */
-export async function depotInputs(ctx: Ctx, depot: Depot, visits: DepotVisit[], vehicles: Vehicle[], telemetry: Record<string, Telemetry> = {}): Promise<PlanInputs> {
+/** Everything the planner needs for a depot right now (prices, carbon, trucks).
+ *  `telemetry`: the trucks' own battery readings; a recent one replaces the typed-in charge for
+ *  trucks at the depot or about to arrive. `chargers`: what the chargers reported; one that's
+ *  faulted or out of service gets nothing until it's back. */
+export async function depotInputs(ctx: Ctx, depot: Depot, visits: DepotVisit[], vehicles: Vehicle[], telemetry: Record<string, Telemetry> = {}, chargers: Record<string, ChargerNow> = {}): Promise<PlanInputs> {
   const now = ctx.now().getTime();
   const active = visits.filter((v) => v.depot_id === depot.id && (v.status === "planned" || v.status === "plugged_in") && new Date(v.depart_at).getTime() > now);
   const horizonEnd = Math.min(now + MAX_HORIZON_MS, Math.max(now + 12 * 3_600_000, ...active.map((v) => new Date(v.depart_at).getTime())));
@@ -131,17 +139,19 @@ export async function depotInputs(ctx: Ctx, depot: Depot, visits: DepotVisit[], 
   const priceAt = prices.priceAt;
   const headroom = Math.max(0, depot.import_limit_kw - depot.site_load_kw);
   const slots = buildSlots(now, horizonEnd, priceAt, (t) => intensityAt(carbon, new Date(t)), headroom);
+  const faults: Record<string, string> = {};
+  for (const c of depot.chargers) if (cannotCharge(chargers[c.id])) faults[c.id] = chargers[c.id].fault ?? "Can't charge now";
   const rows = active.map((planned) => {
     const truck = socFromTruck(telemetry[planned.vehicle_id], planned, now);
     const v = truck ? { ...planned, soc_start: Math.round(truck.soc_pct) } : planned;
     const veh = vehicles.find((x) => x.id === v.vehicle_id) ?? null;
     const ch = depot.chargers.find((c) => c.id === v.charger_id) ?? null;
     const battery = veh?.battery_kwh ?? null;
-    const maxKw = Math.min(ch?.max_kw ?? DEFAULT_TRUCK_KW, veh?.max_charge_kw ?? DEFAULT_TRUCK_KW);
+    const maxKw = ch && faults[ch.id] ? 0 : Math.min(ch?.max_kw ?? DEFAULT_TRUCK_KW, veh?.max_charge_kw ?? DEFAULT_TRUCK_KW);
     const needBattery = battery ? Math.max(0, ((v.soc_target - v.soc_start) / 100) * battery) : 0;
     return { v, veh, battery, maxKw, need: needBattery / EFFICIENCY, truck };
   });
-  return { depot, now, slots, rows, chargers: depot.chargers.map((c) => ({ id: c.id, maxKw: c.max_kw })), headroom, carbonSource: carbon.source, price: prices.info };
+  return { depot, now, slots, rows, chargers: depot.chargers.map((c) => ({ id: c.id, maxKw: faults[c.id] ? 0 : c.max_kw })), faults, headroom, carbonSource: carbon.source, price: prices.info };
 }
 
 /** Event windows applied to the slots: turn-down caps charging power, turn-up makes power cheaper
@@ -201,6 +211,7 @@ export function viewFromPlan(i: PlanInputs, plan: DepotPlan, events: FlexEvent[]
       return {
         visit: r.v, plate: r.veh?.plate ?? "?", name: r.veh?.name ?? null, battery_kwh: r.battery, max_kw: r.maxKw,
         need_kwh: Math.round(r.need * 10) / 10, soc_ready: Math.round(socReady), plan: p, soc_from: r.truck,
+        charger_fault: (r.v.charger_id && i.faults[r.v.charger_id]) || null,
         outcome: r.need <= 0.05 ? "idle" : p.shortfallKwh > 0 ? "short" : "ready",
       };
     }),
@@ -211,8 +222,8 @@ export function viewFromPlan(i: PlanInputs, plan: DepotPlan, events: FlexEvent[]
   };
 }
 
-export async function depotPlan(ctx: Ctx, depot: Depot, visits: DepotVisit[], vehicles: Vehicle[], events: FlexEvent[] = [], telemetry: Record<string, Telemetry> = {}): Promise<DepotPlanView> {
-  const inputs = await depotInputs(ctx, depot, visits, vehicles, telemetry);
+export async function depotPlan(ctx: Ctx, depot: Depot, visits: DepotVisit[], vehicles: Vehicle[], events: FlexEvent[] = [], telemetry: Record<string, Telemetry> = {}, chargers: Record<string, ChargerNow> = {}): Promise<DepotPlanView> {
+  const inputs = await depotInputs(ctx, depot, visits, vehicles, telemetry, chargers);
   return viewFromPlan(inputs, planFromInputs(inputs, events), events);
 }
 
@@ -256,38 +267,62 @@ export function chargingProfiles(depot: Depot, view: DepotPlanView): { charger: 
   return out;
 }
 
+/** What CitrineOS said when it took a command: [{ success, payload }] (or one object). */
+function citrineConfirmation(body: unknown): { ok: boolean; message?: string } {
+  const list = (Array.isArray(body) ? body : body && typeof body === "object" ? [body] : []) as { success?: unknown; payload?: unknown }[];
+  const failed = list.find((c) => c && c.success === false);
+  if (!failed) return { ok: true };
+  const p = failed.payload;
+  const text = typeof p === "string" ? p : p && typeof p === "object" ? String((p as { message?: unknown }).message ?? JSON.stringify(p)) : "";
+  return { ok: false, message: text.slice(0, 160) || "it couldn't pass the plan to the charger" };
+}
+
 export async function dispatchDepot(ctx: Ctx, row: FleetEnergyRow, depot: Depot, view: DepotPlanView, by: DepotDispatch["by"]): Promise<DepotDispatch> {
   const profiles = chargingProfiles(depot, view);
-  const results: ChargerDispatchResult[] = [];
-  const secret = row.secrets[depot.id] ? await openSecret(row.secrets[depot.id], ctx.env.DATA_ENCRYPTION_KEY, ctx.env.DATA_ENCRYPTION_KEY_PREVIOUS) : null;
-  for (const { charger, request } of profiles) {
-    const c = depot.control;
-    if (c.kind === "simulated") {
-      results.push({ charger_id: charger.id, ok: true, status: null, message: `Simulated: ${(request.chargingProfile as { chargingSchedule: { chargingSchedulePeriod: unknown[] }[] }).chargingSchedule[0].chargingSchedulePeriod.length} schedule steps` });
-      continue;
-    }
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 8000);
-    try {
-      let res: Response;
-      if (c.kind === "citrineos") {
-        const v21 = JSON.stringify(request).includes("CentralSetpoint");
-        const url = `${c.base_url}/ocpp/${v21 ? "2.1" : "2.0.1"}/smartcharging/setChargingProfile?identifier=${encodeURIComponent(charger.station_id)}&tenantId=${encodeURIComponent(c.tenant_id)}`;
-        res = await ctx.transport(new Request(url, { method: "POST", signal: ctl.signal, headers: { "Content-Type": "application/json", ...(secret ? { Authorization: `Bearer ${secret}` } : {}) }, body: JSON.stringify(request) }));
-      } else {
-        const body = JSON.stringify({ type: "ocpp.set_charging_profile", station_id: charger.station_id, depot_id: depot.id, charger_id: charger.id, request });
-        res = await ctx.transport(new Request(c.url, { method: "POST", signal: ctl.signal, headers: { "Content-Type": "application/json", ...(secret ? { "Depotcharge-Signature": await signature(secret, body, ctx.now()) } : {}) }, body }));
+  // One time for the whole plan: chargers' answers quote it.
+  const at = iso(ctx.now());
+  const c = depot.control;
+  let results: ChargerDispatchResult[] = [];
+  if (c.kind === "simulated") {
+    results = profiles.map(({ charger, request }) => ({ charger_id: charger.id, ok: true, status: null, message: `Simulated: ${(request.chargingProfile as { chargingSchedule: { chargingSchedulePeriod: unknown[] }[] }).chargingSchedule[0].chargingSchedulePeriod.length} schedule steps` }));
+  } else if (c.kind === "simulator") {
+    results = await simulatorSend(ctx, row.fleet_id, depot, profiles, at);
+  } else {
+    const secret = row.secrets[depot.id] ? await openSecret(row.secrets[depot.id], ctx.env.DATA_ENCRYPTION_KEY, ctx.env.DATA_ENCRYPTION_KEY_PREVIOUS) : null;
+    // Where the chargers' answers and status messages come back to (server/chargers.ts).
+    const report = reportUrl(ctx, row.fleet_id, depot.id, (await hookToken(ctx, row.fleet_id, depot.id))!);
+    if (c.kind === "citrineos") await subscribeStations(ctx, row.fleet_id, depot, report, secret ? { Authorization: `Bearer ${secret}` } : {});
+    for (const { charger, request } of profiles) {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 8000);
+      const answer = answerUrl(report, charger.id, at);
+      try {
+        if (c.kind === "citrineos") {
+          // Giving power back needs OCPP 2.1.
+          const version = c.ocpp_version === "2.1" || JSON.stringify(request).includes("CentralSetpoint") ? "2.1" : "2.0.1";
+          const url = `${c.base_url}/ocpp/${version}/smartcharging/setChargingProfile?identifier=${encodeURIComponent(charger.station_id)}&tenantId=${encodeURIComponent(c.tenant_id)}&callbackUrl=${encodeURIComponent(answer)}`;
+          const res = await ctx.transport(new Request(url, { method: "POST", signal: ctl.signal, headers: { "Content-Type": "application/json", ...(secret ? { Authorization: `Bearer ${secret}` } : {}) }, body: JSON.stringify(request) }));
+          const conf = res.ok ? citrineConfirmation(await res.json().catch(() => null)) : { ok: false, message: undefined };
+          results.push(res.ok && conf.ok
+            ? { charger_id: charger.id, ok: true, status: res.status, message: "Sent, waiting for the charger's answer", answer: "waiting" }
+            : { charger_id: charger.id, ok: false, status: res.status, message: res.ok ? `CitrineOS: ${conf.message}` : `CitrineOS refused it (${res.status})` });
+        } else {
+          const body = JSON.stringify({ type: "ocpp.set_charging_profile", station_id: charger.station_id, depot_id: depot.id, charger_id: charger.id, sent_at: at, request, answer_url: answer, report_url: report });
+          const res = await ctx.transport(new Request(c.url, { method: "POST", signal: ctl.signal, headers: { "Content-Type": "application/json", ...(secret ? { "Depotcharge-Signature": await signature(secret, body, ctx.now()) } : {}) }, body }));
+          results.push({ charger_id: charger.id, ok: res.ok, status: res.status, message: res.ok ? "Taken by the depot's system" : `Refused (${res.status})` });
+        }
+      } catch (e) {
+        results.push({ charger_id: charger.id, ok: false, status: null, message: (e as Error).name === "AbortError" ? "No answer within 8 seconds" : "Couldn't reach the charging system" });
+      } finally {
+        clearTimeout(timer);
       }
-      results.push({ charger_id: charger.id, ok: res.ok, status: res.status, message: res.ok ? "Accepted by the charging system" : `Refused (${res.status})` });
-    } catch (e) {
-      results.push({ charger_id: charger.id, ok: false, status: null, message: (e as Error).name === "AbortError" ? "No answer within 8 seconds" : "Couldn't reach the charging system" });
-    } finally {
-      clearTimeout(timer);
     }
   }
-  const d: DepotDispatch = { at: iso(ctx.now()), ok: results.every((r) => r.ok), by, results };
-  const state: EnergyState = { ...row.state, dispatch: { ...(row.state?.dispatch ?? {}), [depot.id]: d } };
-  await ctx.store.saveEnergy({ ...row, state, updated_at: iso(ctx.now()) });
+  const d: DepotDispatch = { at, ok: results.every((r) => r.ok), by, results };
+  // Write back only the dispatch, onto the latest row: settings saved meanwhile are kept.
+  const fresh = (await ctx.store.getEnergy(row.fleet_id)) ?? row;
+  const state: EnergyState = { ...(fresh.state ?? row.state), dispatch: { ...(fresh.state?.dispatch ?? {}), [depot.id]: d } };
+  await ctx.store.saveEnergy({ ...fresh, state, updated_at: iso(ctx.now()) });
   row.state = state;
   return d;
 }
@@ -301,7 +336,8 @@ export async function runDepotDispatch(ctx: Ctx): Promise<number> {
     const [visits, vehicles, events] = await Promise.all([ctx.store.listDepotVisits(row.fleet_id, iso(ctx.now())), ctx.store.listVehicles(row.fleet_id), ctx.store.listFlexEvents(row.fleet_id, iso(ctx.now()))]);
     for (const depot of auto) {
       try {
-        const view = await depotPlan(ctx, depot, visits, vehicles, events, row.state?.telemetry);
+        const [telemetry, chargers] = await Promise.all([fleetTelemetry(ctx, row.fleet_id, row), depotChargers(ctx, row.fleet_id, depot)]);
+        const view = await depotPlan(ctx, depot, visits, vehicles, events, telemetry, chargers);
         await dispatchDepot(ctx, row, depot, view, "auto");
         sent++;
       } catch (e) {

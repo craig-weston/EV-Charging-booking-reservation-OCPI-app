@@ -106,9 +106,15 @@ Ways to reach the chargers:
 
 | Control | What happens |
 |---|---|
-| Not yet (simulated) | The plan is recorded, nothing leaves the app. The demo uses this. |
-| CitrineOS | `POST {base}/ocpp/2.0.1/smartcharging/setChargingProfile?identifier={station}&tenantId={tenant}`, with an optional Bearer token. CitrineOS is a free, open-source charger management system (OCPP 2.0.1). |
+| Not yet | The plan is worked out, and nothing leaves the app. |
+| Simulated | Simulated OCPP chargers check each plan and answer. One can be set to develop a fault, to see what happens. The demo uses this. |
+| CitrineOS | `POST {base}/ocpp/{2.0.1 or 2.1}/smartcharging/setChargingProfile?identifier={station}&tenantId={tenant}&callbackUrl=…`, with an optional Bearer token. CitrineOS is a free, open-source charger management system. |
 | Depot operator's system | The same request in a JSON envelope, posted to their address and signed with `Depotcharge-Signature` (the same scheme as fleet webhooks, see `docs/webhooks.md`). |
+
+Chargers answer each plan and report their state back. A charger that reports a fault is planned
+around, and the page offers to move its truck to a free working charger. See
+[sending the plan to the chargers](chargers.md), including how to try it free with CitrineOS and a
+simulated charger.
 
 The worker's cron trigger (`*/15 * * * *` in `wrangler.jsonc`) re-plans and re-sends schedules for
 depots with automatic sending switched on (`server/depot.ts → runDepotDispatch`).
@@ -116,7 +122,7 @@ depots with automatic sending switched on (`server/depot.ts → runDepotDispatch
 ## Limits
 
 - Plans cover up to 72 hours ahead.
-- Current charge levels come from what planners or the API report; live meter values from the
-  charger management system aren't read back yet.
+- Current charge levels come from the trucks themselves (telematics), planners or the API. The
+  chargers' meter values aren't read back yet; their answers, status and faults are.
 - On the Workers free plan (10 ms CPU per request), very large depots (dozens of trucks over
   several days) may need the paid plan's CPU allowance.

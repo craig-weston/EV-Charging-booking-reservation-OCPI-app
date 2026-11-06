@@ -58,6 +58,13 @@ export interface Store {
   setBrand(brand: Brand): Promise<void>;
   /** Other platform settings by key: "legal", "certifications", "compliance". */
   getSetting<T>(key: string): Promise<T | null>;
+  /** Small records that change often and independently (one charger's state, one truck's battery
+   *  reading): one row per key, so updates arriving together never overwrite each other. Keys start
+   *  with the fleet id (server/livekeys.ts). `listLive` returns values by key, minus the prefix. */
+  listLive<T>(prefix: string): Promise<Record<string, T>>;
+  /** Writes each key (one upsert for all of them). */
+  putLive<T>(entries: Record<string, T>): Promise<void>;
+  deleteLive(prefix: string): Promise<void>;
   setSetting<T>(key: string, value: T): Promise<void>;
 
   // audit log ----------------------------------------------------------------------

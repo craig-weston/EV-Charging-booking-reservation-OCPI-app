@@ -132,7 +132,9 @@ final charge record with energy and cost, all from the operator's OCPI data.
   get it out on time, within the site's grid connection
   ([depot charging](docs/depot-charging.md)). Battery levels come from the trucks themselves (rFMS or
   any telematics system), and arrival times from your planning system
-  ([battery levels from the trucks](docs/telematics.md)).
+  ([battery levels from the trucks](docs/telematics.md)). The plan goes to the chargers through
+  CitrineOS (free and open source) or the depot operator's system. Chargers answer and report
+  faults, and a faulted charger is planned around ([sending the plan to the chargers](docs/chargers.md)).
 - **Bookings:** confirmations, changes, cancellations with reasons, no-shows, and the operator's
   terms in plain English.
 - **Driver messages:** the pass link by text or WhatsApp, sent automatically when a booking is

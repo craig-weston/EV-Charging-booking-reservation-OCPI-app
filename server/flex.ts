@@ -14,6 +14,8 @@ import type { Depot } from "../shared/energy/depot";
 import { MIN_COMMIT_KW, PROGRAMME_LABEL, flexPayment, hoursOf, newEvent, type FlexDirection, type FlexEvent, type FlexProgramme } from "../shared/energy/flex";
 import { depotInputs, energyRow, planFromInputs, type PlanInputs } from "./depot";
 import { hmacHex, signature } from "./webhooks";
+import { fleetTelemetry } from "./telematics";
+import { depotChargers } from "./chargers";
 import { openSecret } from "./security";
 import { ApiError } from "./emsp/service";
 import { iso, localDateKey, localToUtc, uuid } from "../shared/util";
@@ -94,8 +96,9 @@ export async function decide(ctx: Ctx, row: FleetEnergyRow, ev: FlexEvent, accep
   if (!accept) {
     next = { ...ev, status: "declined", reason: ev.reason ?? "Declined by the fleet", decided_by: by, updated_at: iso(ctx.now()) };
   } else {
-    const [visits, vehicles, events] = await Promise.all([ctx.store.listDepotVisits(ev.fleet_id, iso(ctx.now())), ctx.store.listVehicles(ev.fleet_id), ctx.store.listFlexEvents(ev.fleet_id, iso(ctx.now()))]);
-    const inputs = await depotInputs(ctx, depot, visits, vehicles, row.state?.telemetry);
+    const [visits, vehicles, events, telemetry, chargers] = await Promise.all([ctx.store.listDepotVisits(ev.fleet_id, iso(ctx.now())), ctx.store.listVehicles(ev.fleet_id), ctx.store.listFlexEvents(ev.fleet_id, iso(ctx.now())), fleetTelemetry(ctx, ev.fleet_id, row), depotChargers(ctx, ev.fleet_id, depot)]);
+    // A faulted charger can't deliver anything: commit only what the working ones can.
+    const inputs = await depotInputs(ctx, depot, visits, vehicles, telemetry, chargers);
     const a = assessEvent(inputs, events.filter((x) => x.status === "accepted"), ev);
     next = a.committed_kw >= MIN_COMMIT_KW
       ? { ...ev, status: "accepted", committed_kw: a.committed_kw, cap_kw: a.cap_kw, baseline_kw: a.baseline_kw, reason: null, decided_by: by, updated_at: iso(ctx.now()) }

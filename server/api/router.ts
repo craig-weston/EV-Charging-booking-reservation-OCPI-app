@@ -28,7 +28,8 @@ import { SMART_MODES, clearSmartCharging, requestSmartCharging } from "../emsp/s
 import type { SmartMode } from "../../shared/model";
 import { cleanEnergy, type DepotVisit } from "../../shared/energy/depot";
 import { cleanReading, type Telemetry } from "../../shared/energy/telematics";
-import { matchVehicle, pollFleet, recordTelemetry } from "../telematics";
+import { fleetTelemetry, matchVehicle, pollFleet, recordTelemetry } from "../telematics";
+import { depotChargers, handleChargerHook, resetChargers, simulatorTick } from "../chargers";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -124,6 +125,14 @@ export async function handleApi(req: Request, ctx: Ctx): Promise<Response> {
       let text: string;
       try { text = await readLimited(req, BODY_LIMITS.api); } catch { return err(413, "Body too large"); }
       const r = await handleFlexInbound(ctx, req, seg[1], seg.slice(3), text);
+      return new Response(JSON.stringify(r.data), { status: r.status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    }
+    // Chargers report back here (CitrineOS subscriptions and callbacks, or a depot's own system),
+    // authenticated by the depot's secret token in the address (server/chargers.ts).
+    if (seg[0] === "chargers" && seg[1] && seg[2] && seg[3] && !seg[4] && req.method === "POST") {
+      let text: string;
+      try { text = await readLimited(req, BODY_LIMITS.api); } catch { return err(413, "Body too large"); }
+      const r = await handleChargerHook(ctx, seg[1], seg[2], seg[3], url, text);
       return new Response(JSON.stringify(r.data), { status: r.status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     }
     // Invite preview works signed out too, so the sign-in screen can say what you're joining.
@@ -377,8 +386,18 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
     const depot = row.config.depots.find((d) => d.id === id);
     if (!depot) throw new ApiError(404, "Depot not found");
     await closeEndedEvents(ctx, fleetId);
-    const [visits, vehicles, events] = await Promise.all([ctx.store.listDepotVisits(fleetId, iso(ctx.now())), ctx.store.listVehicles(fleetId), ctx.store.listFlexEvents(fleetId, iso(ctx.now()))]);
-    return json({ ...(await depotPlan(ctx, depot, visits, vehicles, events, row.state?.telemetry)), dispatch: row.state?.dispatch?.[depot.id] ?? null });
+    await simulatorTick(ctx, fleetId, depot);
+    const [visits, vehicles, events, telemetry, chargers] = await Promise.all([ctx.store.listDepotVisits(fleetId, iso(ctx.now())), ctx.store.listVehicles(fleetId), ctx.store.listFlexEvents(fleetId, iso(ctx.now())), fleetTelemetry(ctx, fleetId, row), depotChargers(ctx, fleetId, depot)]);
+    return json({ ...(await depotPlan(ctx, depot, visits, vehicles, events, telemetry, chargers)), dispatch: row.state?.dispatch?.[depot.id] ?? null, chargers });
+  }
+  // The simulator: forget the chargers' reports, so a fault can be shown again.
+  if (res === "depots" && id && action === "reset-chargers" && m === "POST") {
+    const row = await energyRow(ctx, fleetId);
+    const depot = row.config.depots.find((d) => d.id === id);
+    if (!depot) throw new ApiError(404, "Depot not found");
+    if (depot.control.kind !== "simulator") throw new ApiError(409, "Only simulated chargers can be reset from here");
+    await resetChargers(ctx, fleetId, depot);
+    return json({ ok: true });
   }
   if (res === "flex") return flexRoutes(req, ctx, user, fleetId, id, action);
   if (res === "depots" && id && action === "dispatch" && m === "POST") {
@@ -386,8 +405,9 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
     const depot = row.config.depots.find((d) => d.id === id);
     if (!depot) throw new ApiError(404, "Depot not found");
     if (!depot.chargers.length) throw new ApiError(409, "Add the depot's chargers first");
-    const [visits, vehicles, events] = await Promise.all([ctx.store.listDepotVisits(fleetId, iso(ctx.now())), ctx.store.listVehicles(fleetId), ctx.store.listFlexEvents(fleetId, iso(ctx.now()))]);
-    const view = await depotPlan(ctx, depot, visits, vehicles, events, row.state?.telemetry);
+    await simulatorTick(ctx, fleetId, depot);
+    const [visits, vehicles, events, telemetry, chargers] = await Promise.all([ctx.store.listDepotVisits(fleetId, iso(ctx.now())), ctx.store.listVehicles(fleetId), ctx.store.listFlexEvents(fleetId, iso(ctx.now())), fleetTelemetry(ctx, fleetId, row), depotChargers(ctx, fleetId, depot)]);
+    const view = await depotPlan(ctx, depot, visits, vehicles, events, telemetry, chargers);
     const d = await dispatchDepot(ctx, row, depot, view, "manual");
     await audit(ctx, req, user, { fleet_id: fleetId, action: "depot.dispatch", target: depot.name, data: { depot_id: depot.id, ok: d.ok, chargers: d.results.length } });
     return json(d);
@@ -672,8 +692,11 @@ async function webhookRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: st
 // ------------------------------------------------------------------ depot energy
 async function energyRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: string, role: MemberRole): Promise<Response> {
   const row = await energyRow(ctx, fleetId);
-  const view = () => ({ config: row.config, state: row.state, has_secret: Object.fromEntries(Object.keys(row.secrets ?? {}).map((k) => [k, true])) });
-  if (req.method === "GET") return json(view());
+  const view = async () => ({
+    config: row.config, state: { ...(row.state ?? { dispatch: {} }), telemetry: await fleetTelemetry(ctx, fleetId, row) },
+    has_secret: Object.fromEntries(Object.keys(row.secrets ?? {}).map((k) => [k, true])),
+  });
+  if (req.method === "GET") return json(await view());
   if (req.method !== "PUT") return err(405, "Use GET or PUT");
   if (user.apiKey || role !== "owner") throw new ApiError(403, "Only fleet owners can change depot settings");
   const b = await body<{ config?: unknown; secrets?: Record<string, string | null> }>(req);
@@ -727,7 +750,7 @@ async function energyRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: str
   row.config = config; row.secrets = secrets; row.updated_at = iso(ctx.now());
   await ctx.store.saveEnergy(row);
   await audit(ctx, req, user, { fleet_id: fleetId, action: "energy.update", target: null, data: { depots: config.depots.map((d) => ({ id: d.id, name: d.name, chargers: d.chargers.length, control: d.control.kind, auto: d.auto_dispatch })) } });
-  return json(view());
+  return json(await view());
 }
 
 async function flexRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: string, id: string | undefined, action: string | undefined): Promise<Response> {
@@ -762,7 +785,7 @@ async function flexRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: strin
  *  system, matched by vehicle_id, plate or VIN (docs/telematics.md). */
 async function telemetryRoutes(req: Request, ctx: Ctx, fleetId: string): Promise<Response> {
   const row = await energyRow(ctx, fleetId);
-  if (req.method === "GET") return json(row.state?.telemetry ?? {});
+  if (req.method === "GET") return json(await fleetTelemetry(ctx, fleetId, row));
   if (req.method !== "POST") return err(405, "Use GET or POST");
   const b = await body<{ readings?: unknown }>(req);
   const list = Array.isArray(b.readings) ? b.readings : Array.isArray(b) ? (b as unknown[]) : [];

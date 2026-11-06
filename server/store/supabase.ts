@@ -10,6 +10,10 @@ import { iso, upper } from "../../shared/util";
 import { openSecret, sealSecret, sha256Hex } from "../security";
 import type { Page, Store } from "./types";
 
+const LIVE = "live:";
+/** A LIKE pattern matching keys that start with `prefix` (PostgREST's * wildcard is added after). */
+const likePrefix = (prefix: string) => prefix.replace(/[\\%_]/g, (c) => `\\${c}`);
+
 class RestError extends Error {
   /** Database detail: logged on the server, never shown to users (see the API router). */
   readonly internal = true;
@@ -169,6 +173,7 @@ export class SupabaseStore implements Store {
   async deleteFleet(id: string) {
     // ON DELETE CASCADE removes members, invites, vehicles, drivers, bookings and booking events.
     await this.rest.remove("fleets", `id=eq.${enc(id)}`);
+    await this.deleteLive(`${id}/`);
   }
   // team ---------------------------------------------------------------------------
   listMembers(fleetId: string) {
@@ -293,6 +298,20 @@ export class SupabaseStore implements Store {
   }
   async setSetting<T>(key: string, value: T) {
     await this.rest.insert("platform_settings", { key, value, updated_at: iso(new Date()) }, { onConflict: "key", returning: false });
+  }
+  // Live records share platform_settings (no migration needed), under "live:"; browsers can't read
+  // them (its RLS policy only exposes brand, legal and certifications).
+  async listLive<T>(prefix: string) {
+    const rows = await this.rest.select<{ key: string; value: T }>("platform_settings", `select=key,value&key=like.${enc(likePrefix(LIVE + prefix))}*&limit=2000`);
+    return Object.fromEntries(rows.map((r) => [r.key.slice(LIVE.length + prefix.length), r.value]));
+  }
+  async putLive<T>(entries: Record<string, T>) {
+    const at = iso(new Date());
+    const rows = Object.entries(entries).map(([key, value]) => ({ key: LIVE + key, value, updated_at: at }));
+    if (rows.length) await this.rest.insert("platform_settings", rows, { onConflict: "key", returning: false });
+  }
+  async deleteLive(prefix: string) {
+    await this.rest.remove("platform_settings", `key=like.${enc(likePrefix(LIVE + prefix))}*`);
   }
 
   // audit log -----------------------------------------------------------------------------
