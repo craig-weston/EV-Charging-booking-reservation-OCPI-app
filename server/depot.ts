@@ -15,7 +15,7 @@ import type { ChargerDispatchResult, DepotDispatch, EnergyState, FleetEnergyRow,
 import { EMPTY_ENERGY, depotTariffAsOcpi, type Depot, type DepotVisit, type EnergyConfig } from "../shared/energy/depot";
 import { energyPriceAt } from "../shared/energy/price";
 import { intensityAt, HALF_HOUR, type CarbonSeries } from "../shared/energy/carbon";
-import { buildSlots, planDepot, schedulePeriods, type DepotPlan } from "../shared/energy/optimise";
+import { buildSlots, planDepot, plugInOnArrival, schedulePeriods, type DepotPlan } from "../shared/energy/optimise";
 import { carbonFor } from "./energy";
 import { feedRates, octopusRates, octopusRegion, wholesaleRates } from "./market";
 import { OCTOPUS_PRODUCTS, REGION_NAMES, fillPrices, type PriceSeries } from "../shared/energy/suppliers";
@@ -185,7 +185,10 @@ export function v2gPilots(i: PlanInputs): V2gVisit[] {
 export function planFromInputs(i: PlanInputs, events: FlexEvent[] = []): DepotPlan {
   const mine = events.filter((e) => e.depot_id === i.depot.id && e.status === "accepted");
   const slots = applyEvents(i.slots, mine);
-  const plan = planDepot(slots, i.rows.map((r) => ({ id: r.v.id, chargerId: r.v.charger_id, from: Math.max(i.now, new Date(r.v.arrive_at).getTime()), to: new Date(r.v.depart_at).getTime(), needKwh: r.need, maxKw: r.maxKw })), i.chargers, i.depot.goal);
+  const visits = i.rows.map((r) => ({ id: r.v.id, chargerId: r.v.charger_id, from: Math.max(i.now, new Date(r.v.arrive_at).getTime()), to: new Date(r.v.depart_at).getTime(), needKwh: r.need, maxKw: r.maxKw }));
+  const plan = planDepot(slots, visits, i.chargers, i.depot.goal);
+  // The comparison: plugging in on arrival, on the real prices, without flexibility events.
+  if (mine.length) plan.baseline = plugInOnArrival(i.slots, visits, i.chargers);
   const pilots = v2gPilots(i);
   plan.v2g = pilots.length ? v2gPass(plan, slots, pilots, i.depot.v2g, i.depot.site_load_kw) : null;
   // Report real prices (a turn-up incentive is income, not a cheaper tariff).

@@ -167,6 +167,12 @@ export function planDepot(slots: PlanSlot[], visits: PlanVisit[], chargers: Char
   };
 }
 
+/** What plugging in on arrival would cost: on the real prices and the site's own limits, with no
+ *  grid-flexibility events (a depot that just plugs in doesn't take part in them). */
+export function plugInOnArrival(slots: PlanSlot[], visits: PlanVisit[], chargers: ChargerCap[]): DepotPlan["baseline"] {
+  return baselinePlan(slots, visits, chargers, (v) => (v.chargerId && chargers.some((c) => c.id === v.chargerId) ? v.chargerId : `v:${v.id}`));
+}
+
 /** Plug in and charge at full power straight away, first come first served, within the limits. */
 function baselinePlan(slots: PlanSlot[], visits: PlanVisit[], chargers: ChargerCap[], keyOf: (v: PlanVisit) => string) {
   const used = slots.map(() => 0);
