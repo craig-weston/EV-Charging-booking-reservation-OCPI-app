@@ -98,6 +98,7 @@ Then **Settings → Variables and Secrets**:
 | `PUBLIC_BASE_URL` | Text | `https://book.example.com` | Optional: set once you use a custom domain. |
 | `SECURITY_CONTACT` | Text | `security@example.com` | Shown on the Security page. |
 | `DATA_ENCRYPTION_KEY_PREVIOUS` | Secret | | Only while rotating the key (see the security policy). |
+| `ORS_API_KEY` | Secret | a free OpenRouteService key | Optional: real lorry routes in the trip planner ([trip planner](trip-planner.md)). |
 | `TWILIO_ACCOUNT_SID` | Text | `AC…` | Optional: automatic driver texts / WhatsApp (see below). |
 | `TWILIO_AUTH_TOKEN` | Secret | | Server only. |
 | `TWILIO_FROM` | Text | `+447700900000` or a sender ID | SMS sender. Set it to offer text messages. |

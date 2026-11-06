@@ -1,6 +1,7 @@
 // Plan a trip: charging stops along a long-distance route, each with a bookable slot, booked in
-// one go. A planning estimate (straight line × road factor, average speed and consumption), shown
-// with its assumptions so the planner can adjust them.
+// one go. The route is a real lorry route for this truck's size when the deployment has an
+// OpenRouteService key (src/app/route.ts), otherwise a straight-line estimate, and the page says
+// which. Speed and consumption are averages, shown with the assumptions so the planner can adjust them.
 import { useEffect, useMemo, useState } from "react";
 import type { BookingRow } from "../../shared/model";
 import { CITIES } from "../map/ukmap";
@@ -8,6 +9,8 @@ import { useApp } from "../app/state";
 import { ApiFailure } from "../app/backend";
 import { DEFAULT_TZ, fmtDay, fmtDuration, fmtRange, fmtTime } from "../app/format";
 import { DEFAULT_KWH_PER_KM, planTrip, type TripPlan } from "../app/trip";
+import { useTruckRoute } from "../app/route";
+import { TripMap } from "../components/TripMap";
 import { href, navigate } from "../app/router";
 import { Empty, Field, Icon, Plate, Spinner, StatusBadge } from "../ui/ui";
 import { localDateKey, localToUtc, MINUTE, ceilToStep } from "../../shared/util";
@@ -17,7 +20,7 @@ const miles = (km: number) => Math.round(km * 0.621371);
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 export function TripPage() {
-  const { vehicles, drivers, network, now, api, fleetId, upsertBooking, bookings, toast, refreshNetwork } = useApp();
+  const { vehicles, drivers, network, now, api, fleetId, upsertBooking, bookings, toast, refreshNetwork, backend } = useApp();
   const active = vehicles.filter((v) => v.active);
   const [vehicleId, setVehicleId] = useState<string>("");
   const [fromName, setFromName] = useState("London");
@@ -27,7 +30,7 @@ export function TripPage() {
   const [time, setTime] = useState("05:00");
   const [startPct, setStartPct] = useState("90");
   const [kwhPerKm, setKwhPerKm] = useState("");
-  const [speed, setSpeed] = useState("70");
+  const [speed, setSpeed] = useState("");
   const [driverId, setDriverId] = useState("");
   const [booking, setBooking] = useState(false);
   const [booked, setBooked] = useState<(string | { error: string })[]>([]);
@@ -38,6 +41,9 @@ export function TripPage() {
   }, [active, vehicleId]);
   const vehicle = active.find((v) => v.id === vehicleId) ?? null;
   const defaultKpk = vehicle ? DEFAULT_KWH_PER_KM[vehicle.vehicle_type] ?? 1.2 : 1.2;
+  // A real lorry route for this truck's size, when the deployment has one (else the estimate).
+  const routing = useTruckRoute(backend.publicApi, fromName, toName, vehicle);
+  const route = routing.route;
 
   const depart = useMemo(() => {
     const [y, m, d] = date.split("-").map(Number);
@@ -47,7 +53,7 @@ export function TripPage() {
   }, [date, time, now]);
 
   const minute = Math.floor(now.getTime() / 60_000);
-  const inputs = JSON.stringify([vehicleId, fromName, toName, depart.toISOString(), startPct, kwhPerKm, speed]);
+  const inputs = JSON.stringify([vehicleId, fromName, toName, depart.toISOString(), startPct, kwhPerKm, speed, route?.km ?? null]);
   // Once booking starts, the plan stays as booked: its own bookings take those slots, so planning
   // again would move the stops.
   const [frozen, setFrozen] = useState<{ inputs: string; plan: TripPlan } | null>(null);
@@ -59,8 +65,9 @@ export function TripPage() {
       startSoc: Math.min(100, Math.max(5, Number(startPct) || 90)) / 100,
       kwhPerKm: Number(kwhPerKm) > 0 ? Number(kwhPerKm) : undefined,
       speedKmh: Number(speed) >= 30 && Number(speed) <= 90 ? Number(speed) : undefined,
+      route,
     });
-  }, [network, vehicle, fromName, toName, depart, minute, startPct, kwhPerKm, speed]);
+  }, [network, vehicle, fromName, toName, depart, minute, startPct, kwhPerKm, speed, route]);
   const plan = frozen && frozen.inputs === inputs ? frozen.plan : live;
   // New inputs mean a new plan with nothing booked from it yet.
   useEffect(() => { setBooked([]); setFrozen(null); }, [inputs]);
@@ -90,6 +97,7 @@ export function TripPage() {
     toast(ok === plan.stops.length ? `All ${ok} stops requested` : `${ok} of ${plan.stops.length} stops requested`, ok === plan.stops.length ? "info" : "bad");
   };
   const allBooked = !!plan && plan.stops.length > 0 && plan.stops.every((_, i) => typeof booked[i] === "string");
+  const from = CITIES.find((c) => c.name === fromName), to = CITIES.find((c) => c.name === toName);
 
   if (active.length === 0) {
     return <div className="page"><div className="panel"><Empty icon="route" title="Add a truck first" action={<a className="btn primary" href={href("/fleet", { add: 1 })}>Add vehicle</a>}>Trips are planned for one truck: its battery, connectors and size decide where it can charge.</Empty></div></div>;
@@ -132,8 +140,13 @@ export function TripPage() {
               <summary>Assumptions</summary>
               <div className="stack gap-12" style={{ marginTop: 12 }}>
                 <Field label="Energy use (kWh per km)" hint={`Default for this truck: ${defaultKpk}`}>{(id) => <input id={id} className="input" inputMode="decimal" placeholder={String(defaultKpk)} value={kwhPerKm} onChange={(e) => setKwhPerKm(e.target.value)} />}</Field>
-                <Field label="Average speed (km/h)" hint="Including traffic; HGVs are limited to 56 mph.">{(id) => <input id={id} className="input" inputMode="numeric" value={speed} onChange={(e) => setSpeed(e.target.value)} />}</Field>
-                <p className="xs muted">Distance is the straight line plus 20% for roads. Stops charge to 80% and last at least 45 minutes, so each one covers the break due after 4 h 30 of driving. The truck arrives with at least 15%.</p>
+                <Field label="Average speed (km/h)" hint={route ? "From the route's own driving time. HGVs are limited to 56 mph." : "Including traffic; HGVs are limited to 56 mph."}>{(id) => <input id={id} className="input" inputMode="numeric" placeholder={String(plan?.assumptions.speedKmh ?? 70)} value={speed} onChange={(e) => setSpeed(e.target.value)} />}</Field>
+                <p className="xs muted">
+                  {route
+                    ? <>The route is a lorry route for this truck{sizeWords(vehicle) ? ` (${sizeWords(vehicle)})` : ""}, avoiding roads it can't use. Add its height, width, length and weight in Fleet for the best route. </>
+                    : <>Distance is the straight line plus 20% for roads{routing.loading ? " while the lorry route loads" : ""}. </>}
+                  Stops charge to 80% and last at least 45 minutes, so each one covers the break due after 4 h 30 of driving. The truck arrives with at least 15%.
+                </p>
               </div>
             </details>
           </div>
@@ -145,10 +158,17 @@ export function TripPage() {
           ) : (
             <>
               <div className="trip-summary">
-                <div><b className="num">{miles(plan.totalKm)} miles</b><span className="xs muted">about {fmtDuration(plan.drivingMin)} driving</span></div>
+                <div><b className="num">{miles(plan.totalKm)} miles</b><span className="xs muted">{route ? "lorry route" : "estimate"}, about {fmtDuration(plan.drivingMin)} driving</span></div>
                 <div><b className="num">{plan.stops.length}</b><span className="xs muted">{plan.stops.length === 1 ? "charging stop" : "charging stops"}</span></div>
                 <div><b className="num">{plan.ok ? fmtTime(plan.arriveAt) : "—"}</b><span className="xs muted">{plan.ok ? `arrives ${fmtDay(plan.arriveAt, now).toLowerCase()}, ${pct(plan.arriveSoc)}` : "can't finish"}</span></div>
               </div>
+              {from && to && (
+                <>
+                  <TripMap line={route?.line ?? null} from={from} to={to} real={!!route}
+                    stops={plan.stops.map((s) => ({ name: s.name, lat: Number(s.location.coordinates.latitude), lon: Number(s.location.coordinates.longitude) }))} />
+                  <p className="xs muted trip-map-note">{route ? route.attribution : "Straight-line estimate: real lorry routes aren't switched on for this site yet."}</p>
+                </>
+              )}
               <ol className="trip-steps">
                 <li className="trip-end"><span className="trip-dot" aria-hidden="true" /><div><b>Leave {fromName}</b><div className="xs muted">{fmtDay(depart, now)}, {fmtTime(depart)} · battery {pct(Math.min(100, Math.max(5, Number(startPct) || 90)) / 100)}</div></div></li>
                 {plan.stops.map((s, i) => {
@@ -193,4 +213,10 @@ export function TripPage() {
       </div>
     </div>
   );
+}
+
+/** "4.0 m high, 16.5 m long, 44 t" from what's known about the truck. */
+function sizeWords(v: { height_cm: number | null; length_cm: number | null; gross_weight_kg: number | null; dangerous_goods: boolean } | null): string {
+  if (!v) return "";
+  return [v.height_cm ? `${(v.height_cm / 100).toFixed(1)} m high` : "", v.length_cm ? `${(v.length_cm / 100).toFixed(1)} m long` : "", v.gross_weight_kg ? `${Math.round(v.gross_weight_kg / 1000)} t` : "", v.dangerous_goods ? "dangerous goods" : ""].filter(Boolean).join(", ");
 }

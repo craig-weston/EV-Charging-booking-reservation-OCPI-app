@@ -125,6 +125,9 @@ final charge record with energy and cost, all from the operator's OCPI data.
 - **Dashboard:** energy, spend and price per kWh, bookings kept, trucks on charge, and every
   truck's battery level: live while charging, reported by the truck, or as it left its last charge.
 - **Planning:** a lane board of the day for every truck; drag a gap to book it.
+- **Trip planner:** charging stops for a long run, lined up with the driver's breaks and booked in
+  one go, along a real lorry route that avoids low bridges and weight limits for the truck's size
+  ([trip planner](docs/trip-planner.md)).
 - **Booking map:** prices compared site by site, only bays that fit the truck, and real public sites
   from UK operators' open data and Open Charge Map shown as "not bookable here yet"
   ([open data](docs/open-data.md)).
