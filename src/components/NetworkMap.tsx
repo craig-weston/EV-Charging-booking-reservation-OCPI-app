@@ -26,6 +26,23 @@ interface View { cx: number; cy: number; s: number } // centre (map units) and m
 const PILL_H = 24;
 const pillW = (t: string) => Math.round(t.length * 7.8 + 18);
 
+type Box = { x0: number; y0: number; x1: number; y1: number };
+
+/** Place names and road numbers a price tag (or its CHEAPEST caption) would cover: they're hidden,
+ *  since the tag is what matters there. `tags` are in screen pixels from the view's corner. */
+export function labelsUnderTags(tags: Box[], vb: { x: number; y: number }, u: number): { hiddenCities: Set<string>; hiddenRoads: Set<string> } {
+  const covered = (b: Box) => tags.some((t) => b.x0 < t.x1 && b.x1 > t.x0 && b.y0 < t.y1 && b.y1 > t.y0);
+  const hiddenCities = new Set(CITIES.filter((c) => {
+    const sx = (c.x - vb.x) / u, sy = (c.y - vb.y) / u, fs = c.rank === 1 ? 12.5 : 11.5;
+    return covered({ x0: sx - 3, y0: sy - 4 - fs, x1: sx + 5 + c.name.length * fs * 0.58, y1: sy + 3 });
+  }).map((c) => c.name));
+  const hiddenRoads = new Set(ROAD_LABELS.filter((r) => {
+    const sx = (r.x - vb.x) / u, sy = (r.y - vb.y) / u, w = r.ref.length * 6.4 + 8;
+    return covered({ x0: sx - w / 2, y0: sy - 7, x1: sx + w / 2, y1: sy + 7 });
+  }).map((r) => r.ref));
+  return { hiddenCities, hiddenRoads };
+}
+
 export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, onHover, legend, credit }: {
   pins: MapPin[];
   near?: { lat: number; lon: number } | null;
@@ -182,9 +199,10 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, 
     const pad = 30 * u;
     const inView = (x: number, y: number) => x > vb.x - pad && x < vb.x + vb.w + pad && y > vb.y - pad && y < vb.y + vb.h + pad;
     const layer = (q: MapPin) => (q.state === "open" ? -2 : q.state === "unfit" ? -1 : 0);
-    return sortedPins.map((p) => ({ p, x: lonToX(p.lon), y: latToY(p.lat), pill: pill.get(p.key) ?? false }))
+    const list = sortedPins.map((p) => ({ p, x: lonToX(p.lon), y: latToY(p.lat), pill: pill.get(p.key) ?? false }))
       .filter((q) => q.p.state !== "open" || inView(q.x, q.y))
       .sort((a, b) => layer(a.p) - layer(b.p) || Number(a.pill) - Number(b.pill) || prio(b.p) - prio(a.p));
+    return { list, ...labelsUnderTags(taken, vb, u) };
   }, [pins, sortedPins, hoverKey, vb.x, vb.y, vb.w, vb.h, u]);
 
   return (
@@ -198,7 +216,7 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, 
         <path className="land" d={LAND_UK} />
         {k > 1.25 && <path className="trunk" d={TRUNK_ROADS} />}
         <path className="motorway" d={MOTORWAYS} />
-        {k > 1.15 && ROAD_LABELS.map((r) => {
+        {k > 1.15 && ROAD_LABELS.filter((r) => !placed.hiddenRoads.has(r.ref)).map((r) => {
           const w = (r.ref.length * 6.4 + 8) * u, h = 14 * u;
           return (
             <g key={r.ref} className="road-label" transform={`translate(${r.x} ${r.y})`}>
@@ -207,7 +225,7 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, 
             </g>
           );
         })}
-        {CITIES.filter((c) => c.rank <= cityRank).map((c) => (
+        {CITIES.filter((c) => c.rank <= cityRank && !placed.hiddenCities.has(c.name)).map((c) => (
           <g key={c.name} className="city">
             <circle cx={c.x} cy={c.y} r={2 * u} />
             <text x={c.x + 5 * u} y={c.y - 4 * u} fontSize={(c.rank === 1 ? 12.5 : 11.5) * u}>{c.name}</text>
@@ -218,7 +236,7 @@ export function NetworkMap({ pins, near, onSelect, focusKey, fitKeys, hoverKey, 
             <circle cx={lonToX(near.lon)} cy={latToY(near.lat)} r={16 * u} strokeWidth={1.5} />
           </g>
         )}
-        {placed.map(({ p, x, y, pill }) => {
+        {placed.list.map(({ p, x, y, pill }) => {
           const hot = p.key === hoverKey;
           if (p.state === "open" || p.state === "opensel") {
             const sel = p.state === "opensel";
