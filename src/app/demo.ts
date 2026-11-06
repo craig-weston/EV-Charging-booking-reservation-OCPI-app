@@ -11,8 +11,8 @@ import { MemoryStore, type MemoryData } from "../../server/store/memory";
 import { tick } from "../../server/sim/cpo";
 import { ApiFailure, type Backend } from "./backend";
 
-const STORAGE_KEY = "depotcharge.demo.v4";
-const SEEDED_KEY = "depotcharge.demo.seeded.v4";
+const STORAGE_KEY = "depotcharge.demo.v5";
+const SEEDED_KEY = "depotcharge.demo.seeded.v5";
 /** Sample history is relative to the day it was made; after this long it's rebuilt so "today" stays today. */
 const FRESH_FOR_MS = 18 * 60 * 60 * 1000;
 const TRY_FLAG = "depotcharge.try-demo";
@@ -321,28 +321,30 @@ async function seedDepot(api: Api, now: Date, fleet: Fleet, vehicles: Vehicle[],
     const [y, m, d] = localDateKey(new Date(addLocalDays(today, dayOffset, tz).getTime() + 12 * 60 * MINUTE), tz).split("-").map(Number);
     return localToUtc(y, m, d, hh, mm, tz);
   };
-  // Tonight if it's still afternoon; later in the day the trucks are arriving now.
-  const evening = at(0, 17, 30);
-  const shift = now.getTime() > evening.getTime() - 30 * MINUTE ? now.getTime() - evening.getTime() + 20 * MINUTE : 0;
-  const t = (d: Date) => new Date(d.getTime() + shift).toISOString();
+  // The trucks come back at the end of the shift, around 5–6pm: straight into the evening peak, the
+  // dearest time to plug in on arrival, which is what the plan saves (around 45% on Agile prices).
+  // Tonight until 6pm; after that, tomorrow evening, so the demo always shows the peak.
+  const eve = now.getTime() < at(0, 18, 0).getTime() ? 0 : 1;
+  const t = (d: Date) => d.toISOString();
   const visits = [
     // The V2G pilot truck: back from local deliveries early with charge to spare.
-    { vehicle: "Rigid 03", charger: "bay-4", arrive: at(0, 15, 45), depart: at(1, 7, 0), soc: [72, 100] },
-    { vehicle: "Tractor 01", charger: "bay-1", arrive: at(0, 18, 30), depart: at(1, 5, 15), soc: [21, 90] },
-    { vehicle: "Reefer 04", charger: "bay-2", arrive: at(0, 19, 10), depart: at(1, 4, 30), soc: [34, 95] },
-    { vehicle: "Tanker 05", charger: "bay-3", arrive: at(0, 20, 15), depart: at(1, 6, 0), soc: [17, 85] },
-    { vehicle: "Tractor 02", charger: "bay-1", arrive: at(1, 5, 30), depart: at(1, 9, 0), soc: [44, 90] },
+    { vehicle: "Rigid 03", charger: "bay-4", arrive: at(eve, 15, 45), depart: at(eve + 1, 7, 0), soc: [72, 100] },
+    { vehicle: "Tractor 01", charger: "bay-1", arrive: at(eve, 17, 5), depart: at(eve + 1, 5, 15), soc: [21, 90] },
+    { vehicle: "Reefer 04", charger: "bay-2", arrive: at(eve, 17, 30), depart: at(eve + 1, 4, 30), soc: [34, 95] },
+    { vehicle: "Tanker 05", charger: "bay-3", arrive: at(eve, 17, 50), depart: at(eve + 1, 6, 0), soc: [17, 85] },
+    { vehicle: "Tractor 02", charger: "bay-1", arrive: at(eve + 1, 5, 30), depart: at(eve + 1, 9, 0), soc: [44, 90] },
   ];
   for (const x of visits) {
     await api("POST", `/fleets/${fleet.id}/depot-visits`, { depot_id: depotId, vehicle_id: v(x.vehicle), charger_id: x.charger, arrive_at: t(x.arrive), depart_at: t(x.depart), soc_start: x.soc[0], soc_target: x.soc[1] });
   }
-  // The trucks report their own battery level (simulated telematics): the ones in the yard or
-  // about to arrive, a few minutes ago.
-  const soon = now.getTime() + 30 * MINUTE;
-  const readings = visits.filter((x) => Date.parse(t(x.arrive)) <= soon).map((x, i) => ({
-    vehicle_id: v(x.vehicle), soc_pct: x.soc[0], range_km: Math.round(x.soc[0] * 3.2),
-    charging: Date.parse(t(x.arrive)) <= now.getTime() ? "connected" : "idle", at: new Date(now.getTime() - (2 + i) * MINUTE).toISOString(),
-  }));
+  // The trucks report their own battery level (simulated telematics), a few minutes ago: in the
+  // yard, what they arrived with; on the road, a bit more, still to be used on the way back. The
+  // plan only takes a truck's own reading once it's nearly in.
+  const readings = visits.filter((x) => Date.parse(t(x.arrive)) <= now.getTime() + 20 * 60 * MINUTE).map((x, i) => {
+    const toGo = Math.max(0, (Date.parse(t(x.arrive)) - now.getTime()) / (60 * MINUTE));
+    const soc = Math.min(95, Math.round(x.soc[0] + toGo * 9));
+    return { vehicle_id: v(x.vehicle), soc_pct: soc, range_km: Math.round(soc * 3.2), charging: toGo === 0 ? "connected" : "idle", at: new Date(now.getTime() - (2 + i) * MINUTE).toISOString() };
+  });
   if (readings.length) await api("POST", `/fleets/${fleet.id}/telemetry`, { readings }).catch(() => undefined);
   // Grid flexibility: a local network constraint tonight (accepted automatically) and a NESO
   // turn-up event waiting for a decision.
