@@ -160,7 +160,9 @@ export async function noteOutcome(req: Request, res: Response, rl = limiter, now
 
 export async function handle(pc: PagesContext): Promise<Response> {
   // Public market data (prices and grid carbon) works with or without Supabase, cached at the edge.
-  if (new URL(pc.request.url).pathname.startsWith("/api/public/")) {
+  // (Fleets' site reports are public too, but live in the store: those go on to the router below.)
+  const publicPath = new URL(pc.request.url).pathname;
+  if (publicPath.startsWith("/api/public/") && !(publicPath.startsWith("/api/public/site-reports") && isConfigured(pc.env))) {
     const blocked = await guard(pc.request, limiter, Date.now(), sharedLimits(pc.env));
     if (blocked) return withSecurityHeaders(blocked);
     const edge = (globalThis as unknown as { caches?: { default?: { match(r: Request): Promise<Response | undefined>; put(r: Request, res: Response): Promise<void> } } }).caches?.default;

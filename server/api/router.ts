@@ -21,6 +21,7 @@ import { notifyChannels, notifyDriver } from "../notify";
 import { redactPath, reportError, scrub } from "../alerts";
 import { carbonFor } from "../energy";
 import { handlePublicMarket } from "../market";
+import { BadReport, fleetSiteReports, reportSite } from "../sitereports";
 import { depotPlan, dispatchDepot, energyRow } from "../depot";
 import { closeEndedEvents, decide, handleFlexInbound, simulateEvent } from "../flex";
 import { PROGRAMME_LABEL } from "../../shared/energy/flex";
@@ -369,6 +370,15 @@ async function fleetRoutes(req: Request, ctx: Ctx, user: AuthUser, fleetId: stri
   // Depot energy settings: anyone reads, owners change (credentials are write-only).
   if (res === "energy" && !id) return energyRoutes(req, ctx, user, fleetId, role);
   if (write && role === "viewer") throw new ApiError(403, user.apiKey ? "This API key is read-only" : "Your role is view-only");
+  // "An artic fits" / "no room" at a public site (server/sitereports.ts): one report per fleet.
+  if (res === "site-reports" && !id) {
+    if (m === "GET") return json(await fleetSiteReports(ctx.store, fleetId));
+    if (m === "PUT") {
+      try { return json(await reportSite(ctx, fleetId, await body<{ site?: unknown; truck?: unknown; verdict?: unknown }>(req))); }
+      catch (e) { if (e instanceof BadReport) throw new ApiError(400, e.message); throw e; }
+    }
+    throw new ApiError(405, "Use GET or PUT");
+  }
   if (res === "depot-visits") return visitRoutes(req, ctx, user, fleetId, id);
   if (res === "telemetry") return telemetryRoutes(req, ctx, fleetId);
   if (res === "telematics" && id === "test" && m === "POST") {

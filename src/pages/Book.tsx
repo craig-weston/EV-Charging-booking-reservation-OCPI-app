@@ -18,6 +18,8 @@ import { href, navigate, useRoute } from "../app/router";
 import { NetworkMap, type MapPin } from "../components/NetworkMap";
 import { useOpenSites } from "../app/opendata";
 import { openSiteFit, type OpenSite, type OpenSource } from "../../shared/opendata/sites";
+import { TRUCK_LABEL, reportedFit, tallyText, truckClass, type MySiteReports, type SiteTally, type SiteVerdict } from "../../shared/opendata/reports";
+import { useSiteReports } from "../app/sitereports";
 import { SlotPicker, type EnergyCell } from "../components/SlotPicker";
 import { ApiFailure } from "../app/backend";
 import { Empty, Icon, Plate, Seg, Spinner, StatusBadge, Switch } from "../ui/ui";
@@ -91,6 +93,8 @@ export function BookPage() {
   // Public sites from open data: shown on the map, not bookable here. Ones this truck can't use,
   // and copies of sites already bookable here, are left out.
   const openFile = useOpenSites(backend.publicApi);
+  const reports = useSiteReports(backend.publicApi, api, fleetId);
+  const truck = truckClass(vehicle);
   const openSites = useMemo(() => (openFile?.sites ?? []).filter((o) => openSiteFit(o, vehicle).ok
     && !sites.some((b) => Math.abs(b.lat - o.lat) < 0.0015 && Math.abs(b.lon - o.lon) < 0.0025)), [openFile, vehicle, sites]);
   const openSite = openId ? openSites.find((o) => o.id === openId) ?? null : null;
@@ -221,7 +225,7 @@ export function BookPage() {
     };
   });
   if (showOpen) {
-    for (const o of openSites) pins.push({ key: `open:${o.id}`, lat: o.lat, lon: o.lon, label: o.name, state: o.id === openId ? "opensel" : "open", tone: o.hgv });
+    for (const o of openSites) pins.push({ key: `open:${o.id}`, lat: o.lat, lon: o.lon, label: o.name, state: o.id === openId ? "opensel" : "open", tone: reportedFit(reports.tallies[o.id], truck) === "fits" ? "trucks" : o.hgv });
   }
   const openKey = openSites.length > 0 ? (
     <button type="button" className="open-key" aria-pressed={showOpen} onClick={() => { setShowOpen(!showOpen); setOpenId(null); }}>
@@ -317,7 +321,9 @@ export function BookPage() {
           </section>}
 
           {openSite && !site ? (
-            <OpenSitePanel site={openSite} source={openFile?.sources.find((x) => x.id === openSite.source) ?? null} vehicle={vehicle} onBack={() => setOpenId(null)} />
+            <OpenSitePanel site={openSite} source={openFile?.sources.find((x) => x.id === openSite.source) ?? null} vehicle={vehicle} onBack={() => setOpenId(null)}
+              tally={reports.tallies[openSite.id] ?? null} mine={reports.mine[openSite.id] ?? null} canReport={!!fleetId}
+              onReport={async (v) => { try { await reports.report(openSite.id, truck, v); toast(v ? "Thanks, your report is saved" : "Report withdrawn"); } catch (e) { toast(e instanceof Error ? e.message : "Couldn't save the report", "bad"); } }} />
           ) : site && bl && vehicle ? (
             <SitePanel
               site={site} option={option!} vehicle={vehicle} onBack={() => { setSelectedKey(null); setResultId(null); }}
@@ -508,8 +514,14 @@ function ResultItem({ site, desired, now, price, cheapest, duration, hot, showSi
 
 /** A public site from open data: what it has, whether this truck should go there, and how to get
  *  there. It can't be booked here yet; drivers pay on site. */
-function OpenSitePanel({ site, source, vehicle, onBack }: { site: OpenSite; source: OpenSource | null; vehicle: Vehicle | null; onBack(): void }) {
+function OpenSitePanel({ site, source, vehicle, onBack, tally, mine, canReport, onReport }: { site: OpenSite; source: OpenSource | null; vehicle: Vehicle | null; onBack(): void; tally: SiteTally | null; mine: MySiteReports | null; canReport: boolean; onReport(v: SiteVerdict | null): Promise<void> }) {
   const fit = openSiteFit(site, vehicle);
+  const truck = truckClass(vehicle);
+  const said = tallyText(tally, truck);
+  const saidFit = reportedFit(tally, truck);
+  const my = mine?.[truck] ?? null;
+  const [busy, setBusy] = useState(false);
+  const say = async (v: SiteVerdict | null) => { setBusy(true); try { await onReport(v); } finally { setBusy(false); } };
   const where = [site.address, [site.city, site.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   const updated = site.updated && Number.isFinite(Date.parse(site.updated)) ? new Date(site.updated).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
   return (
@@ -536,6 +548,16 @@ function OpenSitePanel({ site, source, vehicle, onBack }: { site: OpenSite; sour
         </div>
         <div className="callout">
           <b>Not bookable here yet.</b> Drivers pay on site by card or with the operator's app.{fit.note && vehicle ? ` ${fit.note.replace("an HGV", `${vehicle.plate}`)}.` : ""}
+        </div>
+        <div className="site-report">
+          <div className="small"><b>Has {TRUCK_LABEL[truck]} been here?</b> {said
+            ? <span className={saidFit === "fits" ? "ok-text" : saidFit === "no_room" ? "bad-text" : "muted"}>{said}.</span>
+            : <span className="muted">No reports yet. Yours would be the first.</span>}</div>
+          {canReport && <div className="row gap-8 wrap" role="group" aria-label={`Report whether ${TRUCK_LABEL[truck]} fits at ${site.name}`}>
+            <button className={`btn sm${my === "fits" ? " primary" : ""}`} aria-pressed={my === "fits"} disabled={busy} onClick={() => void say(my === "fits" ? null : "fits")}><Icon name="check" size="sm" />Fits {TRUCK_LABEL[truck]}</button>
+            <button className={`btn sm${my === "no_room" ? " primary" : ""}`} aria-pressed={my === "no_room"} disabled={busy} onClick={() => void say(my === "no_room" ? null : "no_room")}><Icon name="x" size="sm" />No room</button>
+            {my && <span className="xs muted">Your fleet's report. Press it again to withdraw.</span>}
+          </div>}
         </div>
         <div className="row gap-8 wrap">
           <a className="btn" href={`https://www.google.com/maps/dir/?api=1&destination=${site.lat},${site.lon}`} target="_blank" rel="noopener noreferrer"><Icon name="route" size="sm" />Directions</a>

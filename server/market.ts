@@ -9,17 +9,20 @@
 //   GET /api/public/region?postcode=NN4 7AB
 //   GET /api/public/carbon?postcode=NN4 7AB&from=…&to=…
 //   GET /api/public/sites  (public charging sites from open data, refreshed daily; docs/open-data.md)
+//   GET /api/public/site-reports  (fleets' "an artic fits" / "no room" reports on those sites)
 // Without either (tests, the offline preview) callers fall back to modelled data and say so.
 import type { Ctx } from "./context";
 import { parseElexonMid, parseFeed, parseOctopusRates, validProduct, OCTOPUS_REGIONS, type PriceSeries } from "../shared/energy/suppliers";
 import { outcode } from "../shared/energy/carbon";
 import { carbonFor } from "./energy";
 import { RouteUnavailable, truckRoute } from "./routing";
+import { siteTallies } from "./sitereports";
 
 export type MarketDeps = Pick<Ctx, "mode" | "now" | "transport"> & { marketUrl?: string; sitesUrl?: string; env?: { ORS_API_KEY?: string }; store?: Ctx["store"] };
 
 /** The daily open-data snapshot (.github/workflows/opendata.yml); OPEN_SITES_URL overrides it. */
 export const OPEN_SITES_URL = "https://github.com/craig-weston/EV-Charging-booking-reservation-OCPI-app/releases/download/opendata/sites.json";
+
 
 const OCTOPUS = "https://api.octopus.energy/v1";
 const ELEXON = "https://data.elexon.co.uk/bmrs/api/v1";
@@ -138,6 +141,8 @@ export async function handlePublicMarket(req: Request, d: MarketDeps): Promise<R
   const url = new URL(req.url);
   const what = url.pathname.replace(/^\/api\/public\/?/, "").replace(/\/+$/, "");
   if (what === "sites") return openSites(d);
+  // What fleets have reported about public sites (server/sitereports.ts). Short cache: a new report shows soon.
+  if (what === "site-reports") return json(d.store ? await siteTallies(d.store) : {}, 200, 120);
   // Lorry routes for the trip planner (server/routing.ts), kept a week.
   if (what === "route") {
     try {

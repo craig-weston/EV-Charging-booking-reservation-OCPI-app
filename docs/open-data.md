@@ -14,6 +14,15 @@ Only sites that could serve heavy vehicles are kept:
 
 Where an operator publishes bay limits (length, height, weight), sites a truck doesn't fit are hidden for that truck. Copies of sites that are already bookable here are hidden too.
 
+## Reports from fleets
+
+Operators' open data almost never says whether a lorry fits: of the sites shown, nearly all are "bay size not published". So anyone on a fleet's team (except view-only members) can say what they found, from the site's panel: **Fits an artic** or **No room** (or "a rigid", going by the truck they have selected).
+
+- One report per fleet, per site, per kind of truck. Reporting again replaces it; pressing the same button withdraws it.
+- Everyone sees the totals ("3 fleets say an artic fits"), and a site fleets agree on is drawn like one built for trucks. Fleets aren't named.
+- `GET /api/public/site-reports` returns the totals for every reported site, with no account needed. `GET` and `PUT /api/fleets/{fleet}/site-reports` read and save a fleet's own (`{ "site": "mfg:123", "truck": "artic", "verdict": "fits" }`; `verdict: null` withdraws).
+- In the demo, reports stay in your browser.
+
 ## Where the data comes from
 
 1. **Operators' statutory feeds.** The Public Charge Point Regulations 2023 require every UK public charge point operator to publish open data about its sites free of charge, mostly as OCPI. Feeds that open without a key are used by default: GeniePoint, MFG EV Power, Evolt, ChargePlace Scotland, PoGo Charge and Arnold Clark Charge. Others (GRIDSERVE, bp pulse, IONITY, Shell Recharge, Allego, Fastned, Osprey) send a free key or token when you ask; the operator's open-data page is linked in `shared/opendata/sources.ts`.
