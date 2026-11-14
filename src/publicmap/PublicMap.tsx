@@ -404,7 +404,14 @@ function electrify(m: MapLike) {
     if (l.type === "background") set(l.id, "background-color", "#030812");
     else if (l.type === "fill") set(l.id, "fill-color", /water|ocean|sea|lake|river/.test(id) ? "#050f1f" : /building/.test(id) ? "#0b1628" : /park|wood|grass|green|forest/.test(id) ? "#06111c" : "#060c18");
     else if (l.type === "line") {
-      set(l.id, "line-color", /water|river|canal|stream/.test(id) ? "#0a2240" : /motorway|trunk/.test(id) ? "#174a7c" : /primary|secondary/.test(id) ? "#10294a" : /boundary|admin/.test(id) ? "#24406e" : "#0c1a30");
+      // Motorways and trunk roads, where lorries run, stand out; minor roads stay in the dark.
+      set(l.id, "line-color", /water|river|canal|stream/.test(id) ? "#0a2240" : /motorway/.test(id) ? "#1f5fa3" : /trunk/.test(id) ? "#18497f" : /primary|secondary/.test(id) ? "#10294a" : /boundary|admin/.test(id) ? "#24406e" : "#0c1a30");
+    } else if (l.type === "symbol" && /shield/.test(id)) {
+      // Road numbers (A1, M6) as neon text instead of the light map's white badges.
+      try { m.setLayoutProperty(l.id, "icon-image", ""); } catch { /* ignore */ }
+      set(l.id, "text-color", ["case", ["==", ["slice", ["to-string", ["get", "ref"]], 0, 1], "M"], "#6fb6ff", "#7fe0ff"]);
+      set(l.id, "text-halo-color", "#030812");
+      set(l.id, "text-halo-width", 2);
     } else if (l.type === "symbol") {
       const big = /place|city|town|country|state/.test(id);
       set(l.id, "text-color", big ? "#8fb3e6" : "#56709e");
