@@ -30,7 +30,7 @@ function resolveAxe(): string | null {
 }
 
 const DIST = path.resolve("dist");
-const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".png": "image/png", ".txt": "text/plain", ".json": "application/json" };
+const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".mp4": "video/mp4", ".jpg": "image/jpeg", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".png": "image/png", ".txt": "text/plain", ".json": "application/json" };
 
 /** Headers for every path from dist/_headers ("/*" block), as Cloudflare would send them. */
 function siteHeaders(): Record<string, string> {
@@ -295,7 +295,13 @@ test("public map: welcome, list, a site, a trial booking and a phone pass access
   const explore = page.getByRole("button", { name: "Explore the map" });
   await explore.waitFor({ timeout: 15_000 });
   await axe(page, "public map (welcome)");
-  await explore.click();
+  // The booking video, from the welcome card: a dialog with the steps written out.
+  await page.getByRole("button", { name: /Watch how booking works/ }).first().click();
+  await page.getByRole("dialog", { name: "How booking works" }).waitFor();
+  await page.getByText("Bay reserved in seconds").waitFor();
+  await axe(page, "public map (video)");
+  await page.getByRole("button", { name: "Close the video" }).click();
+  await page.getByRole("dialog", { name: "How booking works" }).waitFor({ state: "detached" });
   // The list: truck sites first.
   const items = page.locator(".pm-item");
   await items.first().waitFor();

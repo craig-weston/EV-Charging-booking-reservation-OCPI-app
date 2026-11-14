@@ -13,7 +13,7 @@ import {
 } from "./logic";
 import {
   BOLT, IconArtic, IconBack, IconBay, IconBolt, IconCheck, IconClock, IconCross, IconDriveThrough, IconFleet, IconLocate, IconMegawatt, IconPin, IconPlug, IconQuestion, IconRigid, IconRoute, IconSearch, IconShare,
-  IconBasket, IconBed, IconCup, IconFood, IconFuel, IconParking, IconWifi,
+  IconBasket, IconBed, IconCup, IconFood, IconFuel, IconParking, IconPlay, IconWifi,
 } from "./icons";
 
 const VENDOR = "/vendor/maplibre-6.17.0";
@@ -35,6 +35,17 @@ const truckWords = (t: Truck) => (t === "artic" ? "an artic" : "a rigid");
 const WELCOME_KEY = "depotcharge.map.welcomed";
 /** The full app with sample trucks and operators, no account needed (see src/app/demo.ts). */
 const DEMO_URL = "/?demo#/book";
+/** The 17-second walkthrough of booking in the app (public/media), and what each step shows. */
+const VIDEO = { src: "/media/how-booking-works.mp4", poster: "/media/how-booking-works.jpg", seconds: 17 };
+const VIDEO_STEPS: [string, string][] = [
+  ["Pick the truck and roughly when", "The fleet planner chooses a vehicle and a day."],
+  ["Only bays that fit the truck", "Connector, power, length, height and load are matched."],
+  ["Sent to the operator over OCPI", "The bay is requested with the number plate and charging ID."],
+  ["Bay reserved in seconds", "The plate is added to the site's barrier list."],
+  ["The driver gets a message", "A text or WhatsApp with a link: no app to install."],
+  ["Everything they need at a glance", "Arrival window, directions and what happens at the gate."],
+  ["Drive in, plug in, charge", "The barrier reads the plate and Plug & Charge starts the session."],
+];
 const seenWelcome = () => { try { return localStorage.getItem(WELCOME_KEY) === "1"; } catch { return false; } };
 
 export function PublicMap() {
@@ -53,6 +64,7 @@ export function PublicMap() {
   // First visit (not a link to one site): a short welcome saying what this is.
   const [welcome, setWelcome] = useState(() => !seenWelcome() && !siteFromHash(window.location.hash));
   const [toast, setToast] = useState<string | null>(null);
+  const [video, setVideo] = useState(false);
   const closeWelcome = () => { setWelcome(false); try { localStorage.setItem(WELCOME_KEY, "1"); } catch { /* not remembered */ } };
   const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
   const shareMap = async () => {
@@ -245,6 +257,11 @@ export function PublicMap() {
           <p>{total ? <>Where your truck can charge. Every public UK site with <b>150 kW or more</b>, checked for HGVs: <b>{total.toLocaleString("en-GB")}</b> from operators' open data.</> : loadError ? "The sites couldn't load." : "Loading public charging sites…"}</p>
         </div>
 
+        <button type="button" className="pm-watch" onClick={() => setVideo(true)}>
+          <span className="pm-watch-thumb" aria-hidden="true"><img src={VIDEO.poster} alt="" width="96" height="54" /><span><IconPlay /></span></span>
+          <span><b>Watch how booking works</b><small>From picking a bay to plugging in · {VIDEO.seconds} seconds</small></span>
+        </button>
+
         <SearchBox sites={all} places={CITIES} onPick={pick} />
 
         <div className="pm-truck" role="radiogroup" aria-labelledby="pm-truck-label">
@@ -278,7 +295,7 @@ export function PublicMap() {
 
         <div className="pm-body">
           {selected ? (
-            <SiteDetail key={selected.id} site={selected} tallies={tallies} truck={truck} sourceName={file?.sources.find((s) => s.id === selected.source)?.name ?? selected.source} onBack={() => setSelectedId(null)} />
+            <SiteDetail key={selected.id} site={selected} tallies={tallies} truck={truck} onWatch={() => setVideo(true)} sourceName={file?.sources.find((s) => s.id === selected.source)?.name ?? selected.source} onBack={() => setSelectedId(null)} />
           ) : loadError ? (
             <div className="pm-empty"><b>The sites couldn't load.</b><button type="button" className="pm-btn" onClick={loadSites}>Try again</button></div>
           ) : !file ? (
@@ -307,7 +324,8 @@ export function PublicMap() {
       </button>
       {locating === "denied" && <div className="pm-toast" role="status">Your location isn't available. Search for a town instead.</div>}
       {toast && <div className="pm-toast" role="status">{toast}</div>}
-      {welcome && file && <Welcome total={file.sites.length} onClose={closeWelcome} />}
+      {welcome && file && <Welcome total={file.sites.length} onClose={closeWelcome} onWatch={() => { closeWelcome(); setVideo(true); }} />}
+      {video && <VideoDialog onClose={() => setVideo(false)} />}
     </main>
   );
 }
@@ -549,7 +567,7 @@ function SiteList({ sites, tallies, truck, total, filtered, onPick, onClear }: {
   );
 }
 
-function SiteDetail({ site, tallies, truck, sourceName, onBack }: { site: OpenSite; tallies: Tallies; truck: Truck; sourceName: string; onBack(): void }) {
+function SiteDetail({ site, tallies, truck, sourceName, onBack, onWatch }: { site: OpenSite; tallies: Tallies; truck: Truck; sourceName: string; onBack(): void; onWatch(): void }) {
   const heading = useRef<HTMLHeadingElement>(null);
   const [copied, setCopied] = useState(false);
   const [trial, setTrial] = useState(false);
@@ -621,7 +639,7 @@ function SiteDetail({ site, tallies, truck, sourceName, onBack }: { site: OpenSi
           <button type="button" className="pm-btn ghost" onClick={() => void share()}><IconShare />{copied ? "Link copied" : "Share"}</button>
         </div>
       )}
-      {!trial && <p className="pm-note">See how booking a bay ahead works, in under a minute, with no account. Already use the app? <a href="/#/book">Sign in to book</a>.</p>}
+      {!trial && <p className="pm-note">See how booking a bay ahead works, in under a minute, with no account, or <button type="button" className="pm-link inline" onClick={onWatch}>watch the {VIDEO.seconds}-second video</button>. Already use the app? <a href="/#/book">Sign in to book</a>.</p>}
 
       <p className="pm-source">Data from {sourceName}{site.provider ? ` (${site.provider})` : ""}{site.updated ? `, last updated ${new Date(site.updated).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}` : ""}.</p>
     </article>
@@ -706,7 +724,7 @@ function TrialBooking({ site, truck, onClose }: { site: OpenSite; truck: Truck; 
 }
 
 /** First visit: what this is, in three lines. */
-function Welcome({ total, onClose }: { total: number; onClose(): void }) {
+function Welcome({ total, onClose, onWatch }: { total: number; onClose(): void; onWatch(): void }) {
   const close = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     close.current?.focus();
@@ -727,7 +745,39 @@ function Welcome({ total, onClose }: { total: number; onClose(): void }) {
         <button type="button" className="pm-btn primary" ref={close} onClick={onClose}>Explore the map</button>
         <a className="pm-btn" href={DEMO_URL}>Try the full app</a>
       </div>
+      <button type="button" className="pm-link pm-welcome-watch" onClick={onWatch}><IconPlay />Watch how booking works ({VIDEO.seconds} seconds)</button>
     </div>
+  );
+}
+
+/** The booking walkthrough in a dialog, with what each step shows written out beneath it. */
+function VideoDialog({ onClose }: { onClose(): void }) {
+  const dlg = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = dlg.current;
+    if (!d) return;
+    if (!d.open) d.showModal();
+    const onCancel = (e: Event) => { e.preventDefault(); onClose(); };
+    d.addEventListener("cancel", onCancel);
+    return () => d.removeEventListener("cancel", onCancel);
+  }, [onClose]);
+  return (
+    <dialog className="pm-video" ref={dlg} aria-labelledby="pm-video-title" onClick={(e) => { if (e.target === dlg.current) onClose(); }}>
+      <div className="pm-video-head">
+        <h2 id="pm-video-title">How booking works</h2>
+        <button type="button" className="pm-iconbtn" onClick={onClose} aria-label="Close the video"><IconCross size={18} /></button>
+      </div>
+      <video src={VIDEO.src} poster={VIDEO.poster} controls playsInline muted autoPlay={!reducedMotion()} preload="metadata" width="1200" height="676" aria-describedby="pm-video-steps" />
+      <details className="pm-video-steps" open>
+        <summary>What the video shows</summary>
+        <ol id="pm-video-steps">
+          {VIDEO_STEPS.map(([t, d]) => <li key={t}><b>{t}</b> {d}</li>)}
+        </ol>
+      </details>
+      <div className="pm-actions">
+        <a className="pm-btn primary" href={DEMO_URL}><IconBolt size={18} />Try it in the full app</a>
+      </div>
+    </dialog>
   );
 }
 
@@ -745,7 +795,7 @@ function CheckRow({ c }: { c: Check }) {
     <li className={`pm-check ${c.state}`}>
       <span className="pm-check-ico">{CHECK_ICON[c.key]?.()}</span>
       <span className="pm-check-main"><b>{c.label}</b><small>{c.text}</small></span>
-      <span className="pm-check-state" aria-label={c.state === "ok" ? "Yes" : c.state === "bad" ? "No" : "Unknown"}>{c.state === "ok" ? <IconCheck size={16} /> : c.state === "bad" ? <IconCross size={16} /> : <IconQuestion size={16} />}</span>
+      <span className="pm-check-state">{c.state === "ok" ? <IconCheck size={16} /> : c.state === "bad" ? <IconCross size={16} /> : <IconQuestion size={16} />}<span className="sr-only">{c.state === "ok" ? "Yes" : c.state === "bad" ? "No" : "Not known"}</span></span>
     </li>
   );
 }
