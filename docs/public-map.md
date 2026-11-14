@@ -10,6 +10,13 @@
 - **The list** shows what's in view, truck sites first, then the most powerful.
 - **Opening hours and facilities** from operators' feeds: a 24/7 filter and tag, and café, food, hotel, fuel, Wi-Fi, parking and shop icons where published.
 - **Site details**: operator, address, whether an artic fits (operator data plus [fleets' reports](open-data.md#reports-from-fleets)), top power, chargers, connectors, bay limits where published, directions and a shareable link (`/map#site=<id>`).
+- **A gateway to the app**, for sharing with anyone:
+  - a welcome card on first visit;
+  - "Try booking this site": a trial booking that walks through the day (bay held, gate opens on the plate, Plug & Charge, one invoice). Nothing is booked;
+  - "Try the app free": the full app with sample data, at `/?demo#/book`;
+  - a Share button.
+
+  Link previews (LinkedIn, WhatsApp, Slack) use `public/og-map.jpg`, and robots.txt lets preview bots read `/map` only.
 - **Near me** asks the browser for the visitor's location; it's used only in the browser.
 
 Motion (the fly-in, pulsing rings, glowing buttons) is turned off for people who ask their device for reduced motion.
