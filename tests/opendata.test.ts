@@ -2,7 +2,7 @@
 // Map, kept only if they could serve heavy vehicles, merged, and served at /api/public/sites.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanOpenSites, fromOcm, fromOcpiLocation, mergeSites, ocpiLocations, openSiteFit, type OpenSite } from "../shared/opendata/sites";
+import { cleanOpenSites, fromOcm, fromOcpiLocation, mergeSites, ocpiLocations, openSiteFit, payloadShape, type OpenSite } from "../shared/opendata/sites";
 import { handlePublicMarket, OPEN_SITES_URL } from "../server/market";
 
 const conn = (o: Record<string, unknown>) => ({ id: "1", format: "CABLE", power_type: "DC", max_voltage: 920, max_amperage: 400, last_updated: "2026-11-01T00:00:00Z", ...o });
@@ -58,6 +58,10 @@ test("feeds come as { data: [...] }, a bare array or one object", () => {
   assert.equal(ocpiLocations([1]).length, 1);
   assert.equal(ocpiLocations({ data: { id: "x" } }).length, 1);
   assert.equal(ocpiLocations("nope").length, 0);
+  // Locations and tariffs in one payload (Osprey).
+  assert.equal(ocpiLocations({ locations: [1, 2, 3], tariffs: [9] }).length, 3);
+  assert.equal(ocpiLocations({ data: { locations: [1, 2], tariffs: [] } }).length, 2);
+  assert.equal(payloadShape({ data: { items: [], total: 0 } }), "an object with keys: data (data has: items, total)");
 });
 
 const poi = (o: Record<string, unknown> = {}) => ({
