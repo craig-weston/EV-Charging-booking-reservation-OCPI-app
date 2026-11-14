@@ -8,11 +8,12 @@ import { applyBrand } from "../app/brand";
 import type { Brand } from "../../shared/model";
 import type { GeoJsonSource, LngLat, MapEvent, MapLibreModule, MapLike } from "./maplibre-types";
 import {
-  NO_FILTERS, TRUCKS, access, addressLine, breakCharge, checklist, directionsUrl, hasMcs, inBounds, isFiltered, keep, operatorCounts, order, search, siteFromHash, suitsTrucks, tier,
+  FACILITY_LABEL, NO_FILTERS, TRUCKS, access, addressLine, breakCharge, checklist, directionsUrl, hasMcs, inBounds, isFiltered, keep, operatorCounts, order, search, siteFromHash, suitsTrucks, tier,
   type Bounds, type Check, type Filters, type Place, type Suggestion, type Tallies, type Truck,
 } from "./logic";
 import {
   BOLT, IconArtic, IconBack, IconBay, IconBolt, IconCheck, IconClock, IconCross, IconDriveThrough, IconFleet, IconLocate, IconMegawatt, IconPin, IconPlug, IconQuestion, IconRigid, IconRoute, IconSearch, IconShare,
+  IconBasket, IconBed, IconCup, IconFood, IconFuel, IconParking, IconWifi,
 } from "./icons";
 
 const VENDOR = "/vendor/maplibre-6.17.0";
@@ -244,6 +245,7 @@ export function PublicMap() {
           </div>
           <Chip on={filters.trucks} onClick={() => setFilters((f) => ({ ...f, trucks: !f.trucks }))}>{truck === "artic" ? <IconArtic size={15} /> : <IconRigid size={15} />}Fits {truckWords(truck)}</Chip>
           <Chip on={filters.mcs} onClick={() => setFilters((f) => ({ ...f, mcs: !f.mcs }))}><IconMegawatt size={15} />Megawatt</Chip>
+          <Chip on={filters.open247} onClick={() => setFilters((f) => ({ ...f, open247: !f.open247 }))}><IconClock size={15} />24/7</Chip>
           <label className="pm-select">
             <span className="sr-only">Operator</span>
             <select value={filters.operator} onChange={(e) => setFilters((f) => ({ ...f, operator: e.target.value }))}>
@@ -505,6 +507,7 @@ function SiteList({ sites, tallies, truck, total, filtered, onPick, onClear }: {
                     {trucks && <span className="pm-tag ok">{truck === "artic" ? <IconArtic size={13} /> : <IconRigid size={13} />}{s.hgv === "trucks" ? "Built for trucks" : "Fleets say it fits"}</span>}
                     {hasMcs(s) && <span className="pm-tag"><IconMegawatt size={13} />MCS</span>}
                     {s.drive_through && <span className="pm-tag"><IconDriveThrough size={13} />Drive-through</span>}
+                    {s.open247 && <span className="pm-tag"><IconClock size={13} />24/7</span>}
                     <span className="pm-tag plain"><IconPlug size={13} />{s.evses}</span>
                   </span>
                 </span>
@@ -568,6 +571,15 @@ function SiteDetail({ site, tallies, truck, sourceName, onBack }: { site: OpenSi
         {checks.map((c) => <CheckRow key={c.key} c={c} />)}
       </ul>
 
+      {!!site.facilities?.length && (
+        <>
+          <h3 className="pm-h3 plain">On site</h3>
+          <ul className="pm-facilities">
+            {site.facilities.map((f) => <li key={f}>{FACILITY_ICON[f]?.()}{FACILITY_LABEL[f] ?? f}</li>)}
+          </ul>
+        </>
+      )}
+
       <div className="pm-actions">
         <a className="pm-btn primary" href="/#/book"><IconBolt size={18} />Book a slot</a>
         <a className="pm-btn" href={directionsUrl(site)} target="_blank" rel="noopener noreferrer"><IconRoute />Directions</a>
@@ -580,8 +592,13 @@ function SiteDetail({ site, tallies, truck, sourceName, onBack }: { site: OpenSi
   );
 }
 
+const FACILITY_ICON: Record<string, () => ReactNode> = {
+  CAFE: () => <IconCup size={16} />, RESTAURANT: () => <IconFood size={16} />, HOTEL: () => <IconBed size={16} />, FUEL_STATION: () => <IconFuel size={16} />,
+  WIFI: () => <IconWifi size={16} />, PARKING_LOT: () => <IconParking size={16} />, SUPERMARKET: () => <IconBasket size={16} />,
+};
+
 const CHECK_ICON: Record<string, () => ReactNode> = {
-  bay: () => <IconBay size={18} />, drive: () => <IconDriveThrough size={18} />, mcs: () => <IconMegawatt size={18} />, fleets: () => <IconFleet size={18} />,
+  hours: () => <IconClock size={18} />, bay: () => <IconBay size={18} />, drive: () => <IconDriveThrough size={18} />, mcs: () => <IconMegawatt size={18} />, fleets: () => <IconFleet size={18} />,
 };
 
 function CheckRow({ c }: { c: Check }) {

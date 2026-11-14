@@ -2,7 +2,7 @@
 // Map, kept only if they could serve heavy vehicles, merged, and served at /api/public/sites.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanOpenSites, fromOcm, fromOcpiLocation, mergeSites, ocpiLocations, openSiteFit, payloadShape, type OpenSite } from "../shared/opendata/sites";
+import { cleanOpenSites, fromOcm, fromOcpiLocation, mergeSites, ocpiLocations, openSiteFit, payloadShape, openingOf, type OpenSite } from "../shared/opendata/sites";
 import { handlePublicMarket, OPEN_SITES_URL } from "../server/market";
 
 const conn = (o: Record<string, unknown>) => ({ id: "1", format: "CABLE", power_type: "DC", max_voltage: 920, max_amperage: 400, last_updated: "2026-11-01T00:00:00Z", ...o });
@@ -127,4 +127,14 @@ test("GET /api/public/sites passes the daily snapshot through, cached; says so w
   });
   assert.equal(calls[1], "https://example.org/sites.json");
   assert.equal(custom.status, 503);
+});
+
+test("opening times: 24/7, or hours in short form", () => {
+  assert.deepEqual(openingOf({ opening_times: { twentyfourseven: true } }), { open247: true });
+  assert.deepEqual(openingOf({ opening_times: { twentyfourseven: false }, charging_when_closed: true }), { open247: true }, "chargers usable when closed");
+  const wk = [1, 2, 3, 4, 5].map((d) => ({ weekday: d, period_begin: "09:00", period_end: "20:00" }));
+  assert.deepEqual(openingOf({ opening_times: { twentyfourseven: false, regular_hours: [...wk, { weekday: 6, period_begin: "10:00", period_end: "16:00" }] } }), { open247: false, hours: "Mon–Fri 09:00–20:00, Sat 10:00–16:00" });
+  const all = [1, 2, 3, 4, 5, 6, 7].map((d) => ({ weekday: d, period_begin: "06:00", period_end: "22:00" }));
+  assert.deepEqual(openingOf({ opening_times: { twentyfourseven: false, regular_hours: all } }), { open247: false, hours: "Daily 06:00–22:00" });
+  assert.deepEqual(openingOf({}), {});
 });

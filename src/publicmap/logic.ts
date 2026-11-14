@@ -25,9 +25,11 @@ export interface Filters {
   trucks: boolean;
   /** One operator, or "" for all. */
   operator: string;
+  /** Only sites open (or chargeable) around the clock. */
+  open247: boolean;
 }
 
-export const NO_FILTERS: Filters = { minKw: 150, mcs: false, trucks: false, operator: "" };
+export const NO_FILTERS: Filters = { minKw: 150, mcs: false, trucks: false, operator: "", open247: false };
 
 /** How a pin is drawn: built for (or reported to suit) trucks, ultra-rapid (350 kW+), or rapid. */
 export type Tier = "truck" | "ultra" | "rapid";
@@ -60,10 +62,11 @@ export function keep(s: OpenSite, f: Filters, t?: SiteTally | null, truck: Truck
   if (f.mcs && !hasMcs(s)) return false;
   if (f.trucks && !suitsTrucks(s, t, truck)) return false;
   if (f.operator && s.operator !== f.operator) return false;
+  if (f.open247 && s.open247 !== true) return false;
   return true;
 }
 
-export const isFiltered = (f: Filters) => f.minKw !== 150 || f.mcs || f.trucks || f.operator !== "";
+export const isFiltered = (f: Filters) => f.minKw !== 150 || f.mcs || f.trucks || f.operator !== "" || f.open247;
 
 /** Truck sites first, then the most powerful, then by name. */
 export function order(a: OpenSite, b: OpenSite, tallies: Tallies, truck: Truck = "artic"): number {
@@ -140,6 +143,11 @@ export function checklist(s: OpenSite, t: SiteTally | null | undefined, truck: T
       state: over.length ? "bad" : limits || s.hgv === "trucks" ? "ok" : "unknown",
       text: over.length ? `Too small: ${limits}` : limits ? `${limits}, fits ${(spec.length_cm / 100).toFixed(1)} m` : s.hgv === "trucks" ? s.hgv_why || "Truck bays" : "Not published",
     },
+    {
+      key: "hours", label: "Open 24/7",
+      state: s.open247 ? "ok" : s.open247 === false ? "bad" : "unknown",
+      text: s.open247 ? "Charge any time, day or night" : s.hours ? `Opening hours: ${s.hours}` : "Opening hours not published",
+    },
     { key: "drive", label: "Drive-through", state: s.drive_through ? "ok" : "unknown", text: s.drive_through ? "No reversing on to the charger" : "Not published" },
     { key: "mcs", label: "Megawatt (MCS)", state: hasMcs(s) ? "ok" : "bad", text: hasMcs(s) ? "Megawatt charging for trucks" : `CCS, up to ${Math.round(s.max_kw)} kW` },
     { key: "fleets", label: "Fleets' reports", state: said === "fits" ? "ok" : said === "no_room" ? "bad" : "unknown", text: fleets ?? "None yet" },
@@ -174,3 +182,8 @@ export function siteFromHash(hash: string): string | null {
   if (!m) return null;
   try { return decodeURIComponent(m[1]); } catch { return null; }
 }
+
+/** What's on site, in a driver's words. */
+export const FACILITY_LABEL: Record<string, string> = {
+  CAFE: "Café", RESTAURANT: "Food", HOTEL: "Hotel", FUEL_STATION: "Fuel", WIFI: "Wi-Fi", PARKING_LOT: "Parking", SUPERMARKET: "Shop",
+};
