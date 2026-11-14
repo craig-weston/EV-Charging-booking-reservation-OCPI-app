@@ -39,6 +39,32 @@ ${inlineJs ? `<script type="module">${inlineJs.replace(/<\/script/gi, "<\\/scrip
 `;
 }
 
+/** The public charging map (/map): its own page, no sign-in needed. */
+function mapHtml({ css, js, preload = [], fonts = [] }) {
+  return `<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#030812">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Every public HGV and rapid charging site in the UK on one map: power, connectors and whether an artic fits.">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>HGV charging map · Depotcharge</title>
+${fonts.map((f) => `<link rel="preload" href="${f}" as="font" type="font/woff2" crossorigin>`).join("\n")}
+<link rel="icon" href="/favicon.svg">
+<link rel="stylesheet" href="/vendor/maplibre-6.17.0/maplibre-gl.css">
+<link rel="stylesheet" href="${css}">
+${preload.map((p) => `<link rel="modulepreload" href="${p}">`).join("\n")}
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="${js}"></script>
+</body>
+</html>
+`;
+}
+
 const common = {
   absWorkingDir: root,
   entryPoints: ["src/main.tsx"],
@@ -98,8 +124,9 @@ if (serve) {
   const out = path.join(root, ".dev");
   fs.mkdirSync(out, { recursive: true });
   fs.writeFileSync(path.join(out, "index.html"), html({ css: "/main.css", js: "/main.js" }));
+  fs.writeFileSync(path.join(out, "map.html"), mapHtml({ css: "/map.css", js: "/map.js" }));
   copyPublic(out);
-  const ctx = await esbuild.context({ ...common, outdir: out, sourcemap: true, splitting: true, entryNames: "[name]", chunkNames: "chunks/[name]-[hash]" });
+  const ctx = await esbuild.context({ ...common, entryPoints: ["src/main.tsx", "src/publicmap/map.tsx"], outdir: out, sourcemap: true, splitting: true, entryNames: "[name]", chunkNames: "chunks/[name]-[hash]" });
   await ctx.watch();
   const { port } = await ctx.serve({ servedir: out, port: 5173 });
   console.log(`\n  Demo mode running at http://localhost:${port}\n  (use "npm run pages:dev" after "npm run build" to run with the Pages Functions)\n`);
@@ -125,7 +152,7 @@ if (serve) {
   fs.mkdirSync(path.join(out, "assets"), { recursive: true });
   // Content-hashed names (cached forever, see public/_headers); the demo backend is its own chunk.
   const r = await esbuild.build({
-    ...common, outdir: path.join(out, "assets"), minify: true, sourcemap: "linked", splitting: true, metafile: true,
+    ...common, entryPoints: ["src/main.tsx", "src/publicmap/map.tsx"], outdir: path.join(out, "assets"), minify: true, sourcemap: "linked", splitting: true, metafile: true,
     entryNames: "app-[hash]", chunkNames: "chunk-[hash]",
   });
   const url = (file) => `/${path.relative(out, path.resolve(root, file)).split(path.sep).join("/")}`;
@@ -135,6 +162,10 @@ if (serve) {
   const preload = entry.imports.filter((i) => i.kind === "import-statement").map((i) => url(i.path));
   const fonts = Object.keys(r.metafile.outputs).filter((f) => f.endsWith(".woff2")).map(url);
   fs.writeFileSync(path.join(out, "index.html"), html({ css: names[".css"], js: names[".js"], preload, fonts }));
+  // The public map (/map, served from map.html).
+  const [mapFile, mapEntry] = Object.entries(r.metafile.outputs).find(([, m]) => m.entryPoint === "src/publicmap/map.tsx");
+  const mapPreload = mapEntry.imports.filter((i) => i.kind === "import-statement").map((i) => url(i.path));
+  fs.writeFileSync(path.join(out, "map.html"), mapHtml({ css: url(mapEntry.cssBundle), js: url(mapFile), preload: mapPreload, fonts }));
   copyPublic(out);
   const headersFile = path.join(out, "_headers");
   // https for Auth, wss for Realtime live updates (listed explicitly for older browsers).
