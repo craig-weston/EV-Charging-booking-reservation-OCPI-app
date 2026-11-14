@@ -31,8 +31,10 @@ async function get(url: string, headers: Record<string, string>): Promise<{ body
 
 function authHeaders(s: OcpiSource): Record<string, string> | null {
   if (!s.secret) return {};
-  const key = process.env[s.secret];
+  // Pasted secrets often pick up a trailing line break or spaces; a login has neither.
+  const key = process.env[s.secret]?.trim();
   if (!key) return null;
+  if (s.scheme === "Basic" && !key.includes(":")) console.log(`${s.name}: ${s.secret} should be username:password (no colon found)`);
   const value = s.scheme === "Basic" ? `Basic ${Buffer.from(key).toString("base64")}` : s.scheme ? `${s.scheme} ${key}` : key;
   return { [s.header ?? "Authorization"]: value };
 }
@@ -54,7 +56,7 @@ async function ocpi(s: OcpiSource): Promise<OpenSite[] | null> {
 }
 
 async function ocm(secret: string): Promise<OpenSite[] | null> {
-  const key = process.env[secret];
+  const key = process.env[secret]?.trim();
   if (!key) return null;
   const { body } = await get(OCM_URL, { "X-API-Key": key });
   return (Array.isArray(body) ? body : []).map((p) => fromOcm(p)).filter((x): x is OpenSite => !!x);
