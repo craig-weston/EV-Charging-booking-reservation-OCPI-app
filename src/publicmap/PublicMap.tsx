@@ -8,7 +8,7 @@ import { applyBrand } from "../app/brand";
 import type { Brand } from "../../shared/model";
 import type { GeoJsonSource, LngLat, MapEvent, MapLibreModule, MapLike } from "./maplibre-types";
 import {
-  FACILITY_LABEL, NO_FILTERS, TRUCKS, access, addressLine, breakCharge, checklist, directionsUrl, hasMcs, inBounds, isFiltered, keep, operatorCounts, order, search, siteFromHash, suitsTrucks, tier,
+  FACILITY_LABEL, NO_FILTERS, TRUCKS, access, addMinutes, arrivalTimes, chargeFor, addressLine, breakCharge, checklist, directionsUrl, hasMcs, inBounds, isFiltered, keep, operatorCounts, order, search, siteFromHash, suitsTrucks, tier,
   type Bounds, type Check, type Filters, type Place, type Suggestion, type Tallies, type Truck,
 } from "./logic";
 import {
@@ -32,6 +32,10 @@ const kw = (n: number) => `${Math.round(n)} kW`;
 const TRUCK_KEY = "depotcharge.map.truck";
 const savedTruck = (): Truck => { try { return localStorage.getItem(TRUCK_KEY) === "rigid" ? "rigid" : "artic"; } catch { return "artic"; } };
 const truckWords = (t: Truck) => (t === "artic" ? "an artic" : "a rigid");
+const WELCOME_KEY = "depotcharge.map.welcomed";
+/** The full app with sample trucks and operators, no account needed (see src/app/demo.ts). */
+const DEMO_URL = "/?demo#/book";
+const seenWelcome = () => { try { return localStorage.getItem(WELCOME_KEY) === "1"; } catch { return false; } };
 
 export function PublicMap() {
   const [file, setFile] = useState<OpenSitesFile | null>(null);
@@ -46,6 +50,19 @@ export function PublicMap() {
   const [mapState, setMapState] = useState<"loading" | "ready" | "failed">("loading");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [locating, setLocating] = useState<"idle" | "busy" | "denied">("idle");
+  // First visit (not a link to one site): a short welcome saying what this is.
+  const [welcome, setWelcome] = useState(() => !seenWelcome() && !siteFromHash(window.location.hash));
+  const [toast, setToast] = useState<string | null>(null);
+  const closeWelcome = () => { setWelcome(false); try { localStorage.setItem(WELCOME_KEY, "1"); } catch { /* not remembered */ } };
+  const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
+  const shareMap = async () => {
+    const url = `${window.location.origin}/map`;
+    try {
+      if (navigator.share && isNarrow()) { await navigator.share({ title: "HGV charging map", text: "Where your truck can charge: every public UK site, checked for HGVs.", url }); return; }
+      await navigator.clipboard.writeText(url);
+      flash("Map link copied. Share it with anyone: no account needed.");
+    } catch { /* cancelled */ }
+  };
   const mapEl = useRef<HTMLDivElement>(null);
   const map = useRef<MapLike | null>(null);
   const flyNext = useRef(!!selectedId);
@@ -216,7 +233,10 @@ export function PublicMap() {
             <span className="pm-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17"><path d="M13.2 2 4.5 13.6h6.1L9.8 22l8.7-11.6h-6.1z" fill="currentColor" /></svg></span>
             <span>{brandName}</span>
           </a>
-          <a className="pm-signin" href="/#/">Sign in</a>
+          <span className="pm-head-actions">
+            <button type="button" className="pm-iconbtn" onClick={() => void shareMap()} aria-label="Share this map" title="Share this map"><IconShare size={17} /></button>
+            <a className="pm-signin" href="/#/">Sign in</a>
+          </span>
         </header>
 
         <div className="pm-intro">
@@ -268,6 +288,11 @@ export function PublicMap() {
           )}
         </div>
 
+        <a className="pm-gateway" href={DEMO_URL}>
+          <span className="pm-gateway-ico"><IconBolt size={16} /></span>
+          <span><b>Run a fleet? Try the app free</b><small>Book bays, plan routes and charge at your depot with sample trucks. No sign-up.</small></span>
+          <span className="pm-gateway-go" aria-hidden="true">→</span>
+        </a>
         <footer className="pm-foot">
           <div className="pm-legend" aria-label="Key">
             <span><Pin tone="truck" />Fits {truckWords(truck)}</span>
@@ -281,6 +306,8 @@ export function PublicMap() {
         <IconLocate />{locating === "busy" ? "Finding you…" : "Near me"}
       </button>
       {locating === "denied" && <div className="pm-toast" role="status">Your location isn't available. Search for a town instead.</div>}
+      {toast && <div className="pm-toast" role="status">{toast}</div>}
+      {welcome && file && <Welcome total={file.sites.length} onClose={closeWelcome} />}
     </div>
   );
 }
@@ -525,6 +552,7 @@ function SiteList({ sites, tallies, truck, total, filtered, onPick, onClear }: {
 function SiteDetail({ site, tallies, truck, sourceName, onBack }: { site: OpenSite; tallies: Tallies; truck: Truck; sourceName: string; onBack(): void }) {
   const heading = useRef<HTMLHeadingElement>(null);
   const [copied, setCopied] = useState(false);
+  const [trial, setTrial] = useState(false);
   useEffect(() => { heading.current?.focus({ preventScroll: true }); }, []);
   const t = tallies[site.id];
   const a = access(site, t, truck);
@@ -580,15 +608,120 @@ function SiteDetail({ site, tallies, truck, sourceName, onBack }: { site: OpenSi
         </>
       )}
 
-      <div className="pm-actions">
-        <a className="pm-btn primary" href="/#/book"><IconBolt size={18} />Book a slot</a>
-        <a className="pm-btn" href={directionsUrl(site)} target="_blank" rel="noopener noreferrer"><IconRoute />Directions</a>
-        <button type="button" className="pm-btn ghost" onClick={() => void share()}><IconShare />{copied ? "Link copied" : "Share"}</button>
-      </div>
-      <p className="pm-note">Booking opens in the app: sign in, or <a href="/#/signup">create an account</a>, to book charging and plan routes for your fleet.</p>
+      {trial ? <TrialBooking site={site} truck={truck} onClose={() => setTrial(false)} /> : (
+        <div className="pm-actions">
+          <button type="button" className="pm-btn primary" onClick={() => setTrial(true)}><IconBolt size={18} />Try booking this site</button>
+          <a className="pm-btn" href={directionsUrl(site)} target="_blank" rel="noopener noreferrer"><IconRoute />Directions</a>
+          <button type="button" className="pm-btn ghost" onClick={() => void share()}><IconShare />{copied ? "Link copied" : "Share"}</button>
+        </div>
+      )}
+      {!trial && <p className="pm-note">See how booking a bay ahead works, in under a minute, with no account. Already use the app? <a href="/#/book">Sign in to book</a>.</p>}
 
       <p className="pm-source">Data from {sourceName}{site.provider ? ` (${site.provider})` : ""}{site.updated ? `, last updated ${new Date(site.updated).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}` : ""}.</p>
     </article>
+  );
+}
+
+/** A trial booking: pick a time, "reserve" a bay, and see how the day would go. Nothing is booked. */
+function TrialBooking({ site, truck, onClose }: { site: OpenSite; truck: Truck; onClose(): void }) {
+  const [tomorrow, setTomorrow] = useState(() => new Date().getHours() >= 22);
+  const times = useMemo(() => arrivalTimes(new Date(), tomorrow), [tomorrow]);
+  const [at, setAt] = useState(() => (new Date().getHours() < 17 && !tomorrow ? "17:30" : times[0] ?? "06:00"));
+  const [mins, setMins] = useState(45);
+  const [ref] = useState(() => `TRY-${Math.random().toString(36).slice(2, 6).toUpperCase()}`);
+  const [bay] = useState(() => 1 + Math.floor(Math.random() * Math.max(1, Math.min(site.evses, 8))));
+  const [booked, setBooked] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (!times.includes(at)) setAt(times[0] ?? "00:00"); }, [times, at]);
+  useEffect(() => { panel.current?.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" }); }, [booked]);
+  const gain = chargeFor(site, truck, mins);
+  const reserve = () => { setBusy(true); setTimeout(() => { setBusy(false); setBooked(true); }, reducedMotion() ? 0 : 900); };
+  const day = tomorrow ? "Tomorrow" : "Today";
+  const steps = [
+    { icon: <IconBay size={18} />, title: "Bay held for your truck", text: `Bay ${bay} is kept for you from ${at}. Running late? The app offers the next free slot.` },
+    { icon: <IconCheck size={18} />, title: "The gate opens on the number plate", text: "A camera reads the plate. No code, no card, no call." },
+    { icon: <IconPlug size={18} />, title: "Plug in. Charging starts by itself", text: "The charger recognises the truck (Plug & Charge). The driver just plugs in." },
+    { icon: <IconBolt size={18} />, title: `About ${gain.kwh} kWh in ${mins} minutes`, text: `Roughly ${gain.miles} miles for a loaded ${TRUCKS[truck].label.toLowerCase()}. Back on the road at ${addMinutes(at, mins)}.` },
+    { icon: <IconFleet size={18} />, title: "One invoice to the fleet", text: "No driver payments or expense claims. Every charge on one statement." },
+  ];
+  if (!booked) {
+    return (
+      <div className="pm-trial" ref={panel}>
+        <div className="pm-trial-head"><b>Trial booking</b><button type="button" className="pm-link" onClick={onClose}>Cancel</button></div>
+        <div className="pm-trial-row">
+          <span>Day</span>
+          <div className="pm-seg" role="radiogroup" aria-label="Day">
+            {[false, true].map((tm) => <button key={String(tm)} type="button" role="radio" aria-checked={tomorrow === tm} className={tomorrow === tm ? "on" : ""} onClick={() => setTomorrow(tm)}>{tm ? "Tomorrow" : "Today"}</button>)}
+          </div>
+        </div>
+        <div className="pm-trial-row">
+          <span>Arrive at</span>
+          <label className="pm-select"><span className="sr-only">Arrival time</span><select value={at} onChange={(e) => setAt(e.target.value)}>{times.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
+        </div>
+        <div className="pm-trial-row">
+          <span>Charge for</span>
+          <div className="pm-seg" role="radiogroup" aria-label="Charge for">
+            {[30, 45, 60, 90].map((m) => <button key={m} type="button" role="radio" aria-checked={mins === m} className={mins === m ? "on" : ""} onClick={() => setMins(m)}>{m < 60 ? `${m}m` : m === 60 ? "1h" : "1h 30"}</button>)}
+          </div>
+        </div>
+        <p className="pm-trial-gain"><IconBolt size={14} />Adds about <b>{gain.kwh} kWh</b>, roughly <b>{gain.miles} miles</b></p>
+        <button type="button" className="pm-btn primary" onClick={reserve} disabled={busy}>{busy ? <span className="pm-spin" aria-hidden="true" /> : <IconBay size={18} />}{busy ? "Reserving…" : `Reserve a bay, ${day.toLowerCase()} ${at}`}</button>
+        <p className="pm-note">This is a trial. Nothing is booked and no account is needed.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="pm-trial done" ref={panel} role="status">
+      <div className="pm-booked">
+        <span className="pm-booked-ico"><IconCheck size={26} /></span>
+        <div><b>Bay reserved</b><small>{day} {at}–{addMinutes(at, mins)} · Bay {bay} · {ref}</small></div>
+      </div>
+      <p className="pm-trial-sub">Here's how it goes on the day:</p>
+      <ol className="pm-steps">
+        {steps.map((st, i) => (
+          <li key={st.title} style={{ animationDelay: `${reducedMotion() ? 0 : 250 + i * 420}ms` }}>
+            <span className="pm-step-ico">{st.icon}</span>
+            <span><b>{st.title}</b><small>{st.text}</small></span>
+          </li>
+        ))}
+      </ol>
+      <div className="pm-trial-cta">
+        <p><b>That was a trial.</b> {site.operator} doesn't take bookings through the app yet. Once an operator connects, booking works just like this.</p>
+        <a className="pm-btn primary" href="/#/signup"><IconBolt size={18} />Create your account</a>
+        <div className="pm-actions">
+          <a className="pm-btn" href={DEMO_URL}>Explore the full app</a>
+          <button type="button" className="pm-btn ghost" onClick={onClose}>Back to the site</button>
+        </div>
+        <p className="pm-note">"Explore the full app" opens it with sample trucks, bookings and depots. No sign-up.</p>
+      </div>
+    </div>
+  );
+}
+
+/** First visit: what this is, in three lines. */
+function Welcome({ total, onClose }: { total: number; onClose(): void }) {
+  const close = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    close.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="pm-welcome" role="dialog" aria-modal="false" aria-labelledby="pm-welcome-title">
+      <span className="pm-live"><i />Free · no account needed</span>
+      <h2 id="pm-welcome-title">Find where your truck can charge</h2>
+      <ul>
+        <li><IconArtic size={20} /><span><b>{total.toLocaleString("en-GB")} public sites, checked for HGVs</b><small>Whether an artic fits, 24/7 opening, megawatt charging.</small></span></li>
+        <li><IconClock size={20} /><span><b>Planned around the driver's break</b><small>What 45 minutes adds, in kWh and miles.</small></span></li>
+        <li><IconBolt size={20} /><span><b>Book bays ahead, no cards</b><small>Try it on any site: pick one and press Try booking.</small></span></li>
+      </ul>
+      <div className="pm-welcome-actions">
+        <button type="button" className="pm-btn primary" ref={close} onClick={onClose}>Explore the map</button>
+        <a className="pm-btn" href={DEMO_URL}>Try the full app</a>
+      </div>
+    </div>
   );
 }
 

@@ -187,3 +187,24 @@ export function siteFromHash(hash: string): string | null {
 export const FACILITY_LABEL: Record<string, string> = {
   CAFE: "Café", RESTAURANT: "Food", HOTEL: "Hotel", FUEL_STATION: "Fuel", WIFI: "Wi-Fi", PARKING_LOT: "Parking", SUPERMARKET: "Shop",
 };
+
+/** What a charge of this long adds, roughly, for this truck (as breakCharge, for any length). */
+export function chargeFor(s: OpenSite, truck: Truck, minutes: number): { kwh: number; miles: number } {
+  const spec = TRUCKS[truck];
+  const kwh = Math.round(Math.min(s.max_kw, spec.maxKw) * (minutes / 60) * 0.85);
+  return { kwh, miles: Math.round((kwh / spec.kwhPerKm) * 0.6214) };
+}
+
+/** Arrival times a trial booking offers: every half hour, from the next half hour today, or all day tomorrow. */
+export function arrivalTimes(now: Date, tomorrow: boolean): string[] {
+  const out: string[] = [];
+  const startMin = tomorrow ? 0 : Math.ceil((now.getHours() * 60 + now.getMinutes() + 15) / 30) * 30;
+  for (let m = startMin; m < 24 * 60; m += 30) out.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
+  return out;
+}
+
+export const addMinutes = (hhmm: string, mins: number) => {
+  const [h, m] = hhmm.split(":").map(Number);
+  const t = (h * 60 + m + mins) % (24 * 60);
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+};

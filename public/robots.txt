@@ -1,3 +1,6 @@
-# The app is for signed-in fleet teams; nothing here is meant for search engines.
+# The app is for signed-in fleet teams. Only the public charging map (and its preview image, for
+# link previews when it's shared) is open to search engines and link-preview bots.
 User-agent: *
+Allow: /map$
+Allow: /og-map.jpg
 Disallow: /
