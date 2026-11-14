@@ -5,7 +5,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { SOURCES, OCM_URL, attributionFor, type OcpiSource } from "../shared/opendata/sources";
-import { fromOcm, fromOcpiLocation, mergeSites, ocpiLocations, type OpenSite, type OpenSitesFile, type OpenSource } from "../shared/opendata/sites";
+import { fromOcm, fromOcpiLocation, mergeSites, ocpiLocations, payloadShape, type OpenSite, type OpenSitesFile, type OpenSource } from "../shared/opendata/sites";
 
 const UA = "fleet-charging-open-data/1.0 (+https://github.com/craig-weston/EV-Charging-booking-reservation-OCPI-app)";
 const MAX_PAGES = 200;
@@ -44,6 +44,7 @@ async function ocpi(s: OcpiSource): Promise<OpenSite[] | null> {
   let url: string | null = s.url;
   for (let page = 0; url && page < MAX_PAGES; page++) {
     const { body, next } = await get(url, headers);
+    if (page === 0 && ocpiLocations(body).length === 0) console.log(`${s.name}: no locations found; the feed sent ${payloadShape(body)}`);
     for (const l of ocpiLocations(body)) {
       const site = fromOcpiLocation(l, s.id);
       if (site) out.push(site);

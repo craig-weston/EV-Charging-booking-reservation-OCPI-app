@@ -127,12 +127,28 @@ export function fromOcpiLocation(loc: unknown, source: string): OpenSite | null 
   };
 }
 
-/** OCPI responses come as { data: [...] }, a bare array, or { data: { ... } } for one location. */
+/**
+ * OCPI responses come as { data: [...] }, a bare array, or { data: { ... } } for one location. Some
+ * feeds send locations and tariffs together (Osprey): { locations: [...], tariffs: [...] }, possibly
+ * inside data.
+ */
 export function ocpiLocations(body: unknown): unknown[] {
   if (Array.isArray(body)) return body;
-  const d = (body as { data?: unknown } | null)?.data;
+  const o = body as { data?: unknown; locations?: unknown } | null;
+  if (Array.isArray(o?.locations)) return o!.locations as unknown[];
+  const d = o?.data;
   if (Array.isArray(d)) return d;
+  if (d && typeof d === "object" && Array.isArray((d as { locations?: unknown }).locations)) return (d as { locations: unknown[] }).locations;
   return d && typeof d === "object" ? [d] : [];
+}
+
+/** For the job's log when a feed gives no sites: the shape it sent (key names only, never values). */
+export function payloadShape(body: unknown): string {
+  if (Array.isArray(body)) return `an array of ${body.length}`;
+  if (!body || typeof body !== "object") return typeof body;
+  const keys = (o: object) => Object.keys(o).slice(0, 12).join(", ");
+  const d = (body as { data?: unknown }).data;
+  return `an object with keys: ${keys(body)}${d && typeof d === "object" && !Array.isArray(d) ? ` (data has: ${keys(d)})` : ""}`;
 }
 
 // ---- Open Charge Map ----------------------------------------------------------------------------
