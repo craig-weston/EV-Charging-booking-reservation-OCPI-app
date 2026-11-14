@@ -61,7 +61,11 @@ test("HGV checks: bay limits against the truck, the checklist, and what a break 
   assert.equal(access(short, null, "rigid").title, "Built for trucks");
   assert.equal(tier(short, null, "artic"), "rapid", "an artic doesn't fit, so not drawn as a truck site");
   const c = checklist(mcs, null, "artic");
-  assert.deepEqual(c.map((x) => [x.key, x.state]), [["bay", "unknown"], ["drive", "unknown"], ["mcs", "ok"], ["fleets", "unknown"]]);
+  assert.deepEqual(c.map((x) => [x.key, x.state]), [["bay", "unknown"], ["hours", "unknown"], ["drive", "unknown"], ["mcs", "ok"], ["fleets", "unknown"]]);
+  assert.equal(checklist(site({ open247: true }), null, "artic")[1].state, "ok");
+  assert.equal(checklist(site({ open247: false, hours: "Daily 06:00–22:00" }), null, "artic")[1].text, "Opening hours: Daily 06:00–22:00");
+  assert.ok(!keep(plain, { ...NO_FILTERS, open247: true }));
+  assert.ok(keep(site({ open247: true }), { ...NO_FILTERS, open247: true }));
   // 45 minutes at the lower of the site's and the truck's rate, 85% for the slowdown as it fills.
   assert.deepEqual(breakCharge(ultra, "artic"), { kwh: 239, miles: 119 });
   assert.deepEqual(breakCharge(plain, "rigid"), { kwh: 96, miles: 66 });

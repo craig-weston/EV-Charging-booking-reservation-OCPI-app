@@ -8,6 +8,7 @@
 - **Pins** in three colours: mint for sites that suit trucks (built for them, or fleets say an artic fits), electric blue for 350 kW and up, cyan for the rest. Pins cluster when zoomed out; a cluster with truck sites has a mint ring.
 - **Search** for a town, site name or postcode; **filters** for power (150 / 350 kW+), "Suits trucks", megawatt (MCS) connectors and operator.
 - **The list** shows what's in view, truck sites first, then the most powerful.
+- **Opening hours and facilities** from operators' feeds: a 24/7 filter and tag, and café, food, hotel, fuel, Wi-Fi, parking and shop icons where published.
 - **Site details**: operator, address, whether an artic fits (operator data plus [fleets' reports](open-data.md#reports-from-fleets)), top power, chargers, connectors, bay limits where published, directions and a shareable link (`/map#site=<id>`).
 - **Near me** asks the browser for the visitor's location; it's used only in the browser.
 

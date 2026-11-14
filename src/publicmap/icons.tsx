@@ -34,3 +34,10 @@ export const IconPin = ({ size }: { size?: number }) => <Svg size={size}><path d
 export const IconCheck = ({ size }: { size?: number }) => <Svg size={size}><path d="M5 12.5l4.5 4.5L19 7.5" /></Svg>;
 export const IconCross = ({ size }: { size?: number }) => <Svg size={size}><path d="M6 6l12 12M18 6L6 18" /></Svg>;
 export const IconQuestion = ({ size }: { size?: number }) => <Svg size={size}><circle cx="12" cy="12" r="9" /><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17v.3" /></Svg>;
+export const IconCup = ({ size }: { size?: number }) => <Svg size={size}><path d="M4 9h12v4a6 6 0 0 1-12 0z" /><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16" /><path d="M8 3c0 1.5 1 1.5 1 3M12 3c0 1.5 1 1.5 1 3" /></Svg>;
+export const IconFood = ({ size }: { size?: number }) => <Svg size={size}><path d="M6 3v7a2 2 0 0 0 2 2v9M10 3v7a2 2 0 0 1-2 2M8 3v5" /><path d="M17 21V3c-2 1.5-3 4-3 7h3" /></Svg>;
+export const IconBed = ({ size }: { size?: number }) => <Svg size={size}><path d="M3 18V6M3 13h18v5M21 18v-3a3 3 0 0 0-3-3h-7v1" /><circle cx="7" cy="10" r="1.6" /></Svg>;
+export const IconFuel = ({ size }: { size?: number }) => <Svg size={size}><path d="M4 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16M3 21h12M6 9h6" /><path d="M14 10h2a2 2 0 0 1 2 2v4a1.5 1.5 0 0 0 3 0V8l-3-3" /></Svg>;
+export const IconWifi = ({ size }: { size?: number }) => <Svg size={size}><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.5 16a5 5 0 0 1 7 0" /><circle cx="12" cy="19.2" r="0.9" fill="currentColor" /></Svg>;
+export const IconParking = ({ size }: { size?: number }) => <Svg size={size}><rect x="3" y="3" width="18" height="18" rx="4" /><path d="M9.5 17V7h3.5a3 3 0 0 1 0 6H9.5" /></Svg>;
+export const IconBasket = ({ size }: { size?: number }) => <Svg size={size}><path d="M3 9h18l-2 11H5z" /><path d="M8 9l3-6M16 9l-3-6M9 13v4M15 13v4" /></Svg>;

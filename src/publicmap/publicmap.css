@@ -305,3 +305,9 @@ body { overflow: hidden; background: #030812; }
   .pm-intro p { display: none; }
   .pm-intro h1 { font-size: 22px; margin-top: 4px; }
 }
+
+/* ---- what's on site */
+.pm-h3.plain { color: var(--ink-2); }
+.pm-facilities { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.pm-facilities li { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 9px; font-size: var(--fs-xs); font-weight: 650; color: var(--ink-2); background: rgba(0, 212, 255, 0.06); border: 1px solid rgba(0, 212, 255, 0.22); }
+.pm-facilities li .pm-ico { color: var(--neon); filter: drop-shadow(0 0 4px rgba(0, 212, 255, 0.6)); }

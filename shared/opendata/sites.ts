@@ -30,6 +30,12 @@ export interface OpenSite {
   /** Why, in a few words: "Truck bays", "MCS connector", "Truck charging network", … */
   hgv_why: string;
   drive_through?: boolean;
+  /** Open, or its chargers usable, around the clock (OCPI opening_times / charging_when_closed). */
+  open247?: boolean;
+  /** Opening hours when not 24/7, short: "Mon–Fri 09:00–20:00, Sat 10:00–16:00". */
+  hours?: string;
+  /** What's on site, as OCPI facilities that matter to drivers: CAFE, RESTAURANT, HOTEL, FUEL_STATION, WIFI, PARKING_LOT, SUPERMARKET. */
+  facilities?: string[];
   /** Bay limits where the operator publishes them (OCPI 2.3 parking). */
   max_length_cm?: number;
   max_height_cm?: number;
@@ -97,6 +103,34 @@ function connectorKw(c: Record<string, unknown>): number {
 }
 
 /** One OCPI Location (2.1.1, 2.2.1 or 2.3) as an OpenSite, or null if it can't serve trucks. */
+/** OCPI facilities worth showing a driver. */
+export const FACILITIES = ["CAFE", "RESTAURANT", "HOTEL", "FUEL_STATION", "WIFI", "PARKING_LOT", "SUPERMARKET"] as const;
+const DAYS = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/** OCPI opening times → 24/7, or hours in short form ("Mon–Fri 09:00–20:00, Sat 10:00–16:00"). */
+export function openingOf(l: Record<string, unknown>): { open247?: boolean; hours?: string } {
+  const ot = l.opening_times as { twentyfourseven?: unknown; regular_hours?: unknown } | undefined;
+  if (ot?.twentyfourseven === true || l.charging_when_closed === true) return { open247: true };
+  if (!ot || !Array.isArray(ot.regular_hours)) return {};
+  const byDay = new Map<number, string>();
+  for (const r of ot.regular_hours as { weekday?: unknown; period_begin?: unknown; period_end?: unknown }[]) {
+    const d = Number(r.weekday), b = String(r.period_begin ?? ""), e = String(r.period_end ?? "");
+    if (d >= 1 && d <= 7 && /^\d\d:\d\d$/.test(b) && /^\d\d:\d\d$/.test(e)) byDay.set(d, byDay.has(d) ? `${byDay.get(d)}, ${b}–${e}` : `${b}–${e}`);
+  }
+  if (!byDay.size) return { open247: false };
+  if ([1, 2, 3, 4, 5, 6, 7].every((d) => byDay.get(d) === "00:00–23:59" || byDay.get(d) === "00:00–24:00" || byDay.get(d) === "00:00–00:00")) return { open247: true };
+  const parts: string[] = [];
+  for (let d = 1; d <= 7;) {
+    const v = byDay.get(d);
+    if (!v) { d++; continue; }
+    let e = d;
+    while (e < 7 && byDay.get(e + 1) === v) e++;
+    parts.push(`${e === d ? DAYS[d] : e === 7 && d === 1 ? "Daily" : `${DAYS[d]}–${DAYS[e]}`} ${v}`);
+    d = e + 1;
+  }
+  return { open247: false, hours: parts.join(", ").slice(0, 120) };
+}
+
 export function fromOcpiLocation(loc: unknown, source: string): OpenSite | null {
   const l = (loc ?? {}) as Record<string, unknown>;
   const coords = (l.coordinates ?? {}) as Record<string, unknown>;
@@ -122,6 +156,8 @@ export function fromOcpiLocation(loc: unknown, source: string): OpenSite | null 
     address: str(l.address), city: str(l.city, 80), postcode: str(l.postal_code, 12),
     max_kw, connectors, evses: live.length, ...fit,
     ...(heavy.some((p) => p.drive_through === true) ? { drive_through: true } : {}),
+    ...openingOf(l),
+    ...(() => { const f = (Array.isArray(l.facilities) ? l.facilities : []).map(String).filter((x) => (FACILITIES as readonly string[]).includes(x)); return f.length ? { facilities: [...new Set(f)] } : {}; })(),
     ...(best ? { max_length_cm: num(best.max_vehicle_length), max_height_cm: num(best.max_vehicle_height), max_weight_kg: num(best.max_vehicle_weight) } : {}),
     source, updated: str(l.last_updated, 40),
   };
