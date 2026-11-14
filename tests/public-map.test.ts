@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { OpenSite } from "../shared/opendata/sites";
-import { NO_FILTERS, access, bayLimits, breakCharge, checklist, inBounds, isFiltered, keep, operatorCounts, order, search, siteFromHash, tier, tooSmall } from "../src/publicmap/logic";
+import { NO_FILTERS, access, bayLimits, breakCharge, chargeFor, arrivalTimes, addMinutes, checklist, inBounds, isFiltered, keep, operatorCounts, order, search, siteFromHash, tier, tooSmall } from "../src/publicmap/logic";
 
 const site = (o: Partial<OpenSite>): OpenSite => ({ id: "mfg:1", name: "Site", operator: "MFG EV Power", lat: 52, lon: -1, max_kw: 150, connectors: ["CCS2"], evses: 4, hgv: "check", hgv_why: "", source: "mfg", ...o });
 const truck = site({ id: "x:t", name: "Markham Moor", hgv: "trucks", hgv_why: "Truck bays", max_kw: 175 });
@@ -69,4 +69,12 @@ test("HGV checks: bay limits against the truck, the checklist, and what a break 
   // 45 minutes at the lower of the site's and the truck's rate, 85% for the slowdown as it fills.
   assert.deepEqual(breakCharge(ultra, "artic"), { kwh: 239, miles: 119 });
   assert.deepEqual(breakCharge(plain, "rigid"), { kwh: 96, miles: 66 });
+});
+
+test("the trial booking: arrival times, what a charge adds, end times", () => {
+  const evening = new Date(2026, 10, 14, 16, 50);
+  assert.equal(arrivalTimes(evening, false)[0], "17:30", "the next half hour, at least 15 minutes away");
+  assert.equal(arrivalTimes(evening, true).length, 48);
+  assert.deepEqual(chargeFor(ultra, "artic", 45), breakCharge(ultra, "artic"));
+  assert.equal(addMinutes("23:30", 45), "00:15");
 });

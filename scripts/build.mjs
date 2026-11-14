@@ -39,6 +39,10 @@ ${inlineJs ? `<script type="module">${inlineJs.replace(/<\/script/gi, "<\\/scrip
 `;
 }
 
+// Link previews need an absolute image URL: this deployment's (PUBLIC_BASE_URL), or the copy in the repo.
+const BASE = (process.env.PUBLIC_BASE_URL ?? "").trim().replace(/\/+$/, "");
+const OG_IMAGE = BASE ? `${BASE}/og-map.jpg` : "https://raw.githubusercontent.com/craig-weston/EV-Charging-booking-reservation-OCPI-app/main/public/og-map.jpg";
+
 /** The public charging map (/map): its own page, no sign-in needed. */
 function mapHtml({ css, js, preload = [], fonts = [] }) {
   return `<!doctype html>
@@ -51,6 +55,14 @@ function mapHtml({ css, js, preload = [], fonts = [] }) {
 <meta name="description" content="Every public HGV and rapid charging site in the UK on one map: power, connectors and whether an artic fits.">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>HGV charging map · Depotcharge</title>
+<meta property="og:type" content="website">
+<meta property="og:title" content="HGV charging map: where your truck can charge">
+<meta property="og:description" content="Every public UK charging site with 150 kW or more, checked for HGVs: whether an artic fits, 24/7 opening, megawatt charging. Free, no account needed.">
+<meta property="og:image" content="${OG_IMAGE}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+${BASE ? `<meta property="og:url" content="${BASE}/map">\n<link rel="canonical" href="${BASE}/map">` : ""}
+<meta name="twitter:card" content="summary_large_image">
 ${fonts.map((f) => `<link rel="preload" href="${f}" as="font" type="font/woff2" crossorigin>`).join("\n")}
 <link rel="icon" href="/favicon.svg">
 <link rel="stylesheet" href="/vendor/maplibre-6.17.0/maplibre-gl.css">
