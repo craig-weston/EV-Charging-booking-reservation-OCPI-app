@@ -217,7 +217,7 @@ export function PublicMap() {
   const total = all.length;
   const sources = file?.sources.filter((s) => s.count > 0) ?? [];
   return (
-    <div className="pm">
+    <main className="pm">
       <div className={`pm-map${mapState === "ready" ? " ready" : ""}`} ref={mapEl} role="region" aria-label="Map of public charging sites" />
       {mapState === "failed" && (
         <div className="pm-mapfail" role="status">
@@ -247,8 +247,8 @@ export function PublicMap() {
 
         <SearchBox sites={all} places={CITIES} onPick={pick} />
 
-        <div className="pm-truck" role="radiogroup" aria-label="Your truck">
-          <span className="pm-truck-label">Your truck</span>
+        <div className="pm-truck" role="radiogroup" aria-labelledby="pm-truck-label">
+          <span className="pm-truck-label" id="pm-truck-label">Your truck</span>
           {(["artic", "rigid"] as const).map((t) => (
             <button key={t} type="button" role="radio" aria-checked={truck === t} className={truck === t ? "on" : ""} onClick={() => setTruck(t)}>
               {t === "artic" ? <IconArtic size={22} /> : <IconRigid size={22} />}
@@ -308,7 +308,7 @@ export function PublicMap() {
       {locating === "denied" && <div className="pm-toast" role="status">Your location isn't available. Search for a town instead.</div>}
       {toast && <div className="pm-toast" role="status">{toast}</div>}
       {welcome && file && <Welcome total={file.sites.length} onClose={closeWelcome} />}
-    </div>
+    </main>
   );
 }
 
@@ -553,7 +553,13 @@ function SiteDetail({ site, tallies, truck, sourceName, onBack }: { site: OpenSi
   const heading = useRef<HTMLHeadingElement>(null);
   const [copied, setCopied] = useState(false);
   const [trial, setTrial] = useState(false);
-  useEffect(() => { heading.current?.focus({ preventScroll: true }); }, []);
+  // Focus the site's name (screen readers announce it) and bring the details into view.
+  useEffect(() => {
+    const h = heading.current;
+    if (!h) return;
+    h.focus({ preventScroll: true });
+    h.closest(".pm-detail")?.scrollIntoView({ block: "start", behavior: "auto" });
+  }, []);
   const t = tallies[site.id];
   const a = access(site, t, truck);
   const checks = checklist(site, t, truck);
