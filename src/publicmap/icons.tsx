@@ -41,3 +41,4 @@ export const IconFuel = ({ size }: { size?: number }) => <Svg size={size}><path 
 export const IconWifi = ({ size }: { size?: number }) => <Svg size={size}><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.5 16a5 5 0 0 1 7 0" /><circle cx="12" cy="19.2" r="0.9" fill="currentColor" /></Svg>;
 export const IconParking = ({ size }: { size?: number }) => <Svg size={size}><rect x="3" y="3" width="18" height="18" rx="4" /><path d="M9.5 17V7h3.5a3 3 0 0 1 0 6H9.5" /></Svg>;
 export const IconBasket = ({ size }: { size?: number }) => <Svg size={size}><path d="M3 9h18l-2 11H5z" /><path d="M8 9l3-6M16 9l-3-6M9 13v4M15 13v4" /></Svg>;
+export const IconPlay = ({ size }: { size?: number }) => <Svg size={size} fill><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" /></Svg>;

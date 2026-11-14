@@ -30,7 +30,7 @@ function resolveAxe(): string | null {
 }
 
 const DIST = path.resolve("dist");
-const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".png": "image/png", ".txt": "text/plain", ".json": "application/json" };
+const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".mp4": "video/mp4", ".jpg": "image/jpeg", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".png": "image/png", ".txt": "text/plain", ".json": "application/json" };
 
 /** Headers for every path from dist/_headers ("/*" block), as Cloudflare would send them. */
 function siteHeaders(): Record<string, string> {
@@ -60,7 +60,8 @@ before(async () => {
   const headers = siteHeaders();
   server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
-    let file = path.join(DIST, decodeURIComponent(url.pathname));
+    // /map is the public charging map (dist/map.html), as Cloudflare serves it.
+    let file = path.join(DIST, url.pathname === "/map" ? "map.html" : decodeURIComponent(url.pathname));
     if (!file.startsWith(DIST)) { res.writeHead(400).end(); return; }
     if (existsSync(file) && statSync(file).isDirectory()) file = path.join(file, "index.html");
     // No API here (so the app runs its in-browser demo); unknown paths are a plain 404.
@@ -254,6 +255,124 @@ test("dark mode and a phone-sized screen render without horizontal scrolling", a
     return { tabTop: tab?.top ?? 0, toastsBottom: toasts ? parseFloat(getComputedStyle(toasts).bottom) : 999 };
   });
   assert.ok(clear.toastsBottom >= 56, `toasts sit ${clear.toastsBottom}px from the bottom, under the tab bar`);
+  assert.deepEqual(problems, []);
+  noA11yProblems();
+  await ctx.close();
+});
+
+// ---- the public charging map (/map): no account, its own page
+
+/** A few public sites, as GET /api/public/sites returns them. */
+const MAP_SITES = {
+  generated_at: "2026-11-14T09:00:00Z",
+  sources: [{ id: "ocm", name: "Open Charge Map", attribution: "CC BY 4.0", url: "https://openchargemap.org", count: 3 }],
+  sites: [
+    { id: "ocm:1", name: "Markham Moor Truck Stop", operator: "Shell Recharge", lat: 53.27, lon: -0.94, city: "Retford", max_kw: 175, connectors: ["CCS2"], evses: 4, hgv: "trucks", hgv_why: "Truck bays", open247: true, facilities: ["CAFE", "FUEL_STATION"], source: "ocm" },
+    { id: "ocm:2", name: "Donington Park Services", operator: "GRIDSERVE", lat: 52.83, lon: -1.31, city: "Castle Donington", max_kw: 360, connectors: ["CCS2"], evses: 12, hgv: "check", hgv_why: "", source: "ocm" },
+    { id: "ocm:3", name: "Daventry Megawatt Hub", operator: "Milence", lat: 52.27, lon: -1.16, city: "Daventry", max_kw: 1000, connectors: ["MCS", "CCS2"], evses: 8, hgv: "trucks", hgv_why: "MCS connector", source: "ocm" },
+  ],
+};
+
+async function openMap(ctx: BrowserContext): Promise<{ page: Page; problems: string[] }> {
+  const page = await ctx.newPage();
+  const problems: string[] = [];
+  page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
+  page.on("console", (m) => { if (m.type() === "error") problems.push(`console: ${m.text()}`); });
+  // The page's data from this deployment's API, and a plain street-map style instead of the real
+  // map host, so the test never depends on the network.
+  await page.route("**/api/public/sites", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ data: MAP_SITES }) }));
+  await page.route("**/api/public/site-reports", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ data: {} }) }));
+  await page.route("**/api/config", (r) => r.fulfill({ status: 404, body: "" }));
+  await page.route("https://tiles.openfreemap.org/**", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ version: 8, sources: {}, layers: [{ id: "background", type: "background", paint: { "background-color": "#f2f3f0" } }] }) }));
+  await page.goto(`${base}/map`);
+  return { page, problems: problems.filter((p) => !/api\/config|404/.test(p)) };
+}
+
+test("public map: welcome, list, a site, a trial booking and a phone pass accessibility checks", async () => {
+  const ctx = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1280, height: 800 } });
+  const { page, problems } = await openMap(ctx);
+  // First visit: the welcome card.
+  const explore = page.getByRole("button", { name: "Explore the map" });
+  await explore.waitFor({ timeout: 15_000 });
+  await axe(page, "public map (welcome)");
+  // The booking video, from the welcome card: a dialog with the steps written out.
+  await page.getByRole("button", { name: /Watch how booking works/ }).first().click();
+  await page.getByRole("dialog", { name: "How booking works" }).waitFor();
+  await page.getByText("Bay reserved in seconds").waitFor();
+  await axe(page, "public map (video)");
+  await page.getByRole("button", { name: "Close the video" }).click();
+  await page.getByRole("dialog", { name: "How booking works" }).waitFor({ state: "detached" });
+  // The list: truck sites first.
+  const items = page.locator(".pm-item");
+  await items.first().waitFor();
+  assert.equal(await items.count(), 3);
+  assert.match(await items.first().innerText(), /Daventry Megawatt Hub|Markham Moor Truck Stop/);
+  await axe(page, "public map (list)");
+  // Filters narrow the list.
+  await page.getByRole("button", { name: "24/7", exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll(".pm-item").length === 1);
+  await page.getByRole("button", { name: "Clear" }).click();
+  // A site: its details and HGV checklist.
+  await page.locator(".pm-item", { hasText: "Markham Moor Truck Stop" }).click();
+  await page.getByRole("heading", { name: "Markham Moor Truck Stop", level: 2 }).waitFor();
+  await page.getByText("HGV checklist for an artic").waitFor();
+  await axe(page, "public map (site)");
+  // The trial booking, to the end.
+  await page.getByRole("button", { name: "Try booking this site" }).click();
+  const reserve = page.getByRole("button", { name: /Reserve a bay/ });
+  await reserve.waitFor();
+  await axe(page, "public map (trial booking)");
+  await reserve.click();
+  await page.getByText("Bay reserved").waitFor();
+  await page.getByRole("link", { name: "Create your account" }).waitFor();
+  await axe(page, "public map (trial booked)");
+  assert.match(page.url(), /#site=ocm%3A1$/, "the address links to the site");
+  assert.deepEqual(problems, []);
+  noA11yProblems();
+  await ctx.close();
+});
+
+test("public map: keyboard reaches search, the truck switch and a site; a phone shows the sheet", async () => {
+  const ctx = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1280, height: 800 } });
+  const { page, problems } = await openMap(ctx);
+  await page.getByRole("button", { name: "Explore the map" }).click({ timeout: 15_000 });
+  await page.locator(".pm-item").first().waitFor();
+  // Search by keyboard: type, arrow down, Enter opens the site.
+  await page.getByRole("combobox", { name: /Search a town/ }).focus();
+  await page.keyboard.type("daven");
+  await page.getByRole("option", { name: /Daventry Megawatt Hub/ }).waitFor();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await page.getByRole("heading", { name: "Daventry Megawatt Hub", level: 2 }).waitFor();
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "pm-site-name", "focus moves to the site's name");
+  // Every control the keyboard reaches is visible and named.
+  const unnamed: string[] = [];
+  for (let i = 0; i < 25; i++) {
+    await page.keyboard.press("Tab");
+    const f = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el || el === document.body) return null;
+      const r = el.getBoundingClientRect();
+      const name = (el.getAttribute("aria-label") ?? el.textContent ?? (el as HTMLInputElement).value ?? "").trim();
+      return { tag: el.tagName, name, visible: r.width > 0 && r.height > 0, small: r.width < 24 || r.height < 24 };
+    });
+    if (f && (!f.visible || !f.name)) unnamed.push(JSON.stringify(f));
+  }
+  assert.deepEqual(unnamed, [], "focused controls are visible and named");
+
+  // A phone: the panel is a bottom sheet; the list opens and passes checks.
+  const phone = await ctx.newPage();
+  await phone.setViewportSize({ width: 390, height: 844 });
+  await phone.route("**/api/public/sites", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ data: MAP_SITES }) }));
+  await phone.route("**/api/public/site-reports", (r) => r.fulfill({ contentType: "application/json", body: "{}" }));
+  await phone.route("**/api/config", (r) => r.fulfill({ status: 404, body: "" }));
+  await phone.route("https://tiles.openfreemap.org/**", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ version: 8, sources: {}, layers: [] }) }));
+  await phone.goto(`${base}/map`);
+  await phone.getByRole("button", { name: "Show the list" }).click({ timeout: 15_000 });
+  await phone.locator(".pm-item").first().waitFor();
+  await axe(phone, "public map (phone)");
+  const scroll = await phone.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert.ok(scroll <= 0, `no horizontal scrolling (${scroll}px)`);
   assert.deepEqual(problems, []);
   noA11yProblems();
   await ctx.close();
