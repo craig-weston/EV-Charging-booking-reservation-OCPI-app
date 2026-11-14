@@ -6,7 +6,7 @@
 import type { ReactNode } from "react";
 import type { Brand, Certification, LegalInfo } from "../../shared/model";
 
-export const LEGAL_UPDATED = "21 October 2026";
+export const LEGAL_UPDATED = "14 November 2026";
 
 export type LegalDocId = "privacy" | "terms" | "dpa" | "cookies" | "security" | "accessibility" | "licences";
 
@@ -290,6 +290,7 @@ function Cookies({ c }: { c: Ctx }) {
           <tr><td><code>depotcharge.demo.v3</code></td><td>Demo mode only: the demo's data, kept in your browser</td><td>Strictly necessary</td><td>Until you reset the demo</td></tr>
         </tbody>
       </table>
+      <p>The public charging map (<code>/map</code>) shows street maps from OpenFreeMap, a free map service. Your browser fetches the map images straight from it, so it receives your IP address and the area of the map you're looking at, like any website you visit; it sets no cookies. If you press "Near me", your location is used in your browser to move the map and isn't sent to us or anyone else.</p>
       <p>Our hosting provider, Cloudflare, may set security cookies (such as <code>__cf_bm</code> or <code>cf_clearance</code>) to tell people from bots and protect the service. They are strictly necessary and contain no information about what you do in {n}.</p>
       <p>You can clear these items at any time in your browser's settings; you'll be signed out.</p>
       <p className="small muted">Last updated {LEGAL_UPDATED}.</p>

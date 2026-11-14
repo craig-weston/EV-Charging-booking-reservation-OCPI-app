@@ -110,6 +110,7 @@ export function SignIn({ auth, config, inviteToken }: { auth: AuthClient; config
           </a>
         )}
         {config.certifications?.length > 0 && <CertificationBadges list={config.certifications} compact />}
+        <p className="xs muted" style={{ textAlign: "center" }}>Looking for a charger? <a href="/map">See every public HGV and rapid site on the map</a></p>
         <p className="xs muted" style={{ textAlign: "center" }}>Run charging sites? <a href={href("/operators")}>Connect them for HGV bookings</a></p>
         <LegalFooter config={config} compact />
       </form>

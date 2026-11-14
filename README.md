@@ -131,6 +131,7 @@ final charge record with energy and cost, all from the operator's OCPI data.
 - **Booking map:** prices compared site by site, only bays that fit the truck, and real public sites
   from UK operators' open data and Open Charge Map shown as "not bookable here yet"
   ([open data](docs/open-data.md)).
+- **Public charging map** at `/map`: every public site on a street map with search, filters and site details, no sign-in needed; "Book a slot" opens the app ([public map](docs/public-map.md)).
 - **Depot smart charging:** every truck is charged in the cheapest, cleanest half-hours that still
   get it out on time, within the site's grid connection
   ([depot charging](docs/depot-charging.md)). Battery levels come from the trucks themselves (rFMS or
