@@ -54,9 +54,9 @@ function mapHtml({ css, js, preload = [], fonts = [] }) {
 <meta name="color-scheme" content="dark">
 <meta name="description" content="Every public HGV and rapid charging site in the UK on one map: power, connectors and whether an artic fits.">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<title>HGV charging map · Depotcharge</title>
+<title>Truck charging map · Depotcharge</title>
 <meta property="og:type" content="website">
-<meta property="og:title" content="HGV charging map: where your truck can charge">
+<meta property="og:title" content="Truck charging map: where your truck can charge">
 <meta property="og:description" content="Every public UK charging site with 150 kW or more, checked for HGVs: whether an artic fits, 24/7 opening, megawatt charging. Free, no account needed.">
 <meta property="og:image" content="${OG_IMAGE}">
 <meta property="og:image:width" content="1200">
