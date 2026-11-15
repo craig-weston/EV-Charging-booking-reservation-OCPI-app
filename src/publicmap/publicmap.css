@@ -418,3 +418,7 @@ body { overflow: hidden; background: #030812; }
 .pm-video-steps b { color: var(--ink); }
 .pm-video .pm-actions { margin-top: 14px; }
 @media (prefers-reduced-motion: reduce) { .pm-video[open] { animation: none; } }
+
+/* The panel's title, in the pinned header. */
+.pm-head h1 { margin: 0; font-size: 24px; line-height: 1.2; letter-spacing: -0.015em; font-stretch: 92%; font-weight: 760; color: var(--ink); text-shadow: 0 0 22px rgba(0, 212, 255, 0.25); }
+@media (max-width: 859px) { .pm-head h1 { font-size: 21px; } }

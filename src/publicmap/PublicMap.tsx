@@ -70,7 +70,7 @@ export function PublicMap() {
   const shareMap = async () => {
     const url = `${window.location.origin}/map`;
     try {
-      if (navigator.share && isNarrow()) { await navigator.share({ title: "HGV charging map", text: "Where your truck can charge: every public UK site, checked for HGVs.", url }); return; }
+      if (navigator.share && isNarrow()) { await navigator.share({ title: "Truck charging map", text: "Where your truck can charge: every public UK site, checked for HGVs.", url }); return; }
       await navigator.clipboard.writeText(url);
       flash("Map link copied. Share it with anyone: no account needed.");
     } catch { /* cancelled */ }
@@ -95,7 +95,7 @@ export function PublicMap() {
       if (b?.name) { applyBrand(b); setBrandName(b.name); }
     }).catch(() => undefined);
   }, [loadSites]);
-  useEffect(() => { document.title = `HGV charging map · ${brandName}`; }, [brandName]);
+  useEffect(() => { document.title = `Truck charging map · ${brandName}`; }, [brandName]);
 
   const all: OpenSite[] = file?.sites ?? [];
   const byId = useMemo(() => new Map(all.map((s) => [s.id, s])), [all]);
@@ -226,7 +226,6 @@ export function PublicMap() {
     }, () => setLocating("denied"), { enableHighAccuracy: false, timeout: 10_000, maximumAge: 300_000 });
   };
 
-  const total = all.length;
   const sources = file?.sources.filter((s) => s.count > 0) ?? [];
   return (
     <main className="pm">
@@ -241,21 +240,9 @@ export function PublicMap() {
       <aside className={`pm-panel${sheetOpen || selected ? " open" : ""}${selected ? " has-site" : ""}`} aria-label="Charging sites">
         <button type="button" className="pm-grab" onClick={() => setSheetOpen((o) => !o)} aria-expanded={sheetOpen} aria-label={sheetOpen ? "Show the map" : "Show the list"}><span /></button>
         <header className="pm-head">
-          <a className="pm-brand" href="/map" aria-label={`${brandName} charging map`}>
-            <span className="pm-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17"><path d="M13.2 2 4.5 13.6h6.1L9.8 22l8.7-11.6h-6.1z" fill="currentColor" /></svg></span>
-            <span>{brandName}</span>
-          </a>
-          <span className="pm-head-actions">
-            <button type="button" className="pm-iconbtn" onClick={() => void shareMap()} aria-label="Share this map" title="Share this map"><IconShare size={17} /></button>
-            <a className="pm-signin" href="/#/">Sign in</a>
-          </span>
+          <h1>Truck charging map</h1>
+          <button type="button" className="pm-iconbtn" onClick={() => void shareMap()} aria-label="Share this map" title="Share this map"><IconShare size={17} /></button>
         </header>
-
-        <div className="pm-intro">
-          <span className="pm-live"><i />Live · built for HGV fleets</span>
-          <h1>HGV charging map</h1>
-          <p>{total ? <>Where your truck can charge. Every public UK site with <b>150 kW or more</b>, checked for HGVs: <b>{total.toLocaleString("en-GB")}</b> from operators' open data.</> : loadError ? "The sites couldn't load." : "Loading public charging sites…"}</p>
-        </div>
 
         <button type="button" className="pm-watch" onClick={() => setVideo(true)}>
           <span className="pm-watch-thumb" aria-hidden="true"><img src={VIDEO.poster} alt="" width="96" height="54" /><span><IconPlay /></span></span>
