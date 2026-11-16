@@ -18,6 +18,7 @@
 
   Link previews (LinkedIn, WhatsApp, Slack) use `public/og-map.jpg`, and robots.txt lets preview bots read `/map` only.
 - **How booking works**: the 17-second walkthrough (`public/media/how-booking-works.mp4`) in a dialog, with each step written out beneath it, from the panel, the welcome card and each site.
+- **Number-plate search**: finds a truck with DVLA and saves it in the browser as one of "Your trucks" ([number plates](number-plates.md)).
 - **Near me** asks the browser for the visitor's location; it's used only in the browser.
 
 Motion (the fly-in, pulsing rings, glowing buttons) is turned off for people who ask their device for reduced motion.

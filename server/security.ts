@@ -170,6 +170,7 @@ export const LIMITS = {
   ocpiAuthFail: { max: 20, windowMs: 5 * 60_000 }, // unknown credentials tokens
   account: { max: 10, windowMs: 60 * 60_000 }, // exports and deletions
   clientErrors: { max: 10, windowMs: 60_000 }, // browser error reports
+  plate: { max: 12, windowMs: 60_000 }, // number-plate lookups: DVLA's quota is shared by everyone
 } as const;
 
 export const BODY_LIMITS = { api: 256 * 1024, ocpi: 2 * 1024 * 1024 } as const;

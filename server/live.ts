@@ -124,6 +124,10 @@ export async function guard(req: Request, rl = limiter, now = Date.now(), shared
     if (!r.ok) return tooMany(r.retryAfter, false);
     if (Number(req.headers.get("Content-Length") ?? "0") > 8 * 1024) return Response.json({ error: { message: "Too large", code: "TOO_LARGE" } }, { status: 413 });
   }
+  if (/^\/api\/public\/plate\/?$/.test(url.pathname)) {
+    r = rl.hit(`plate:${ip}`, LIMITS.plate.max, LIMITS.plate.windowMs, now);
+    if (!r.ok) return tooMany(r.retryAfter, false);
+  }
   const isPublic = /^\/api\/(pass|invites|public)\//.test(url.pathname);
   if (isPublic) {
     r = rl.hit(`public:${ip}`, LIMITS.publicToken.max, LIMITS.publicToken.windowMs, now);
@@ -165,6 +169,11 @@ export async function handle(pc: PagesContext): Promise<Response> {
   if (publicPath.startsWith("/api/public/") && !(publicPath.startsWith("/api/public/site-reports") && isConfigured(pc.env))) {
     const blocked = await guard(pc.request, limiter, Date.now(), sharedLimits(pc.env));
     if (blocked) return withSecurityHeaders(blocked);
+    // Number-plate lookups: never cached at the edge (every plate has the same URL).
+    if (/^\/api\/public\/plate\/?$/.test(publicPath)) {
+      const e = pc.env as { DVLA_API_KEY?: string };
+      return withSecurityHeaders(await handlePublicMarket(pc.request, { mode: "live", now: () => new Date(), transport: (r) => fetch(r), env: { DVLA_API_KEY: e.DVLA_API_KEY } }));
+    }
     const edge = (globalThis as unknown as { caches?: { default?: { match(r: Request): Promise<Response | undefined>; put(r: Request, res: Response): Promise<void> } } }).caches?.default;
     const key = new Request(pc.request.url, { method: "GET" });
     const hit = edge ? await edge.match(key).catch(() => undefined) : undefined;

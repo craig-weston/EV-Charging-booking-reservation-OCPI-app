@@ -6,7 +6,7 @@
 import type { ReactNode } from "react";
 import type { Brand, Certification, LegalInfo } from "../../shared/model";
 
-export const LEGAL_UPDATED = "14 November 2026";
+export const LEGAL_UPDATED = "16 November 2026";
 
 export type LegalDocId = "privacy" | "terms" | "dpa" | "cookies" | "security" | "accessibility" | "licences";
 
@@ -291,6 +291,7 @@ function Cookies({ c }: { c: Ctx }) {
         </tbody>
       </table>
       <p>The public charging map (<code>/map</code>) shows street maps from OpenFreeMap, a free map service. Your browser fetches the map images straight from it, so it receives your IP address and the area of the map you're looking at, like any website you visit; it sets no cookies. If you press "Near me", your location is used in your browser to move the map and isn't sent to us or anyone else.</p>
+      <p>If you look up a vehicle by its number plate (on the map or when adding a vehicle), we send the plate to DVLA's Vehicle Enquiry Service and show what it returns: make, fuel, weight and axle layout, never the keeper. We don't keep a record of plates looked up on the map; the trucks you find there are saved only in your browser, so you can add them to a fleet later.</p>
       <p>Our hosting provider, Cloudflare, may set security cookies (such as <code>__cf_bm</code> or <code>cf_clearance</code>) to tell people from bots and protect the service. They are strictly necessary and contain no information about what you do in {n}.</p>
       <p>You can clear these items at any time in your browser's settings; you'll be signed out.</p>
       <p className="small muted">Last updated {LEGAL_UPDATED}.</p>

@@ -11,6 +11,9 @@ import {
   FACILITY_LABEL, NO_FILTERS, TRUCKS, access, addMinutes, arrivalTimes, chargeFor, addressLine, breakCharge, checklist, directionsUrl, hasMcs, inBounds, isFiltered, keep, operatorCounts, order, search, siteFromHash, suitsTrucks, tier,
   type Bounds, type Check, type Filters, type Place, type Suggestion, type Tallies, type Truck,
 } from "./logic";
+import { forgetTruck, lookupPlate, saveTruck, savedTrucks, type PlateDetails } from "../app/plates";
+import { isUkPlate, plateSummary } from "../../shared/plates";
+import { normalizePlate } from "../../shared/util";
 import {
   BOLT, IconArtic, IconBack, IconBay, IconBolt, IconCheck, IconClock, IconCross, IconDriveThrough, IconFleet, IconLocate, IconMegawatt, IconPin, IconPlug, IconQuestion, IconRigid, IconRoute, IconSearch, IconShare,
   IconBasket, IconBed, IconCup, IconFood, IconFuel, IconParking, IconPlay, IconWifi,
@@ -56,6 +59,12 @@ export function PublicMap() {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [truck, setTruckState] = useState<Truck>(savedTruck);
   const setTruck = (t: Truck) => { setTruckState(t); try { localStorage.setItem(TRUCK_KEY, t); } catch { /* private mode: not remembered */ } };
+  // Trucks found by number plate, saved in this browser.
+  const [myTrucks, setMyTrucks] = useState<PlateDetails[]>(savedTrucks);
+  const [myPlate, setMyPlate] = useState<string | null>(() => savedTrucks()[0]?.plate ?? null);
+  const useMine = (t: PlateDetails) => { setMyPlate(t.plate); if (t.kind === "artic" || t.kind === "rigid") setTruck(t.kind); };
+  const foundTruck = (t: PlateDetails) => { setMyTrucks(saveTruck(t)); useMine(t); };
+  const dropTruck = (plate: string) => { const next = forgetTruck(plate); setMyTrucks(next); if (myPlate === plate) setMyPlate(null); };
   const [selectedId, setSelectedId] = useState<string | null>(() => siteFromHash(window.location.hash));
   const [bounds, setBounds] = useState<Bounds | null>(null);
   const [mapState, setMapState] = useState<"loading" | "ready" | "failed">("loading");
@@ -251,10 +260,29 @@ export function PublicMap() {
 
         <SearchBox sites={all} places={CITIES} onPick={pick} />
 
+        <PlateSearch onFound={foundTruck} />
+        {myTrucks.length > 0 && (
+          <ul className="pm-mytrucks" aria-label="Your trucks">
+            {myTrucks.map((t) => {
+              const on = myPlate === t.plate;
+              return (
+                <li key={t.plate} className={on ? "on" : ""}>
+                  <button type="button" className="pm-mytruck" aria-pressed={on} onClick={() => useMine(t)}>
+                    <span className="pm-plate">{t.plate}</span>
+                    <span className="pm-mytruck-main"><b>{t.kind === "artic" ? "Artic" : t.kind === "rigid" ? "Rigid" : t.kind === "bus" ? "Bus or coach" : t.kind === "van" ? "Van" : "Vehicle"}{t.electric ? " · electric" : ""}</b><small>{plateSummary(t) || "Details from DVLA"}</small></span>
+                  </button>
+                  <button type="button" className="pm-mytruck-x" onClick={() => dropTruck(t.plate)} aria-label={`Remove ${t.plate}`}><IconCross size={14} /></button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {myTrucks.length > 0 && <p className="pm-mytrucks-note">Saved in this browser. <a href="/#/signup">Create an account</a> to add them to your fleet.</p>}
+
         <div className="pm-truck" role="radiogroup" aria-labelledby="pm-truck-label">
-          <span className="pm-truck-label" id="pm-truck-label">Your truck</span>
+          <span className="pm-truck-label" id="pm-truck-label">Or pick a kind of truck</span>
           {(["artic", "rigid"] as const).map((t) => (
-            <button key={t} type="button" role="radio" aria-checked={truck === t} className={truck === t ? "on" : ""} onClick={() => setTruck(t)}>
+            <button key={t} type="button" role="radio" aria-checked={truck === t} className={truck === t ? "on" : ""} onClick={() => { setTruck(t); setMyPlate(null); }}>
               {t === "artic" ? <IconArtic size={22} /> : <IconRigid size={22} />}
               <span><b>{TRUCKS[t].label}</b><small>{(TRUCKS[t].length_cm / 100).toFixed(1)} m · {TRUCKS[t].weight_kg / 1000} t</small></span>
             </button>
@@ -630,6 +658,38 @@ function SiteDetail({ site, tallies, truck, sourceName, onBack, onWatch }: { sit
 
       <p className="pm-source">Data from {sourceName}{site.provider ? ` (${site.provider})` : ""}{site.updated ? `, last updated ${new Date(site.updated).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}` : ""}.</p>
     </article>
+  );
+}
+
+/** Find a truck by its number plate (DVLA): its kind and weight set up the map, and it's saved here. */
+function PlateSearch({ onFound }: { onFound(t: PlateDetails): void }) {
+  const [plate, setPlate] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ tone: "ok" | "bad" | "info"; text: string } | null>(null);
+  const go = async () => {
+    if (!isUkPlate(plate)) { setMsg({ tone: "bad", text: "Enter a UK number plate, like PN74 EVH." }); return; }
+    setBusy(true); setMsg(null);
+    const r = await lookupPlate(window.location.origin, plate);
+    setBusy(false);
+    if (!r.ok) { setMsg({ tone: r.unavailable ? "info" : "bad", text: r.unavailable ? "Number-plate lookup isn't switched on yet. Pick a kind of truck below." : r.message }); return; }
+    const d = r.details;
+    if (!d.heavy) { setMsg({ tone: "info", text: `${d.plate} is a ${d.kind === "van" ? "van" : "car"}${d.make ? ` (${d.make})` : ""}. This map is for trucks: pick a kind below.` }); return; }
+    onFound(d);
+    setPlate("");
+    setMsg({ tone: "ok", text: `Found ${d.plate}: ${[d.make, d.kind === "artic" ? "artic" : d.kind, d.gross_weight_kg ? `${Math.round(d.gross_weight_kg / 100) / 10} t` : null].filter(Boolean).join(", ")}${d.electric ? "" : ". It isn't electric today: the map shows what an electric one its size could use"}.` });
+  };
+  return (
+    <form className="pm-platesearch" onSubmit={(e) => { e.preventDefault(); void go(); }}>
+      <label htmlFor="pm-plate" className="pm-truck-label">Your truck's number plate</label>
+      <div className="pm-platesearch-row">
+        <span className="pm-plate-input">
+          <span aria-hidden="true">UK</span>
+          <input id="pm-plate" value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase().slice(0, 9))} placeholder="PN74 EVH" autoComplete="off" autoCapitalize="characters" spellCheck={false} aria-describedby="pm-plate-msg" aria-invalid={msg?.tone === "bad" || undefined} />
+        </span>
+        <button type="submit" className="pm-btn" disabled={busy || !normalizePlate(plate)}>{busy ? <span className="pm-spin light" aria-hidden="true" /> : <IconSearch size={16} />}{busy ? "Finding…" : "Find"}</button>
+      </div>
+      <p id="pm-plate-msg" className={`pm-plate-msg ${msg?.tone ?? ""}`} role="status">{msg?.text ?? "We look it up with DVLA and set the map up for it."}</p>
+    </form>
   );
 }
 
