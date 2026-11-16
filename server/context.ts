@@ -24,6 +24,8 @@ export interface Env {
   DATA_ENCRYPTION_KEY?: string;
   /** OpenRouteService key (free) for real lorry routes in the trip planner (server/routing.ts). */
   ORS_API_KEY?: string;
+  /** DVLA Vehicle Enquiry Service key (free): number-plate lookup (server/plates.ts). */
+  DVLA_API_KEY?: string;
   /** The key before a rotation: still decrypts old values until Security & compliance → Re-encrypt has run. */
   DATA_ENCRYPTION_KEY_PREVIOUS?: string;
   /** "false" lets platform admins work without two-step verification (not recommended). */

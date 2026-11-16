@@ -9,6 +9,9 @@ import { navigate, useRoute } from "../app/router";
 import { Avatar, Empty, Field, Icon, Modal, Plate, Seg, Spinner, Switch } from "../ui/ui";
 import { TruckArt } from "../components/art/Mini";
 import { truckKindOf } from "../components/art/scene";
+import { forgetTruck, lookupPlate, savedTrucks, type PlateDetails } from "../app/plates";
+import { isUkPlate, plateSummary } from "../../shared/plates";
+import { normalizePlate } from "../../shared/util";
 
 const PRESETS: { type: VehicleType; label: string; sub: string; weight: number; height: number; length: number; width: number }[] = [
   { type: "TRUCK_WITH_TRAILER", label: "Tractor + trailer", sub: "44 t, 16.5 m", weight: 44000, height: 400, length: 1650, width: 255 },
@@ -25,6 +28,10 @@ export function FleetPage() {
   const [tab, setTab] = useState<"vehicles" | "drivers">(route.params.get("tab") === "drivers" ? "drivers" : "vehicles");
   const [editing, setEditing] = useState<Vehicle | "new" | null>(route.params.get("add") ? "new" : null);
   const [editingDriver, setEditingDriver] = useState<Driver | "new" | null>(null);
+  // Trucks looked up by number plate on the public map (this browser), not yet in the fleet.
+  const [fromMap, setFromMap] = useState<PlateDetails[]>(savedTrucks);
+  const [prefill, setPrefill] = useState<PlateDetails | null>(null);
+  const waiting = fromMap.filter((t) => t.heavy && !vehicles.some((v) => normalizePlate(v.plate) === normalizePlate(t.plate)));
   const role = me?.memberships.find((m) => m.fleet_id === fleetId)?.role;
   const canWrite = role !== "viewer";
 
@@ -49,6 +56,21 @@ export function FleetPage() {
         <Seg<"vehicles" | "drivers"> label="Show" value={tab} onChange={setTab} options={[{ value: "vehicles", label: `Vehicles (${vehicles.length})` }, { value: "drivers", label: `Drivers (${drivers.length})` }]} />
       </div>
 
+      {tab === "vehicles" && canWrite && loaded.fleet && waiting.length > 0 && (
+        <div className="callout" style={{ marginBottom: 16, display: "grid", gap: 10 }}>
+          <div><b>{waiting.length === 1 ? "A truck you looked up on the map" : `${waiting.length} trucks you looked up on the map`}</b> <span className="muted">Add {waiting.length === 1 ? "it" : "them"} to your fleet: the details are filled in, you add the charging ID.</span></div>
+          <div className="row gap-8 wrap">
+            {waiting.map((t) => (
+              <span key={t.plate} className="row gap-8" style={{ alignItems: "center" }}>
+                <Plate plate={t.plate} size="sm" />
+                <span className="small muted">{plateSummary(t)}</span>
+                <button className="btn sm" onClick={() => { setPrefill(t); setEditing("new"); }}>Add</button>
+                <button className="btn sm ghost" onClick={() => setFromMap(forgetTruck(t.plate))} aria-label={`Dismiss ${t.plate}`}>Dismiss</button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       {tab === "vehicles" ? (
         !loaded.fleet ? <div className="panel" style={{ padding: 16 }}><div className="skeleton" style={{ height: 48 }} /></div>
           : vehicles.length === 0 ? (
@@ -89,18 +111,40 @@ export function FleetPage() {
         </ul>
       )}
 
-      {editing && <VehicleForm vehicle={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && <VehicleForm vehicle={editing === "new" ? null : editing} prefill={editing === "new" ? prefill : null} onClose={() => { setEditing(null); setPrefill(null); setFromMap(savedTrucks()); }} />}
       {editingDriver && <DriverForm driver={editingDriver === "new" ? null : editingDriver} onClose={() => setEditingDriver(null)} />}
     </div>
   );
 }
 
-function VehicleForm({ vehicle, onClose }: { vehicle: Vehicle | null; onClose(): void }) {
-  const { api, fleetId, refreshFleet, toast } = useApp();
+/** What a number-plate lookup fills in: DVLA's make, kind and weight, with typical dimensions. */
+function fromPlate(d: PlateDetails): Partial<Vehicle> {
+  return {
+    plate: d.plate, vehicle_type: d.vehicle_type, ...(d.make ? { make_model: d.make } : {}),
+    ...(d.gross_weight_kg ? { gross_weight_kg: d.gross_weight_kg } : {}),
+    height_cm: d.typical.height_cm, length_cm: d.typical.length_cm, width_cm: d.typical.width_cm,
+  };
+}
+
+function VehicleForm({ vehicle, prefill, onClose }: { vehicle: Vehicle | null; prefill?: PlateDetails | null; onClose(): void }) {
+  const { api, fleetId, refreshFleet, toast, backend } = useApp();
   const [v, setV] = useState<Partial<Vehicle>>(() => vehicle ?? {
     vehicle_type: "TRUCK_WITH_TRAILER", gross_weight_kg: 44000, height_cm: 400, length_cm: 1650, width_cm: 255,
     connector_types: ["IEC_62196_T2_COMBO", "MCS"], start_method: "PLUG_AND_CHARGE", active: true, max_charge_kw: 750,
+    ...(prefill ? fromPlate(prefill) : {}),
   });
+  const [finding, setFinding] = useState(false);
+  const [found, setFound] = useState<{ tone: "ok" | "bad"; text: string } | null>(() => (prefill ? { tone: "ok", text: `From DVLA: ${plateSummary(prefill)}. Dimensions are typical for this kind of truck: check them.` } : null));
+  const find = async () => {
+    setFinding(true); setFound(null);
+    const r = await lookupPlate(backend.publicApi, v.plate ?? "");
+    setFinding(false);
+    if (!r.ok) { setFound({ tone: "bad", text: r.message }); return; }
+    // An existing vehicle keeps its measured dimensions; a new one gets typical ones to check.
+    const d = fromPlate(r.details);
+    setV((x) => ({ ...x, ...(vehicle ? { plate: d.plate, ...(d.make_model && !x.make_model ? { make_model: d.make_model } : {}), ...(d.gross_weight_kg ? { gross_weight_kg: d.gross_weight_kg } : {}) } : d) }));
+    setFound({ tone: "ok", text: `From DVLA: ${plateSummary(r.details) || r.details.plate}${r.details.electric ? "" : `, ${(r.details.fuel ?? "not electric").toLowerCase()}`}. ${vehicle ? "Weight updated." : "Dimensions are typical for this kind of truck: check them."}` });
+  };
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -165,7 +209,15 @@ function VehicleForm({ vehicle, onClose }: { vehicle: Vehicle | null; onClose():
           </div>
         </div>
         <div className="form-grid">
-          <Field label="Number plate">{(id) => <input id={id} className="input" value={v.plate ?? ""} onChange={(e) => set("plate", e.target.value.toUpperCase())} placeholder="PN74 EVH" autoComplete="off" style={{ textTransform: "uppercase", fontWeight: 600 }} />}</Field>
+          <Field label="Number plate">{(id) => (
+            <>
+              <div className="row gap-8">
+                <input id={id} className="input" value={v.plate ?? ""} onChange={(e) => set("plate", e.target.value.toUpperCase())} placeholder="PN74 EVH" autoComplete="off" style={{ textTransform: "uppercase", fontWeight: 600, flex: 1, minWidth: 0 }} aria-describedby={`${id}-found`} />
+                <button type="button" className="btn" onClick={() => void find()} disabled={finding || !isUkPlate(v.plate ?? "")}>{finding ? <Spinner /> : <Icon name="search" size="sm" />}Find details</button>
+              </div>
+              <div id={`${id}-found`} role="status" className={`xs ${found?.tone === "bad" ? "bad-text" : found ? "ok-text" : "muted"}`} style={{ marginTop: 4 }}>{found?.text ?? "Fills in the make, kind and weight from DVLA."}</div>
+            </>
+          )}</Field>
           <Field label="Name">{(id) => <input id={id} className="input" value={v.name ?? ""} onChange={(e) => set("name", e.target.value)} placeholder="Tractor 06" />}</Field>
           <Field label="Make and model">{(id) => <input id={id} className="input" value={v.make_model ?? ""} onChange={(e) => set("make_model", e.target.value)} placeholder="Optional" />}</Field>
           <Field label="Max charging power (kW)">{(id) => <input id={id} className="input" inputMode="numeric" value={v.max_charge_kw ?? ""} onChange={(e) => set("max_charge_kw", num(e.target.value))} />}</Field>

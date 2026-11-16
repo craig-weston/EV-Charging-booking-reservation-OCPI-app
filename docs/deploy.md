@@ -99,6 +99,7 @@ Then **Settings → Variables and Secrets**:
 | `SECURITY_CONTACT` | Text | `security@example.com` | Shown on the Security page. |
 | `DATA_ENCRYPTION_KEY_PREVIOUS` | Secret | | Only while rotating the key (see the security policy). |
 | `ORS_API_KEY` | Secret | a free OpenRouteService key | Optional: real lorry routes in the trip planner ([trip planner](trip-planner.md)). |
+| `DVLA_API_KEY` | Secret | a free DVLA Vehicle Enquiry Service key | Optional: number-plate lookup on the public map and in Add vehicle ([number plates](number-plates.md)). |
 | `TWILIO_ACCOUNT_SID` | Text | `AC…` | Optional: automatic driver texts / WhatsApp (see below). |
 | `TWILIO_AUTH_TOKEN` | Secret | | Server only. |
 | `TWILIO_FROM` | Text | `+447700900000` or a sender ID | SMS sender. Set it to offer text messages. |

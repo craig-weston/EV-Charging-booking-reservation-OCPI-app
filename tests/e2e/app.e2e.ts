@@ -377,3 +377,37 @@ test("public map: keyboard reaches search, the truck switch and a site; a phone 
   noA11yProblems();
   await ctx.close();
 });
+
+test("public map: a number plate finds the truck, saves it in the browser, and sets up the map", async () => {
+  const ctx = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1280, height: 800 } });
+  const { page, problems } = await openMap(ctx);
+  const details = { plate: "BK74 RGD", make: "Daf", fuel: "ELECTRICITY", electric: true, year: 2024, colour: "White", gross_weight_kg: 26000, wheel_plan: "3 AXLE RIGID BODY", type_approval: "N3", kind: "rigid", vehicle_type: "RIGID", typical: { length_cm: 1100, height_cm: 380, width_cm: 255 }, heavy: true };
+  let asked: unknown = null;
+  await page.route("**/api/public/plate", async (r) => {
+    asked = r.request().postDataJSON();
+    const plate = String((asked as { plate?: string }).plate ?? "");
+    if (/ZZ99/.test(plate)) return r.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "DVLA has no vehicle with that number plate" } }) });
+    return r.fulfill({ contentType: "application/json", body: JSON.stringify({ data: details }) });
+  });
+  await page.getByRole("button", { name: "Explore the map" }).click({ timeout: 15_000 });
+  const box = page.getByLabel("Your truck's number plate");
+  await box.fill("zz99 zzz");
+  await page.getByRole("button", { name: "Find", exact: true }).click();
+  await page.getByText("DVLA has no vehicle with that number plate").waitFor();
+  await box.fill("bk74 rgd");
+  await box.press("Enter");
+  await page.getByText(/Found BK74 RGD: Daf, rigid, 26 t/).waitFor();
+  assert.deepEqual(asked, { plate: "BK74 RGD" });
+  // Saved as one of "Your trucks", and the map now plans for a rigid.
+  await page.getByRole("list", { name: "Your trucks" }).getByText("BK74 RGD").waitFor();
+  assert.equal(await page.getByRole("radio", { name: /Rigid/ }).getAttribute("aria-checked"), "true");
+  await axe(page, "public map (plate found)");
+  // Still there after a reload.
+  await page.reload();
+  await page.getByRole("list", { name: "Your trucks" }).getByText("BK74 RGD").waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Remove BK74 RGD" }).click();
+  await page.getByRole("list", { name: "Your trucks" }).waitFor({ state: "detached" });
+  assert.deepEqual(problems.filter((p) => !/404/.test(p)), []);
+  noA11yProblems();
+  await ctx.close();
+});
