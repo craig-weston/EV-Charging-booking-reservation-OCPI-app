@@ -30,7 +30,38 @@ export interface PlateDetails {
   typical: { length_cm: number; height_cm: number; width_cm: number };
   /** A truck (or bus) the map and app are for; false for cars and motorbikes. */
   heavy: boolean;
+  /** The planner's own figures for this truck, where they've corrected the typical ones. */
+  profile?: TruckProfile;
 }
+
+/** What decides where a truck can charge: its size and weight, and what it takes when charging. */
+export interface TruckProfile {
+  length_cm: number;
+  height_cm: number;
+  weight_kg: number;
+  battery_kwh: number;
+  /** The fastest it charges, kW. */
+  max_kw: number;
+  /** Takes megawatt (MCS) charging. */
+  mcs: boolean;
+}
+
+/**
+ * This truck's profile: the planner's figures if they've set them, otherwise DVLA's weight and
+ * typical size and charging for its kind (DVLA holds no battery or charging details).
+ */
+export function profileOf(d: PlateDetails): TruckProfile {
+  const artic = d.kind === "artic";
+  const typical: TruckProfile = {
+    ...pick(d.typical),
+    weight_kg: d.gross_weight_kg ?? (artic ? 44000 : 26000),
+    battery_kwh: artic ? 540 : 400,
+    max_kw: artic ? 375 : 250,
+    mcs: false,
+  };
+  return { ...typical, ...(d.profile ?? {}) };
+}
+const pick = (t: PlateDetails["typical"]) => ({ length_cm: t.length_cm, height_cm: t.height_cm });
 
 /** UK plates are 2 to 7 letters and digits, with both. */
 export function isUkPlate(s: string): boolean {

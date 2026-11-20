@@ -35,9 +35,14 @@ export function savedTrucks(): PlateDetails[] {
   } catch { return []; }
 }
 
-export function saveTruck(t: PlateDetails): PlateDetails[] {
-  const rest = savedTrucks().filter((x) => normalizePlate(x.plate) !== normalizePlate(t.plate));
-  const next = [t, ...rest].slice(0, MAX);
+/** Save a truck: first in the list (a new lookup, keeping any figures the planner set), or where it is (an edit). */
+export function saveTruck(t: PlateDetails, toTop = true): PlateDetails[] {
+  const all = savedTrucks();
+  const same = (x: PlateDetails) => normalizePlate(x.plate) === normalizePlate(t.plate);
+  const old = all.find(same);
+  const next = toTop
+    ? [{ ...t, profile: t.profile ?? old?.profile }, ...all.filter((x) => !same(x))].slice(0, MAX)
+    : old ? all.map((x) => (same(x) ? t : x)) : [t, ...all].slice(0, MAX);
   try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* private mode: not remembered */ }
   return next;
 }

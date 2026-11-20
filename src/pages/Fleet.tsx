@@ -10,7 +10,7 @@ import { Avatar, Empty, Field, Icon, Modal, Plate, Seg, Spinner, Switch } from "
 import { TruckArt } from "../components/art/Mini";
 import { truckKindOf } from "../components/art/scene";
 import { forgetTruck, lookupPlate, savedTrucks, type PlateDetails } from "../app/plates";
-import { isUkPlate, plateSummary } from "../../shared/plates";
+import { isUkPlate, plateSummary, profileOf } from "../../shared/plates";
 import { normalizePlate } from "../../shared/util";
 
 const PRESETS: { type: VehicleType; label: string; sub: string; weight: number; height: number; length: number; width: number }[] = [
@@ -118,11 +118,14 @@ export function FleetPage() {
 }
 
 /** What a number-plate lookup fills in: DVLA's make, kind and weight, with typical dimensions. */
+/** A plate's details as a vehicle: DVLA's weight, and the size and charging set on the map (or typical ones). */
 function fromPlate(d: PlateDetails): Partial<Vehicle> {
+  const p = profileOf(d);
   return {
     plate: d.plate, vehicle_type: d.vehicle_type, ...(d.make ? { make_model: d.make } : {}),
-    ...(d.gross_weight_kg ? { gross_weight_kg: d.gross_weight_kg } : {}),
-    height_cm: d.typical.height_cm, length_cm: d.typical.length_cm, width_cm: d.typical.width_cm,
+    gross_weight_kg: p.weight_kg, height_cm: p.height_cm, length_cm: p.length_cm, width_cm: d.typical.width_cm,
+    battery_kwh: p.battery_kwh, max_charge_kw: p.max_kw,
+    connector_types: p.mcs ? ["IEC_62196_T2_COMBO", "MCS"] : ["IEC_62196_T2_COMBO"],
   };
 }
 
