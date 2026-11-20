@@ -727,9 +727,9 @@ function TruckCard({ t, counts, onChange }: { t: PlateDetails; counts: ReturnTyp
       </dl>
       {counts && (
         <ul className="pm-tmatch" aria-label="How the sites match this truck">
-          <li><b>{counts.plug.toLocaleString("en-GB")}</b><span>sites it can charge at</span></li>
-          <li><b>{counts.fast.toLocaleString("en-GB")}</b><span>add 100+ miles in a 45-min break</span></li>
-          <li><b>{counts.fits.toLocaleString("en-GB")}</b><span>confirmed for its size</span></li>
+          <li><b><CountUp n={counts.plug} /></b><span>sites it can charge at</span></li>
+          <li><b><CountUp n={counts.fast} /></b><span>add 100+ miles in a 45-min break</span></li>
+          <li><b><CountUp n={counts.fits} /></b><span>confirmed for its size</span></li>
         </ul>
       )}
       {!!counts?.tooSmall && <p className="pm-tnote">{counts.tooSmall} more ruled out: their bays are too small for it.</p>}
@@ -747,6 +747,26 @@ function TruckCard({ t, counts, onChange }: { t: PlateDetails; counts: ReturnTyp
       </details>
     </section>
   );
+}
+
+/** A number that counts up (or down) to its new value, like a meter settling; instant with reduced motion. */
+function CountUp({ n }: { n: number }) {
+  const [shown, setShown] = useState(reducedMotion() ? n : 0);
+  const from = useRef(shown);
+  useEffect(() => {
+    if (reducedMotion()) { setShown(n); return; }
+    const start = performance.now(), a = from.current, ms = 900;
+    let raf = 0;
+    const step = (t: number) => {
+      const k = Math.min(1, (t - start) / ms), e = 1 - Math.pow(1 - k, 3);
+      const v = Math.round(a + (n - a) * e);
+      from.current = v; setShown(v);
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [n]);
+  return <>{shown.toLocaleString("en-GB")}</>;
 }
 
 /** A number field that lets people type freely and only takes a value in range. */
