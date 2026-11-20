@@ -758,7 +758,8 @@ function CountUp({ n }: { n: number }) {
     const start = performance.now(), a = from.current, ms = 900;
     let raf = 0;
     const step = (t: number) => {
-      const k = Math.min(1, (t - start) / ms), e = 1 - Math.pow(1 - k, 3);
+      // A frame can be stamped a little before the effect ran: never go below the start.
+      const k = Math.max(0, Math.min(1, (t - start) / ms)), e = 1 - Math.pow(1 - k, 3);
       const v = Math.round(a + (n - a) * e);
       from.current = v; setShown(v);
       if (k < 1) raf = requestAnimationFrame(step);
