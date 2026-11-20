@@ -757,8 +757,9 @@ function CountUp({ n }: { n: number }) {
     if (reducedMotion()) { setShown(n); return; }
     const start = performance.now(), a = from.current, ms = 900;
     let raf = 0;
-    const step = (t: number) => {
-      const k = Math.min(1, (t - start) / ms), e = 1 - Math.pow(1 - k, 3);
+    const step = () => {
+      // Timed on the same clock as the start (a frame's own timestamp can be earlier, or on another timeline).
+      const k = Math.max(0, Math.min(1, (performance.now() - start) / ms)), e = 1 - Math.pow(1 - k, 3);
       const v = Math.round(a + (n - a) * e);
       from.current = v; setShown(v);
       if (k < 1) raf = requestAnimationFrame(step);
