@@ -15,10 +15,21 @@ From DVLA's [Vehicle Enquiry Service](https://developer-portal.driver-vehicle-li
 
 DVLA doesn't hold the model, dimensions, battery size or connectors. Dimensions are filled with typical ones for that kind and weight of truck, and the form says to check them. The charging ID (Plug & Charge or Autocharge) is still entered by hand.
 
+## Matching sites to the truck
+
+On the map, the truck you pick becomes a spec card, **Sites matched to PN74 EVH**: length, height, weight, battery and top charging rate, each marked **DVLA**, **typical** or **yours**. Correct any of them under "Correct its size or charging" (and tick MCS if the truck takes megawatt charging). Every site is then checked against that truck (`src/publicmap/logic.ts`):
+
+- **Plug:** a site needs CCS (or MCS, for an MCS truck). CHAdeMO-only sites are dropped.
+- **Size and weight:** against the operator's published bay limits, where there are any. A site whose bays are too small is ruled out.
+- **Charging:** the rate is the lower of the site's and the truck's. The list shows the miles a 45-minute break adds; the site's checklist shows 20–80% time for the truck's battery.
+- **Fits:** built for trucks, or fleets have reported that this kind of truck fits.
+
+The card counts the sites it can charge at, those that add 100+ miles in a 45-minute break, and those confirmed to fit. Few operators publish bay sizes yet, so "confirmed to fit" is small until they do or fleets report.
+
 ## Where details are saved
 
-- **On the map (no account):** trucks you find are saved in your browser ("Your trucks"), and the map sets itself up for the one you pick. Nothing is stored on the server.
-- **In the app:** the Fleet page offers the trucks you looked up on the map ("Add"), with the details filled in. Saving adds them to the fleet like any vehicle.
+- **On the map (no account):** trucks you find are saved in your browser ("Your trucks") with any figures you correct, and the map sets itself up for the one you pick. Nothing is stored on the server.
+- **In the app:** the Fleet page offers the trucks you looked up on the map ("Add"), with the details filled in, including the size, battery and charging rate set on the map. Saving adds them to the fleet like any vehicle.
 
 ## Setting it up
 

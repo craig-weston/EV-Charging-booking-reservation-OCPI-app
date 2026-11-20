@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { OpenSite } from "../shared/opendata/sites";
-import { NO_FILTERS, access, bayLimits, breakCharge, chargeFor, arrivalTimes, addMinutes, checklist, inBounds, isFiltered, keep, operatorCounts, order, search, siteFromHash, tier, tooSmall } from "../src/publicmap/logic";
+import { NO_FILTERS, access, canPlug, matchCounts, minutesTo80, specOf, type Spec, bayLimits, breakCharge, chargeFor, arrivalTimes, addMinutes, checklist, inBounds, isFiltered, keep, operatorCounts, order, search, siteFromHash, tier, tooSmall } from "../src/publicmap/logic";
 
 const site = (o: Partial<OpenSite>): OpenSite => ({ id: "mfg:1", name: "Site", operator: "MFG EV Power", lat: 52, lon: -1, max_kw: 150, connectors: ["CCS2"], evses: 4, hgv: "check", hgv_why: "", source: "mfg", ...o });
 const truck = site({ id: "x:t", name: "Markham Moor", hgv: "trucks", hgv_why: "Truck bays", max_kw: 175 });
@@ -61,9 +61,9 @@ test("HGV checks: bay limits against the truck, the checklist, and what a break 
   assert.equal(access(short, null, "rigid").title, "Built for trucks");
   assert.equal(tier(short, null, "artic"), "rapid", "an artic doesn't fit, so not drawn as a truck site");
   const c = checklist(mcs, null, "artic");
-  assert.deepEqual(c.map((x) => [x.key, x.state]), [["bay", "unknown"], ["hours", "unknown"], ["drive", "unknown"], ["mcs", "ok"], ["fleets", "unknown"]]);
-  assert.equal(checklist(site({ open247: true }), null, "artic")[1].state, "ok");
-  assert.equal(checklist(site({ open247: false, hours: "Daily 06:00–22:00" }), null, "artic")[1].text, "Opening hours: Daily 06:00–22:00");
+  assert.deepEqual(c.map((x) => [x.key, x.state]), [["charge", "ok"], ["bay", "unknown"], ["hours", "unknown"], ["drive", "unknown"], ["mcs", "ok"], ["fleets", "unknown"]]);
+  assert.equal(checklist(site({ open247: true }), null, "artic")[2].state, "ok");
+  assert.equal(checklist(site({ open247: false, hours: "Daily 06:00–22:00" }), null, "artic")[2].text, "Opening hours: Daily 06:00–22:00");
   assert.ok(!keep(plain, { ...NO_FILTERS, open247: true }));
   assert.ok(keep(site({ open247: true }), { ...NO_FILTERS, open247: true }));
   // 45 minutes at the lower of the site's and the truck's rate, 85% for the slowdown as it fills.
@@ -77,4 +77,28 @@ test("the trial booking: arrival times, what a charge adds, end times", () => {
   assert.equal(arrivalTimes(evening, true).length, 48);
   assert.deepEqual(chargeFor(ultra, "artic", 45), breakCharge(ultra, "artic"));
   assert.equal(addMinutes("23:30", 45), "00:15");
+});
+
+test("one particular truck: its own size, weight, plug and battery decide the sites", () => {
+  const tall: Spec = { ...specOf("rigid"), label: "PN74 EVH", plate: "PN74 EVH", height_cm: 430, weight_kg: 32000, battery_kwh: 600, maxKw: 400 };
+  const low = site({ id: "x:l", hgv: "trucks", max_height_cm: 420, max_weight_kg: 40000 });
+  assert.deepEqual(tooSmall(low, "rigid"), [], "a typical rigid fits");
+  assert.deepEqual(tooSmall(low, tall), ["height"], "this one is too tall");
+  assert.equal(access(low, null, tall).title, "Too small for PN74 EVH");
+  const chademo = site({ id: "x:c", connectors: ["CHAdeMO"] });
+  assert.ok(!canPlug(chademo, "artic") && !keep(chademo, NO_FILTERS), "no truck plug, not shown");
+  const mcsOnly = site({ id: "x:o", connectors: ["MCS"], max_kw: 1000 });
+  assert.ok(!canPlug(mcsOnly, "artic"));
+  assert.ok(canPlug(mcsOnly, { ...tall, mcs: true, maxKw: 750 }));
+  // 20–80% of 600 kWh = 360 kWh at 85% of min(400 site, 400 truck) = 340 kW → 64 min.
+  assert.equal(minutesTo80(ultra, tall), 64);
+  assert.equal(minutesTo80(chademo, tall), null);
+  assert.equal(order(plain, ultra, {}, tall) > 0, true, "the faster site for this truck comes first");
+});
+
+test("match counts for one truck: chargeable, fast for a break, confirmed to fit, too small", () => {
+  const big: Spec = { ...specOf("artic"), label: "X", plate: "X", height_cm: 430 };
+  const low = site({ id: "x:l", hgv: "trucks", max_height_cm: 420 });
+  const chademo = site({ id: "x:c", connectors: ["CHAdeMO"] });
+  assert.deepEqual(matchCounts([truck, ultra, plain, low, chademo], {}, big), { plug: 3, fast: 1, fits: 1, tooSmall: 1 });
 });

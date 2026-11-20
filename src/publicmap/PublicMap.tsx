@@ -8,14 +8,14 @@ import { applyBrand } from "../app/brand";
 import type { Brand } from "../../shared/model";
 import type { GeoJsonSource, LngLat, MapEvent, MapLibreModule, MapLike } from "./maplibre-types";
 import {
-  FACILITY_LABEL, NO_FILTERS, TRUCKS, access, addMinutes, arrivalTimes, chargeFor, addressLine, breakCharge, checklist, directionsUrl, hasMcs, inBounds, isFiltered, keep, operatorCounts, order, search, siteFromHash, suitsTrucks, tier,
-  type Bounds, type Check, type Filters, type Place, type Suggestion, type Tallies, type Truck,
+  FACILITY_LABEL, NO_FILTERS, TRUCKS, access, canPlug, matchCounts, rateHere, specFromPlate, specOf, truckWords, addMinutes, arrivalTimes, chargeFor, addressLine, breakCharge, checklist, directionsUrl, hasMcs, inBounds, isFiltered, keep, operatorCounts, order, search, siteFromHash, suitsTrucks, tier,
+  type Bounds, type Check, type Filters, type Place, type Suggestion, type Tallies, type Truck, type TruckLike,
 } from "./logic";
 import { forgetTruck, lookupPlate, saveTruck, savedTrucks, type PlateDetails } from "../app/plates";
-import { isUkPlate, plateSummary } from "../../shared/plates";
+import { isUkPlate, plateSummary, profileOf, type TruckProfile } from "../../shared/plates";
 import { normalizePlate } from "../../shared/util";
 import {
-  BOLT, IconArtic, IconBack, IconBay, IconBolt, IconCheck, IconClock, IconCross, IconDriveThrough, IconFleet, IconLocate, IconMegawatt, IconPin, IconPlug, IconQuestion, IconRigid, IconRoute, IconSearch, IconShare,
+  BOLT, IconArtic, IconBack, IconBay, IconBolt, IconCheck, IconClock, IconCross, IconDriveThrough, IconFleet, IconHeight, IconWeight, IconLocate, IconMegawatt, IconPin, IconPlug, IconQuestion, IconRigid, IconRoute, IconSearch, IconShare,
   IconBasket, IconBed, IconCup, IconFood, IconFuel, IconParking, IconPlay, IconWifi,
 } from "./icons";
 
@@ -34,7 +34,7 @@ const isNarrow = () => window.matchMedia?.("(max-width: 859px)").matches ?? fals
 const kw = (n: number) => `${Math.round(n)} kW`;
 const TRUCK_KEY = "depotcharge.map.truck";
 const savedTruck = (): Truck => { try { return localStorage.getItem(TRUCK_KEY) === "rigid" ? "rigid" : "artic"; } catch { return "artic"; } };
-const truckWords = (t: Truck) => (t === "artic" ? "an artic" : "a rigid");
+const isArtic = (t: TruckLike) => specOf(t).class === "artic";
 const WELCOME_KEY = "depotcharge.map.welcomed";
 /** The full app with sample trucks and operators, no account needed (see src/app/demo.ts). */
 const DEMO_URL = "/?demo#/book";
@@ -64,6 +64,10 @@ export function PublicMap() {
   const [myPlate, setMyPlate] = useState<string | null>(() => savedTrucks()[0]?.plate ?? null);
   const useMine = (t: PlateDetails) => { setMyPlate(t.plate); if (t.kind === "artic" || t.kind === "rigid") setTruck(t.kind); };
   const foundTruck = (t: PlateDetails) => { setMyTrucks(saveTruck(t)); useMine(t); };
+  const editTruck = (t: PlateDetails) => setMyTrucks(saveTruck(t, false));
+  const mine = myTrucks.find((t) => t.plate === myPlate) ?? null;
+  /** What the map is set up for: the visitor's own truck if they've picked one, else a kind of truck. */
+  const active: TruckLike = useMemo(() => (mine ? specFromPlate(mine) : truck), [mine, truck]);
   const dropTruck = (plate: string) => { const next = forgetTruck(plate); setMyTrucks(next); if (myPlate === plate) setMyPlate(null); };
   const [selectedId, setSelectedId] = useState<string | null>(() => siteFromHash(window.location.hash));
   const [bounds, setBounds] = useState<Bounds | null>(null);
@@ -108,12 +112,13 @@ export function PublicMap() {
 
   const all: OpenSite[] = file?.sites ?? [];
   const byId = useMemo(() => new Map(all.map((s) => [s.id, s])), [all]);
-  const shown = useMemo(() => all.filter((s) => keep(s, filters, tallies[s.id], truck)), [all, filters, tallies, truck]);
+  const shown = useMemo(() => all.filter((s) => keep(s, filters, tallies[s.id], active)), [all, filters, tallies, active]);
   const selected = selectedId ? byId.get(selectedId) ?? null : null;
   const inView = useMemo(() => {
     const list = bounds ? shown.filter((s) => inBounds(s, bounds)) : shown;
-    return [...list].sort((a, b) => order(a, b, tallies, truck));
-  }, [shown, bounds, tallies, truck]);
+    return [...list].sort((a, b) => order(a, b, tallies, active));
+  }, [shown, bounds, tallies, active]);
+  const matched = useMemo(() => (mine ? matchCounts(all, tallies, active) : null), [mine, all, tallies, active]);
   const operators = useMemo(() => operatorCounts(all), [all]);
 
   // ---- the map
@@ -184,8 +189,8 @@ export function PublicMap() {
   // Sites on the map follow the filters.
   useEffect(() => {
     const src = mapState === "ready" ? map.current?.getSource("sites") : undefined;
-    src?.setData({ type: "FeatureCollection", features: shown.map((s) => point(s, { id: s.id, name: s.name, tier: tier(s, tallies[s.id], truck) })) });
-  }, [mapState, shown, tallies, truck]);
+    src?.setData({ type: "FeatureCollection", features: shown.map((s) => point(s, { id: s.id, name: s.name, tier: tier(s, tallies[s.id], active) })) });
+  }, [mapState, shown, tallies, active]);
 
   // Keep the map's centre clear of the panel (left on wide screens, the sheet on narrow ones).
   useEffect(() => {
@@ -199,14 +204,14 @@ export function PublicMap() {
   // The chosen site: marked, in the address bar, and flown to when chosen from the list or search.
   useEffect(() => {
     const m = mapState === "ready" ? map.current : null;
-    m?.getSource("selected")?.setData(selected ? { type: "FeatureCollection", features: [point(selected, { tier: tier(selected, tallies[selected.id], truck) })] } : EMPTY);
+    m?.getSource("selected")?.setData(selected ? { type: "FeatureCollection", features: [point(selected, { tier: tier(selected, tallies[selected.id], active) })] } : EMPTY);
     const want = selected ? `#site=${encodeURIComponent(selected.id)}` : "";
     if (window.location.hash !== want) history.replaceState(null, "", `${window.location.pathname}${window.location.search}${want}`);
     if (m && selected && flyNext.current) {
       m.flyTo({ center: [selected.lon, selected.lat], zoom: Math.max(m.getZoom(), 12.5), duration: reducedMotion() ? 0 : 900, essential: true });
     }
     flyNext.current = false;
-  }, [mapState, selected, tallies, truck]);
+  }, [mapState, selected, tallies, active]);
 
   useEffect(() => {
     const onHash = () => { flyNext.current = true; setSelectedId(siteFromHash(window.location.hash)); };
@@ -277,12 +282,13 @@ export function PublicMap() {
             })}
           </ul>
         )}
+        {mine && <TruckCard t={mine} counts={matched} onChange={editTruck} />}
         {myTrucks.length > 0 && <p className="pm-mytrucks-note">Saved in this browser. <a href="/#/signup">Create an account</a> to add them to your fleet.</p>}
 
         <div className="pm-truck" role="radiogroup" aria-labelledby="pm-truck-label">
           <span className="pm-truck-label" id="pm-truck-label">Or pick a kind of truck</span>
           {(["artic", "rigid"] as const).map((t) => (
-            <button key={t} type="button" role="radio" aria-checked={truck === t} className={truck === t ? "on" : ""} onClick={() => { setTruck(t); setMyPlate(null); }}>
+            <button key={t} type="button" role="radio" aria-checked={!mine && truck === t} className={!mine && truck === t ? "on" : ""} onClick={() => { setTruck(t); setMyPlate(null); }}>
               {t === "artic" ? <IconArtic size={22} /> : <IconRigid size={22} />}
               <span><b>{TRUCKS[t].label}</b><small>{(TRUCKS[t].length_cm / 100).toFixed(1)} m · {TRUCKS[t].weight_kg / 1000} t</small></span>
             </button>
@@ -295,7 +301,7 @@ export function PublicMap() {
               <button key={n} type="button" role="radio" aria-checked={filters.minKw === n} className={filters.minKw === n ? "on" : ""} onClick={() => setFilters((f) => ({ ...f, minKw: n }))}>{n} kW+</button>
             ))}
           </div>
-          <Chip on={filters.trucks} onClick={() => setFilters((f) => ({ ...f, trucks: !f.trucks }))}>{truck === "artic" ? <IconArtic size={15} /> : <IconRigid size={15} />}Fits {truckWords(truck)}</Chip>
+          <Chip on={filters.trucks} onClick={() => setFilters((f) => ({ ...f, trucks: !f.trucks }))}>{isArtic(active) ? <IconArtic size={15} /> : <IconRigid size={15} />}Fits {truckWords(active)}</Chip>
           <Chip on={filters.mcs} onClick={() => setFilters((f) => ({ ...f, mcs: !f.mcs }))}><IconMegawatt size={15} />Megawatt</Chip>
           <Chip on={filters.open247} onClick={() => setFilters((f) => ({ ...f, open247: !f.open247 }))}><IconClock size={15} />24/7</Chip>
           <label className="pm-select">
@@ -310,13 +316,13 @@ export function PublicMap() {
 
         <div className="pm-body">
           {selected ? (
-            <SiteDetail key={selected.id} site={selected} tallies={tallies} truck={truck} onWatch={() => setVideo(true)} sourceName={file?.sources.find((s) => s.id === selected.source)?.name ?? selected.source} onBack={() => setSelectedId(null)} />
+            <SiteDetail key={selected.id} site={selected} tallies={tallies} truck={active} onWatch={() => setVideo(true)} sourceName={file?.sources.find((s) => s.id === selected.source)?.name ?? selected.source} onBack={() => setSelectedId(null)} />
           ) : loadError ? (
             <div className="pm-empty"><b>The sites couldn't load.</b><button type="button" className="pm-btn" onClick={loadSites}>Try again</button></div>
           ) : !file ? (
             <ul className="pm-list" aria-busy="true">{Array.from({ length: 6 }, (_, i) => <li key={i} className="pm-skel" />)}</ul>
           ) : (
-            <SiteList sites={inView} tallies={tallies} truck={truck} total={shown.length} filtered={isFiltered(filters)} onPick={(id) => { flyNext.current = true; select(id); }} onClear={() => setFilters(NO_FILTERS)} />
+            <SiteList sites={inView} tallies={tallies} truck={active} total={shown.length} filtered={isFiltered(filters)} onPick={(id) => { flyNext.current = true; select(id); }} onClear={() => setFilters(NO_FILTERS)} />
           )}
         </div>
 
@@ -327,7 +333,7 @@ export function PublicMap() {
         </a>
         <footer className="pm-foot">
           <div className="pm-legend" aria-label="Key">
-            <span><Pin tone="truck" />Fits {truckWords(truck)}</span>
+            <span><Pin tone="truck" />Fits {truckWords(active)}</span>
             <span><Pin tone="ultra" />350 kW+</span>
             <span><Pin tone="rapid" />150 kW+</span>
           </div>
@@ -543,12 +549,13 @@ function SearchBox({ sites, places, onPick }: { sites: OpenSite[]; places: Place
   );
 }
 
-function SiteList({ sites, tallies, truck, total, filtered, onPick, onClear }: { sites: OpenSite[]; tallies: Tallies; truck: Truck; total: number; filtered: boolean; onPick(id: string): void; onClear(): void }) {
+function SiteList({ sites, tallies, truck, total, filtered, onPick, onClear }: { sites: OpenSite[]; tallies: Tallies; truck: TruckLike; total: number; filtered: boolean; onPick(id: string): void; onClear(): void }) {
   if (!total) {
     return <div className="pm-empty"><b>No sites match these filters.</b>{filtered && <button type="button" className="pm-btn" onClick={onClear}>Clear filters</button>}</div>;
   }
   if (!sites.length) return <div className="pm-empty"><b>No sites in this part of the map.</b><span>Zoom out or search for a town.</span></div>;
   const list = sites.slice(0, LIST_MAX);
+  const own = typeof truck !== "string";
   return (
     <>
       <p className="pm-count" role="status" aria-live="polite">{sites.length === total ? `${total.toLocaleString("en-GB")} sites` : `${sites.length.toLocaleString("en-GB")} of ${total.toLocaleString("en-GB")} sites in view`}{sites.length > LIST_MAX ? `, showing the first ${LIST_MAX}` : ""}</p>
@@ -556,6 +563,7 @@ function SiteList({ sites, tallies, truck, total, filtered, onPick, onClear }: {
         {list.map((s, i) => {
           const t = tallies[s.id];
           const trucks = suitsTrucks(s, t, truck);
+          const gain = own && canPlug(s, truck) ? breakCharge(s, truck) : null;
           return (
             <li key={s.id} style={{ animationDelay: `${Math.min(i, 14) * 28}ms` }}>
               <button type="button" className="pm-item" onClick={() => onPick(s.id)}>
@@ -564,14 +572,15 @@ function SiteList({ sites, tallies, truck, total, filtered, onPick, onClear }: {
                   <b>{s.name}</b>
                   <small>{[s.operator, s.city].filter(Boolean).join(" · ")}</small>
                   <span className="pm-tags">
-                    {trucks && <span className="pm-tag ok">{truck === "artic" ? <IconArtic size={13} /> : <IconRigid size={13} />}{s.hgv === "trucks" ? "Built for trucks" : "Fleets say it fits"}</span>}
+                    {trucks && <span className="pm-tag ok">{isArtic(truck) ? <IconArtic size={13} /> : <IconRigid size={13} />}{s.hgv === "trucks" ? "Built for trucks" : "Fleets say it fits"}</span>}
                     {hasMcs(s) && <span className="pm-tag"><IconMegawatt size={13} />MCS</span>}
                     {s.drive_through && <span className="pm-tag"><IconDriveThrough size={13} />Drive-through</span>}
                     {s.open247 && <span className="pm-tag"><IconClock size={13} />24/7</span>}
+                    {gain && <span className="pm-tag time"><IconBolt size={13} />+{gain.miles} mi in 45 min</span>}
                     <span className="pm-tag plain"><IconPlug size={13} />{s.evses}</span>
                   </span>
                 </span>
-                <span className="pm-kw"><b>{Math.round(s.max_kw)}</b><small>kW</small></span>
+                <span className="pm-kw"><b>{Math.round(own ? rateHere(s, truck) : s.max_kw)}</b><small>kW</small></span>
               </button>
             </li>
           );
@@ -582,7 +591,7 @@ function SiteList({ sites, tallies, truck, total, filtered, onPick, onClear }: {
   );
 }
 
-function SiteDetail({ site, tallies, truck, sourceName, onBack, onWatch }: { site: OpenSite; tallies: Tallies; truck: Truck; sourceName: string; onBack(): void; onWatch(): void }) {
+function SiteDetail({ site, tallies, truck, sourceName, onBack, onWatch }: { site: OpenSite; tallies: Tallies; truck: TruckLike; sourceName: string; onBack(): void; onWatch(): void }) {
   const heading = useRef<HTMLHeadingElement>(null);
   const [copied, setCopied] = useState(false);
   const [trial, setTrial] = useState(false);
@@ -629,11 +638,11 @@ function SiteDetail({ site, tallies, truck, sourceName, onBack, onWatch }: { sit
         <div>
           <small>A 45-minute driver's break here adds about</small>
           <b>{brk.kwh} kWh <span>≈ {brk.miles} miles</span></b>
-          <em>For a loaded {TRUCKS[truck].label.toLowerCase()}, as an estimate. Charging slows as the battery fills.</em>
+          <em>{typeof truck === "string" ? `For a loaded ${TRUCKS[truck].label.toLowerCase()}` : `For ${truck.label} (${truck.battery_kwh} kWh, up to ${truck.maxKw} kW)`}, as an estimate. Charging slows as the battery fills.</em>
         </div>
       </div>
 
-      <h3 className="pm-h3">{truck === "artic" ? <IconArtic size={18} /> : <IconRigid size={18} />}HGV checklist for {truckWords(truck)}</h3>
+      <h3 className="pm-h3">{isArtic(truck) ? <IconArtic size={18} /> : <IconRigid size={18} />}HGV checklist for {truckWords(truck)}</h3>
       <ul className="pm-checks">
         {checks.map((c) => <CheckRow key={c.key} c={c} />)}
       </ul>
@@ -693,8 +702,71 @@ function PlateSearch({ onFound }: { onFound(t: PlateDetails): void }) {
   );
 }
 
+/** The picked truck: what every site is matched against, with its figures to correct. */
+function TruckCard({ t, counts, onChange }: { t: PlateDetails; counts: ReturnType<typeof matchCounts> | null; onChange(t: PlateDetails): void }) {
+  const p = profileOf(t);
+  const set = (k: keyof TruckProfile, v: number | boolean) => onChange({ ...t, profile: { ...p, [k]: v } });
+  const own = (k: keyof TruckProfile) => t.profile != null && t.profile[k] !== profileOf({ ...t, profile: undefined })[k];
+  const from = (k: keyof TruckProfile) => (own(k) ? "yours" : k === "weight_kg" && t.gross_weight_kg ? "DVLA" : "typical");
+  const artic = t.kind === "artic";
+  const rows: { k: keyof TruckProfile; icon: ReactNode; label: string; value: string }[] = [
+    { k: "length_cm", icon: artic ? <IconArtic size={15} /> : <IconRigid size={15} />, label: "Length", value: `${(p.length_cm / 100).toFixed(1)} m` },
+    { k: "height_cm", icon: <IconHeight size={15} />, label: "Height", value: `${(p.height_cm / 100).toFixed(2)} m` },
+    { k: "weight_kg", icon: <IconWeight size={15} />, label: "Weight", value: `${Math.round(p.weight_kg / 100) / 10} t` },
+    { k: "battery_kwh", icon: <IconBolt size={15} />, label: "Battery", value: `${p.battery_kwh} kWh` },
+    { k: "max_kw", icon: <IconPlug size={15} />, label: "Charges at", value: `up to ${p.max_kw} kW${p.mcs ? " · MCS" : ""}` },
+  ];
+  return (
+    <section className="pm-tcard" aria-labelledby="pm-tcard-title">
+      <span className="pm-tcard-scan" aria-hidden="true" />
+      <h2 id="pm-tcard-title"><small>Sites matched to</small><span className="pm-plate">{t.plate}</span></h2>
+      <dl className="pm-tspec">
+        {rows.map((r) => (
+          <div key={r.k}><dt>{r.icon}{r.label}</dt><dd>{r.value}<small className={from(r.k)}>{from(r.k)}</small></dd></div>
+        ))}
+      </dl>
+      {counts && (
+        <ul className="pm-tmatch" aria-label="How the sites match this truck">
+          <li><b>{counts.plug.toLocaleString("en-GB")}</b><span>sites it can charge at</span></li>
+          <li><b>{counts.fast.toLocaleString("en-GB")}</b><span>add 100+ miles in a 45-min break</span></li>
+          <li><b>{counts.fits.toLocaleString("en-GB")}</b><span>confirmed for its size</span></li>
+        </ul>
+      )}
+      {!!counts?.tooSmall && <p className="pm-tnote">{counts.tooSmall} more ruled out: their bays are too small for it.</p>}
+      <details className="pm-tedit">
+        <summary>Correct its size or charging</summary>
+        <div className="pm-tedit-grid">
+          <Num label="Length" unit="m" value={p.length_cm / 100} step={0.1} min={4} max={25} onChange={(v) => set("length_cm", Math.round(v * 100))} />
+          <Num label="Height" unit="m" value={p.height_cm / 100} step={0.05} min={2} max={5} onChange={(v) => set("height_cm", Math.round(v * 100))} />
+          <Num label="Weight" unit="t" value={p.weight_kg / 1000} step={0.5} min={3.5} max={60} onChange={(v) => set("weight_kg", Math.round(v * 1000))} />
+          <Num label="Battery" unit="kWh" value={p.battery_kwh} step={10} min={50} max={1200} onChange={(v) => set("battery_kwh", Math.round(v))} />
+          <Num label="Top charging rate" unit="kW" value={p.max_kw} step={25} min={22} max={1500} onChange={(v) => set("max_kw", Math.round(v))} />
+          <label className="pm-tcheck"><input type="checkbox" checked={p.mcs} onChange={(e) => set("mcs", e.target.checked)} />Takes megawatt (MCS) charging</label>
+        </div>
+        <p className="pm-tnote">DVLA gives the weight. It doesn't hold size or charging, so those start as typical for {artic ? "an electric artic" : "an electric rigid"} until you change them.</p>
+      </details>
+    </section>
+  );
+}
+
+/** A number field that lets people type freely and only takes a value in range. */
+function Num({ label, unit, value, step, min, max, onChange }: { label: string; unit: string; value: number; step: number; min: number; max: number; onChange(v: number): void }) {
+  const [text, setText] = useState(String(Math.round(value * 100) / 100));
+  useEffect(() => { setText(String(Math.round(value * 100) / 100)); }, [value]);
+  const commit = (v: string) => { const n = Number(v); if (v.trim() && Number.isFinite(n) && n >= min && n <= max) onChange(n); };
+  return (
+    <label className="pm-num">
+      <span>{label}</span>
+      <span className="pm-num-box">
+        <input type="number" inputMode="decimal" value={text} step={step} min={min} max={max} onChange={(e) => { setText(e.target.value); commit(e.target.value); }} onBlur={() => setText(String(Math.round(value * 100) / 100))} />
+        <em>{unit}</em>
+      </span>
+    </label>
+  );
+}
+
 /** A trial booking: pick a time, "reserve" a bay, and see how the day would go. Nothing is booked. */
-function TrialBooking({ site, truck, onClose }: { site: OpenSite; truck: Truck; onClose(): void }) {
+function TrialBooking({ site, truck, onClose }: { site: OpenSite; truck: TruckLike; onClose(): void }) {
   const [tomorrow, setTomorrow] = useState(() => new Date().getHours() >= 22);
   const times = useMemo(() => arrivalTimes(new Date(), tomorrow), [tomorrow]);
   const [at, setAt] = useState(() => (new Date().getHours() < 17 && !tomorrow ? "17:30" : times[0] ?? "06:00"));
@@ -713,7 +785,7 @@ function TrialBooking({ site, truck, onClose }: { site: OpenSite; truck: Truck; 
     { icon: <IconBay size={18} />, title: "Bay held for your truck", text: `Bay ${bay} is kept for you from ${at}. Running late? The app offers the next free slot.` },
     { icon: <IconCheck size={18} />, title: "The gate opens on the number plate", text: "A camera reads the plate. No code, no card, no call." },
     { icon: <IconPlug size={18} />, title: "Plug in. Charging starts by itself", text: "The charger recognises the truck (Plug & Charge). The driver just plugs in." },
-    { icon: <IconBolt size={18} />, title: `About ${gain.kwh} kWh in ${mins} minutes`, text: `Roughly ${gain.miles} miles for a loaded ${TRUCKS[truck].label.toLowerCase()}. Back on the road at ${addMinutes(at, mins)}.` },
+    { icon: <IconBolt size={18} />, title: `About ${gain.kwh} kWh in ${mins} minutes`, text: `Roughly ${gain.miles} miles for ${typeof truck === "string" ? `a loaded ${TRUCKS[truck].label.toLowerCase()}` : truck.label}. Back on the road at ${addMinutes(at, mins)}.` },
     { icon: <IconFleet size={18} />, title: "One invoice to the fleet", text: "No driver payments or expense claims. Every charge on one statement." },
   ];
   if (!booked) {
@@ -834,7 +906,7 @@ const FACILITY_ICON: Record<string, () => ReactNode> = {
 };
 
 const CHECK_ICON: Record<string, () => ReactNode> = {
-  hours: () => <IconClock size={18} />, bay: () => <IconBay size={18} />, drive: () => <IconDriveThrough size={18} />, mcs: () => <IconMegawatt size={18} />, fleets: () => <IconFleet size={18} />,
+  charge: () => <IconBolt size={18} />, hours: () => <IconClock size={18} />, bay: () => <IconBay size={18} />, drive: () => <IconDriveThrough size={18} />, mcs: () => <IconMegawatt size={18} />, fleets: () => <IconFleet size={18} />,
 };
 
 function CheckRow({ c }: { c: Check }) {

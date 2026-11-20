@@ -400,11 +400,20 @@ test("public map: a number plate finds the truck, saves it in the browser, and s
   assert.deepEqual(asked, { plate: "BK74 RGD" });
   // Saved as one of "Your trucks", and the map now plans for a rigid.
   await page.getByRole("list", { name: "Your trucks" }).getByText("BK74 RGD").waitFor();
-  assert.equal(await page.getByRole("radio", { name: /Rigid/ }).getAttribute("aria-checked"), "true");
+  // The map is matched to this truck, not a kind: its card shows what it's matched on, from DVLA or typical.
+  const card = page.getByRole("region", { name: /Sites matched to BK74 RGD/ });
+  await card.getByText("26 t").waitFor();
+  assert.equal(await page.getByRole("radio", { name: /Rigid/ }).getAttribute("aria-checked"), "false");
+  await page.getByRole("button", { name: "Fits BK74 RGD" }).waitFor();
+  // Correcting its height is kept with the truck.
+  await card.getByText("Correct its size or charging").click();
+  await card.getByLabel("Height").fill("4.2");
+  await card.getByText("4.20 m").waitFor();
   await axe(page, "public map (plate found)");
   // Still there after a reload.
   await page.reload();
   await page.getByRole("list", { name: "Your trucks" }).getByText("BK74 RGD").waitFor({ timeout: 15_000 });
+  await page.getByRole("region", { name: /Sites matched to BK74 RGD/ }).getByText("4.20 m").waitFor();
   await page.getByRole("button", { name: "Remove BK74 RGD" }).click();
   await page.getByRole("list", { name: "Your trucks" }).waitFor({ state: "detached" });
   assert.deepEqual(problems.filter((p) => !/404/.test(p)), []);

@@ -2,6 +2,7 @@
 // filter keeps, how the list is ordered, what search finds, and how a site's truck access reads.
 import type { OpenSite } from "../../shared/opendata/sites";
 import { TRUCK_LABEL, reportedFit, tallyText, type SiteTally, type TruckClass } from "../../shared/opendata/reports";
+import { profileOf, type PlateDetails } from "../../shared/plates";
 
 /** The truck the visitor is planning for: an artic or a rigid (see TRUCKS). */
 export type Truck = TruckClass;
@@ -11,10 +12,75 @@ export type Truck = TruckClass;
  * use is for a loaded truck on main roads; top charging rates are what today's electric trucks take
  * on CCS (MCS trucks take more, but few sites have it yet).
  */
-export const TRUCKS: Record<Truck, { label: string; length_cm: number; height_cm: number; weight_kg: number; kwhPerKm: number; maxKw: number }> = {
-  artic: { label: "Artic", length_cm: 1650, height_cm: 400, weight_kg: 44000, kwhPerKm: 1.25, maxKw: 375 },
-  rigid: { label: "Rigid", length_cm: 1000, height_cm: 380, weight_kg: 26000, kwhPerKm: 0.9, maxKw: 250 },
+export const TRUCKS: Record<Truck, { label: string; length_cm: number; height_cm: number; weight_kg: number; kwhPerKm: number; maxKw: number; battery_kwh: number }> = {
+  artic: { label: "Artic", length_cm: 1650, height_cm: 400, weight_kg: 44000, kwhPerKm: 1.25, maxKw: 375, battery_kwh: 540 },
+  rigid: { label: "Rigid", length_cm: 1000, height_cm: 380, weight_kg: 26000, kwhPerKm: 0.9, maxKw: 250, battery_kwh: 400 },
 };
+
+/**
+ * One particular truck: a kind (artic or rigid) with its own size, weight and charging, as found
+ * from its number plate and corrected by the planner. Everywhere a kind of truck is taken, so is this.
+ */
+export interface Spec {
+  class: Truck;
+  /** "Artic", or the plate: "PN74 EVH". */
+  label: string;
+  plate?: string;
+  length_cm: number;
+  height_cm: number;
+  weight_kg: number;
+  kwhPerKm: number;
+  /** The fastest the truck itself takes, kW. */
+  maxKw: number;
+  battery_kwh: number;
+  /** Takes megawatt (MCS) charging as well as CCS. */
+  mcs: boolean;
+}
+export type TruckLike = Truck | Spec;
+
+/** A kind of truck as a Spec, or the Spec itself. */
+export function specOf(t: TruckLike): Spec {
+  if (typeof t !== "string") return t;
+  const k = TRUCKS[t];
+  return { class: t, label: k.label, length_cm: k.length_cm, height_cm: k.height_cm, weight_kg: k.weight_kg, kwhPerKm: k.kwhPerKm, maxKw: k.maxKw, battery_kwh: k.battery_kwh, mcs: false };
+}
+/** A truck found by its plate, as a Spec: its own size, weight and charging. */
+export function specFromPlate(d: PlateDetails): Spec {
+  const p = profileOf(d);
+  const cls: Truck = d.kind === "artic" ? "artic" : "rigid";
+  // Energy use rises with weight: about 1.25 kWh/km at 44 t, 0.9 at 26 t.
+  const kwhPerKm = Math.round(Math.max(0.5, 0.37 + 0.02 * (p.weight_kg / 1000)) * 100) / 100;
+  return { class: cls, label: d.plate, plate: d.plate, length_cm: p.length_cm, height_cm: p.height_cm, weight_kg: p.weight_kg, kwhPerKm, maxKw: p.max_kw, battery_kwh: p.battery_kwh, mcs: p.mcs };
+}
+
+/** How the sites look for one truck: how many it can charge at, how many add 100+ miles in a 45-minute break, how many are confirmed to fit. */
+export function matchCounts(sites: OpenSite[], tallies: Tallies, t: TruckLike): { plug: number; fast: number; fits: number; tooSmall: number } {
+  let plug = 0, fast = 0, fits = 0, small = 0;
+  for (const s of sites) {
+    if (!canPlug(s, t) || s.max_kw < 150) continue;
+    if (tooSmall(s, t).length) { small++; continue; }
+    plug++;
+    if (breakCharge(s, t).miles >= 100) fast++;
+    if (suitsTrucks(s, tallies[s.id], t)) fits++;
+  }
+  return { plug, fast, fits, tooSmall: small };
+}
+
+/** "an artic", "a rigid", or the plate. */
+export const truckWords = (t: TruckLike) => { const s = specOf(t); return s.plate ?? TRUCK_LABEL[s.class]; };
+
+/** The truck can plug in here: CCS (every electric truck in the UK), or MCS if it takes it. */
+export function canPlug(s: OpenSite, t: TruckLike): boolean {
+  return s.connectors.some((c) => /^ccs/i.test(c)) || (specOf(t).mcs && hasMcs(s));
+}
+/** The rate this truck charges at here: the lower of the site's and the truck's top rate, kW. */
+export const rateHere = (s: OpenSite, t: TruckLike) => (canPlug(s, t) ? Math.min(s.max_kw, specOf(t).maxKw) : 0);
+/** Minutes to take this truck's battery from 20% to 80% here (charging tapers: 85% of the top rate on average). */
+export function minutesTo80(s: OpenSite, t: TruckLike): number | null {
+  const sp = specOf(t), rate = rateHere(s, t) * 0.85;
+  if (!canPlug(s, t) || rate <= 0) return null;
+  return Math.round((sp.battery_kwh * 0.6 / rate) * 60);
+}
 
 export interface Filters {
   /** Lowest connector power to show, kW. */
@@ -37,13 +103,13 @@ export type Tier = "truck" | "ultra" | "rapid";
 export type Tallies = Record<string, SiteTally>;
 
 /** Suits this kind of truck: the operator says trucks fit (and the bay isn't too small for it), or fleets say it fits. */
-export function suitsTrucks(s: OpenSite, t?: SiteTally | null, truck: Truck = "artic"): boolean {
+export function suitsTrucks(s: OpenSite, t?: SiteTally | null, truck: TruckLike = "artic"): boolean {
   if (tooSmall(s, truck).length) return false;
-  return s.hgv === "trucks" || reportedFit(t, truck) === "fits";
+  return s.hgv === "trucks" || reportedFit(t, specOf(truck).class) === "fits";
 }
 /** Where the operator publishes bay limits this truck is over: ["length", "height", "weight"]. */
-export function tooSmall(s: OpenSite, truck: Truck): ("length" | "height" | "weight")[] {
-  const t = TRUCKS[truck];
+export function tooSmall(s: OpenSite, truck: TruckLike): ("length" | "height" | "weight")[] {
+  const t = specOf(truck);
   const out: ("length" | "height" | "weight")[] = [];
   if (s.max_length_cm && s.max_length_cm < t.length_cm) out.push("length");
   if (s.max_height_cm && s.max_height_cm < t.height_cm) out.push("height");
@@ -52,13 +118,14 @@ export function tooSmall(s: OpenSite, truck: Truck): ("length" | "height" | "wei
 }
 export const hasMcs = (s: OpenSite) => s.connectors.some((c) => /mcs/i.test(c));
 
-export function tier(s: OpenSite, t?: SiteTally | null, truck: Truck = "artic"): Tier {
+export function tier(s: OpenSite, t?: SiteTally | null, truck: TruckLike = "artic"): Tier {
   if (suitsTrucks(s, t, truck)) return "truck";
   return s.max_kw >= 350 ? "ultra" : "rapid";
 }
 
-export function keep(s: OpenSite, f: Filters, t?: SiteTally | null, truck: Truck = "artic"): boolean {
+export function keep(s: OpenSite, f: Filters, t?: SiteTally | null, truck: TruckLike = "artic"): boolean {
   if (s.max_kw < f.minKw) return false;
+  if (!canPlug(s, truck)) return false;
   if (f.mcs && !hasMcs(s)) return false;
   if (f.trucks && !suitsTrucks(s, t, truck)) return false;
   if (f.operator && s.operator !== f.operator) return false;
@@ -69,9 +136,9 @@ export function keep(s: OpenSite, f: Filters, t?: SiteTally | null, truck: Truck
 export const isFiltered = (f: Filters) => f.minKw !== 150 || f.mcs || f.trucks || f.operator !== "" || f.open247;
 
 /** Truck sites first, then the most powerful, then by name. */
-export function order(a: OpenSite, b: OpenSite, tallies: Tallies, truck: Truck = "artic"): number {
+export function order(a: OpenSite, b: OpenSite, tallies: Tallies, truck: TruckLike = "artic"): number {
   const ta = suitsTrucks(a, tallies[a.id], truck) ? 1 : 0, tb = suitsTrucks(b, tallies[b.id], truck) ? 1 : 0;
-  return tb - ta || b.max_kw - a.max_kw || a.name.localeCompare(b.name);
+  return tb - ta || rateHere(b, truck) - rateHere(a, truck) || b.max_kw - a.max_kw || a.name.localeCompare(b.name);
 }
 
 /** Operators with how many sites each, most first. */
@@ -115,12 +182,13 @@ export interface Access {
 }
 
 /** Whether this truck can use the site, from the operator's data and fleets' reports. */
-export function access(s: OpenSite, t?: SiteTally | null, truck: Truck = "artic"): Access {
-  const what = TRUCK_LABEL[truck];
-  const fleets = tallyText(t, truck);
-  const said = reportedFit(t, truck);
+export function access(s: OpenSite, t?: SiteTally | null, truck: TruckLike = "artic"): Access {
+  const sp = specOf(truck);
+  const what = truckWords(truck);
+  const fleets = tallyText(t, sp.class);
+  const said = reportedFit(t, sp.class);
   const over = tooSmall(s, truck);
-  if (over.length) return { tone: "bad", title: `Too small for ${what}`, detail: `The operator's bay limits are under a typical ${TRUCKS[truck].label.toLowerCase()}'s ${over.join(" and ")}.` };
+  if (over.length) return { tone: "bad", title: `Too small for ${what}`, detail: sp.plate ? `The operator's bay limits are under ${sp.plate}'s ${over.join(" and ")}.` : `The operator's bay limits are under a typical ${sp.label.toLowerCase()}'s ${over.join(" and ")}.` };
   if (s.hgv === "trucks") return { tone: "ok", title: "Built for trucks", detail: [s.hgv_why, fleets].filter(Boolean).join(". ") };
   if (said === "fits") return { tone: "ok", title: fleets!, detail: "The operator doesn't publish bay sizes, but fleets who've been say it fits." };
   if (said === "no_room") return { tone: "bad", title: fleets!, detail: `The operator doesn't publish bay sizes. Check before sending ${what}.` };
@@ -131,13 +199,20 @@ export function access(s: OpenSite, t?: SiteTally | null, truck: Truck = "artic"
 export type Check = { key: string; state: "ok" | "bad" | "unknown"; label: string; text: string };
 
 /** The HGV checklist on a site: bay, drive-through, megawatt charging, fleets' reports. */
-export function checklist(s: OpenSite, t: SiteTally | null | undefined, truck: Truck): Check[] {
-  const spec = TRUCKS[truck];
+export function checklist(s: OpenSite, t: SiteTally | null | undefined, truck: TruckLike): Check[] {
+  const spec = specOf(truck);
   const over = tooSmall(s, truck);
   const limits = bayLimits(s);
-  const fleets = tallyText(t, truck);
-  const said = reportedFit(t, truck);
+  const fleets = tallyText(t, spec.class);
+  const said = reportedFit(t, spec.class);
+  const mins = minutesTo80(s, truck);
+  const rate = Math.round(rateHere(s, truck));
   return [
+    {
+      key: "charge", label: "Charging",
+      state: mins == null ? "bad" : "ok",
+      text: mins == null ? "No connector this truck takes" : `${rate} kW for this truck: 20–80% of ${spec.battery_kwh} kWh in about ${mins} min`,
+    },
     {
       key: "bay", label: "Bay size",
       state: over.length ? "bad" : limits || s.hgv === "trucks" ? "ok" : "unknown",
@@ -155,10 +230,10 @@ export function checklist(s: OpenSite, t: SiteTally | null | undefined, truck: T
 }
 
 /** What a driver's 45-minute break here adds, roughly: kWh and miles for this truck. */
-export function breakCharge(s: OpenSite, truck: Truck): { kwh: number; miles: number } {
-  const spec = TRUCKS[truck];
+export function breakCharge(s: OpenSite, truck: TruckLike): { kwh: number; miles: number } {
+  const spec = specOf(truck);
   // Charging slows as the battery fills: 85% of the lower of the site's and the truck's top rate.
-  const kwh = Math.round(Math.min(s.max_kw, spec.maxKw) * 0.75 * 0.85);
+  const kwh = Math.round(Math.min(rateHere(s, truck) * 0.75 * 0.85, spec.battery_kwh * 0.8));
   return { kwh, miles: Math.round((kwh / spec.kwhPerKm) * 0.6214) };
 }
 
@@ -189,9 +264,9 @@ export const FACILITY_LABEL: Record<string, string> = {
 };
 
 /** What a charge of this long adds, roughly, for this truck (as breakCharge, for any length). */
-export function chargeFor(s: OpenSite, truck: Truck, minutes: number): { kwh: number; miles: number } {
-  const spec = TRUCKS[truck];
-  const kwh = Math.round(Math.min(s.max_kw, spec.maxKw) * (minutes / 60) * 0.85);
+export function chargeFor(s: OpenSite, truck: TruckLike, minutes: number): { kwh: number; miles: number } {
+  const spec = specOf(truck);
+  const kwh = Math.round(Math.min(rateHere(s, truck) * (minutes / 60) * 0.85, spec.battery_kwh * 0.8));
   return { kwh, miles: Math.round((kwh / spec.kwhPerKm) * 0.6214) };
 }
 
