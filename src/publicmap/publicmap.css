@@ -120,6 +120,9 @@ body { overflow: hidden; background: #030812; }
 
 /* ---- list */
 .pm-body { flex: 1 0 auto; }
+/* The panel scrolls as one: nothing in it shrinks to fit. (On phones the filter row scrolls sideways, and a
+   flex item that scrolls may otherwise shrink to nothing, leaving the filters under the truck controls.) */
+.pm-panel > * { flex-shrink: 0; }
 .pm-count { margin: 0; padding: 14px 18px 8px; font-size: var(--fs-sm); color: var(--muted); font-weight: 600; }
 .pm-list { list-style: none; margin: 0; padding: 0 8px 8px; }
 .pm-list li { animation: pm-rise 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
