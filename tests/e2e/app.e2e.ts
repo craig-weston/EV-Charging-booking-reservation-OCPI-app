@@ -371,6 +371,13 @@ test("public map: keyboard reaches search, the truck switch and a site; a phone 
   await phone.getByRole("button", { name: "Show the list" }).click({ timeout: 15_000 });
   await phone.locator(".pm-item").first().waitFor();
   await axe(phone, "public map (phone)");
+  // The controls stack in order: nothing hides under the truck switch (the filters once did).
+  const gap = await phone.evaluate(() => {
+    const truck = document.querySelector(".pm-truck")!.getBoundingClientRect();
+    const filters = document.querySelector(".pm-filters")!.getBoundingClientRect();
+    return Math.round(filters.top - truck.bottom);
+  });
+  assert.ok(gap >= 0, `the filters sit below the truck switch, not under it (${gap}px)`);
   const scroll = await phone.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert.ok(scroll <= 0, `no horizontal scrolling (${scroll}px)`);
   assert.deepEqual(problems, []);
