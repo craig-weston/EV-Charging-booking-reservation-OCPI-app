@@ -40,9 +40,9 @@ test("asks the AI binding first, and falls back to the rules", async () => {
   assert.equal(calls, 2);
   // A retired model: on to the next one; and the OpenAI-style answer shape.
   const seen: string[] = [];
-  const retiring = { run: async (m: string) => { seen.push(m); if (m.includes("glm")) throw new Error("5028: model was deprecated"); return { choices: [{ message: { content: '{"from":"Hull","to":"York"}' } }] }; } };
+  const retiring = { run: async (m: string) => { seen.push(m); if (m.includes("llama")) throw new Error("5028: model was deprecated"); return { choices: [{ message: { content: '{"from":"Hull","to":"York"}' } }] }; } };
   assert.deepEqual(await askTrip("hull to york", { AI: retiring }), { ask: { from: "Hull", to: "York" }, by: "ai" });
-  assert.deepEqual(seen, ["@cf/zai-org/glm-4.7-flash", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"]);
+  assert.deepEqual(seen, ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/zai-org/glm-4.7-flash"]);
   const res = await handleTripAsk(new Request("https://x/api/public/trip-ask", { method: "POST", body: JSON.stringify({ text: "nowhere really" }) }), {});
   assert.equal(res.status, 422);
 });

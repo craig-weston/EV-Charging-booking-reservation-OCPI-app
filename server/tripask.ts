@@ -9,7 +9,7 @@ export interface AiBinding { run(model: string, input: Record<string, unknown>):
 export interface TripAskEnv { AI?: AiBinding; TRIP_AI_MODEL?: string }
 
 /** Tried in order: models get retired (llama-3.1-8b-instruct was, in May 2026), so there's a spare. */
-export const TRIP_MODELS = ["@cf/zai-org/glm-4.7-flash", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"];
+export const TRIP_MODELS = ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/zai-org/glm-4.7-flash"];
 const MAX_TEXT = 300;
 
 const SCHEMA = {
