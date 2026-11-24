@@ -482,7 +482,7 @@ function addLayers(m: MapLike) {
   m.addLayer({ id: "trip-glow", type: "line", source: "trip", filter: ["==", ["get", "kind"], "line"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": COLORS.truck, "line-width": 10, "line-opacity": 0.25, "line-blur": 6 } });
   m.addLayer({ id: "trip-line", type: "line", source: "trip", filter: ["==", ["get", "kind"], "line"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": COLORS.truck, "line-width": 3, "line-dasharray": [2, 1.5] } });
   m.addLayer({ id: "trip-dots", type: "circle", source: "trip", filter: ["!=", ["get", "kind"], "line"], paint: { "circle-color": "#06101f", "circle-radius": 13, "circle-stroke-color": ["case", ["==", ["get", "kind"], "stop"], COLORS.truck, "#ffffff"], "circle-stroke-width": 2.5 } });
-  m.addLayer({ id: "trip-labels", type: "symbol", source: "trip", filter: ["!=", ["get", "kind"], "line"], layout: { "text-field": ["get", "label"], "text-font": f, "text-size": 13, "text-allow-overlap": true, "text-ignore-placement": true }, paint: { "text-color": "#ffffff" } });
+  m.addLayer({ id: "trip-labels", type: "symbol", source: "trip", filter: ["!=", ["get", "kind"], "line"], layout: { "text-field": ["get", "label"], "text-font": f.bold, "text-size": 13, "text-allow-overlap": true, "text-ignore-placement": true }, paint: { "text-color": "#ffffff" } });
   m.addLayer({ id: "me-halo", type: "circle", source: "me", paint: { "circle-color": "#9b8cff", "circle-opacity": 0.22, "circle-radius": 20, "circle-blur": 0.6 } });
   m.addLayer({ id: "me-dot", type: "circle", source: "me", paint: { "circle-color": "#9b8cff", "circle-radius": 7, "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.5 } });
 }
