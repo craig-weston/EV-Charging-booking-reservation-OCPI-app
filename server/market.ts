@@ -18,8 +18,9 @@ import { carbonFor } from "./energy";
 import { RouteUnavailable, truckRoute } from "./routing";
 import { siteTallies } from "./sitereports";
 import { handlePlate } from "./plates";
+import { handleTripAsk, type TripAskEnv } from "./tripask";
 
-export type MarketDeps = Pick<Ctx, "mode" | "now" | "transport"> & { marketUrl?: string; sitesUrl?: string; env?: { ORS_API_KEY?: string; DVLA_API_KEY?: string }; store?: Ctx["store"] };
+export type MarketDeps = Pick<Ctx, "mode" | "now" | "transport"> & { marketUrl?: string; sitesUrl?: string; env?: { ORS_API_KEY?: string; DVLA_API_KEY?: string } & TripAskEnv; store?: Ctx["store"] };
 
 /** The daily open-data snapshot (.github/workflows/opendata.yml); OPEN_SITES_URL overrides it. */
 export const OPEN_SITES_URL = "https://github.com/craig-weston/EV-Charging-booking-reservation-OCPI-app/releases/download/opendata/sites.json";
@@ -140,6 +141,8 @@ async function openSites(d: MarketDeps): Promise<Response> {
 export async function handlePublicMarket(req: Request, d: MarketDeps): Promise<Response> {
   // Number-plate lookup (server/plates.ts) is a POST, so plates stay out of URLs.
   if (/^\/api\/public\/plate\/?$/.test(new URL(req.url).pathname)) return handlePlate(req, d);
+  // A trip typed in plain English (server/tripask.ts), also a POST.
+  if (/^\/api\/public\/trip-ask\/?$/.test(new URL(req.url).pathname)) return handleTripAsk(req, (d.env ?? {}) as TripAskEnv);
   if (req.method !== "GET") return json({ message: "Use GET" }, 405);
   const url = new URL(req.url);
   const what = url.pathname.replace(/^\/api\/public\/?/, "").replace(/\/+$/, "");

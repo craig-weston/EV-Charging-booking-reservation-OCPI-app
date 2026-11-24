@@ -1,7 +1,7 @@
 // The public charging map (/map): every public charging site from operators' open data on a street
 // map, with search, filters, a list of what's in view and each site's details. "Book a slot" opens
 // the app, which asks people to sign in first. No account is needed to look.
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { cleanOpenSites, type OpenSite, type OpenSitesFile } from "../../shared/opendata/sites";
 import { CITIES } from "../map/ukmap";
 import { applyBrand } from "../app/brand";
@@ -14,6 +14,7 @@ import {
 import { forgetTruck, lookupPlate, saveTruck, savedTrucks, type PlateDetails } from "../app/plates";
 import { isUkPlate, plateSummary, profileOf, type TruckProfile } from "../../shared/plates";
 import { normalizePlate } from "../../shared/util";
+import { departAt, parseTripText, planTrip, resolvePlace, type TripAsk, type TripPlan, type TripRequest } from "./trip";
 import {
   BOLT, IconArtic, IconBack, IconBay, IconBolt, IconCheck, IconClock, IconCross, IconDriveThrough, IconFleet, IconHeight, IconWeight, IconLocate, IconMegawatt, IconPin, IconPlug, IconQuestion, IconRigid, IconRoute, IconSearch, IconShare,
   IconBasket, IconBed, IconCup, IconFood, IconFuel, IconParking, IconPlay, IconWifi,
@@ -229,6 +230,21 @@ export function PublicMap() {
     map.current?.flyTo({ center: [s.place.lon, s.place.lat], zoom: 9.5, duration: reducedMotion() ? 0 : 900, essential: true });
     if (isNarrow()) setSheetOpen(true);
   };
+  // A planned trip: the line and its numbered charging stops on the map, framed to fit.
+  const showTrip = useCallback((plan: TripPlan | null, req: TripRequest | null) => {
+    const m = mapState === "ready" ? map.current : null;
+    if (!m) return;
+    if (!plan || !req) { m.getSource("trip")?.setData(EMPTY); return; }
+    const pts: LngLat[] = [[req.from.lon, req.from.lat], ...plan.stops.map((st) => [st.site.lon, st.site.lat] as LngLat), [req.to.lon, req.to.lat]];
+    m.getSource("trip")?.setData({ type: "FeatureCollection", features: [
+      { type: "Feature", properties: { kind: "line" }, geometry: { type: "LineString", coordinates: pts } },
+      { type: "Feature", properties: { kind: "end", label: "A" }, geometry: { type: "Point", coordinates: pts[0] } },
+      ...plan.stops.map((st, i) => ({ type: "Feature", properties: { kind: "stop", label: String(i + 1) }, geometry: { type: "Point", coordinates: [st.site.lon, st.site.lat] } })),
+      { type: "Feature", properties: { kind: "end", label: "B" }, geometry: { type: "Point", coordinates: pts[pts.length - 1] } },
+    ] });
+    const lons = pts.map((q) => q[0]), lats = pts.map((q) => q[1]);
+    m.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: 60, duration: reducedMotion() ? 0 : 900, maxZoom: 9 });
+  }, [mapState]);
   const nearMe = () => {
     if (!navigator.geolocation) { setLocating("denied"); return; }
     setLocating("busy");
@@ -294,6 +310,8 @@ export function PublicMap() {
             </button>
           ))}
         </div>
+
+        <TripPlanner sites={all} tallies={tallies} truck={active} onPlan={showTrip} onPick={(id) => { flyNext.current = true; select(id); }} />
 
         <div className="pm-filters" role="group" aria-label="Filters">
           <div className="pm-seg" role="radiogroup" aria-label="Power">
@@ -414,6 +432,7 @@ function addLayers(m: MapLike) {
   });
   m.addSource("selected", { type: "geojson", data: EMPTY });
   m.addSource("me", { type: "geojson", data: EMPTY });
+  m.addSource("trip", { type: "geojson", data: EMPTY });
   const clusterR = ["step", ["get", "point_count"], 15, 10, 18, 40, 22, 120, 27];
   const hasTrucks = [">", ["get", "trucks"], 0];
   // Clusters: a dark core in a neon ring, with a soft glow that breathes (see pulse()).
@@ -459,6 +478,11 @@ function addLayers(m: MapLike) {
   m.addLayer({ id: "selected-pulse", type: "circle", source: "selected", paint: { "circle-color": "rgba(0,0,0,0)", "circle-radius": 12, "circle-stroke-color": TIER_COLOR, "circle-stroke-width": 2, "circle-stroke-opacity": 0.8 } });
   m.addLayer({ id: "selected-glow", type: "circle", source: "selected", paint: { "circle-color": TIER_COLOR, "circle-radius": 22, "circle-blur": 1, "circle-opacity": 0.6 } });
   m.addLayer({ id: "selected-dot", type: "symbol", source: "selected", layout: { "icon-image": TIER_PIN, "icon-size": 1.3, "icon-allow-overlap": true, "icon-ignore-placement": true } });
+  // A planned trip: a glowing line, then numbered stops (A and B at the ends).
+  m.addLayer({ id: "trip-glow", type: "line", source: "trip", filter: ["==", ["get", "kind"], "line"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": COLORS.truck, "line-width": 10, "line-opacity": 0.25, "line-blur": 6 } });
+  m.addLayer({ id: "trip-line", type: "line", source: "trip", filter: ["==", ["get", "kind"], "line"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": COLORS.truck, "line-width": 3, "line-dasharray": [2, 1.5] } });
+  m.addLayer({ id: "trip-dots", type: "circle", source: "trip", filter: ["!=", ["get", "kind"], "line"], paint: { "circle-color": "#06101f", "circle-radius": 13, "circle-stroke-color": ["case", ["==", ["get", "kind"], "stop"], COLORS.truck, "#ffffff"], "circle-stroke-width": 2.5 } });
+  m.addLayer({ id: "trip-labels", type: "symbol", source: "trip", filter: ["!=", ["get", "kind"], "line"], layout: { "text-field": ["get", "label"], "text-font": f, "text-size": 13, "text-allow-overlap": true, "text-ignore-placement": true }, paint: { "text-color": "#ffffff" } });
   m.addLayer({ id: "me-halo", type: "circle", source: "me", paint: { "circle-color": "#9b8cff", "circle-opacity": 0.22, "circle-radius": 20, "circle-blur": 0.6 } });
   m.addLayer({ id: "me-dot", type: "circle", source: "me", paint: { "circle-color": "#9b8cff", "circle-radius": 7, "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.5 } });
 }
@@ -768,6 +792,75 @@ function CountUp({ n }: { n: number }) {
     return () => cancelAnimationFrame(raf);
   }, [n]);
   return <>{shown.toLocaleString("en-GB")}</>;
+}
+
+/** Plan a trip in plain English: where to charge and when, for this truck, timed with drivers' breaks. */
+function TripPlanner({ sites, tallies, truck, onPlan, onPick }: { sites: OpenSite[]; tallies: Tallies; truck: TruckLike; onPlan(p: TripPlan | null, r: TripRequest | null): void; onPick(id: string): void }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [ask, setAsk] = useState<(TripAsk & { by?: string }) | null>(null);
+  const [req, setReq] = useState<TripRequest | null>(null);
+  const plan = useMemo(() => (req && sites.length ? planTrip(req, sites, tallies, truck) : null), [req, sites, tallies, truck]);
+  useEffect(() => { onPlan(plan, req); }, [plan, req]); // eslint-disable-line react-hooks/exhaustive-deps
+  const t = (d: Date) => d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const pct = (x: number) => `${Math.round(x * 100)}%`;
+  const miles = (km: number) => `${Math.round(km * 0.621)} miles`;
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (text.trim().length < 5) { setMsg("Say where from and where to, for example: Leeds to Southampton, leaving 6am with 70%."); return; }
+    setBusy(true); setMsg(null);
+    let a: (TripAsk & { by?: string }) | null = null;
+    try {
+      const r = await fetch("/api/public/trip-ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+      const j = await r.json().catch(() => null);
+      if (r.ok && j?.data) a = j.data;
+      else if (r.status === 422 || r.status === 400) { setMsg(j?.error?.message ?? "I couldn't tell where from and where to."); setBusy(false); return; }
+    } catch { /* offline: understand it here instead */ }
+    a ??= parseTripText(text);
+    setBusy(false);
+    if (!a) { setMsg("I couldn't tell where from and where to. Try: Leeds to Southampton, leaving 6am with 70%."); return; }
+    const from = resolvePlace(a.from, CITIES, sites), to = resolvePlace(a.to, CITIES, sites);
+    if (!from || !to) { setMsg(`I couldn't find ${!from ? a.from : a.to} on the map. Try a nearby town or city.`); return; }
+    setAsk(a);
+    setReq({ from, to, depart: departAt(a.depart), socPct: a.battery_pct ?? 80 });
+  };
+  const clear = () => { setReq(null); setAsk(null); setMsg(null); };
+
+  return (
+    <section className="pm-trip" aria-labelledby="pm-trip-title">
+      <h2 id="pm-trip-title" className="pm-trip-title"><IconRoute size={16} />Plan where and when to charge</h2>
+      <form className="pm-trip-form" onSubmit={submit}>
+        <label className="sr-only" htmlFor="pm-trip-input">Your trip, in your own words</label>
+        <input id="pm-trip-input" className="pm-trip-input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Leeds to Southampton, leaving 6am, 70%" autoComplete="off" maxLength={300} />
+        <button type="submit" className="pm-btn primary" disabled={busy}>{busy ? "Planning…" : "Plan"}</button>
+      </form>
+      <p className="pm-trip-hint">Type it as you'd say it. AI reads your trip; the plan uses {typeof truck === "string" ? `a typical ${TRUCKS[truck].label.toLowerCase()}` : truck.label}'s battery, charging and size, and times each stop with the driver's 45-minute break.</p>
+      {msg && <p className="pm-trip-msg" role="alert">{msg}</p>}
+      {plan && req && ask && (
+        <div className="pm-trip-plan" role="status">
+          <p className="pm-trip-sum"><b>{req.from.name} → {req.to.name}</b><span>Leaves {t(req.depart)} with {Math.round(req.socPct)}% · about {miles(plan.km || 0)}{ask.by === "ai" ? " · understood by AI" : ""}</span></p>
+          {!plan.ok && <p className="pm-trip-msg">{plan.problem}</p>}
+          <ol className="pm-trip-stops">
+            {plan.stops.map((st, i) => (
+              <li key={st.site.id}>
+                <button type="button" onClick={() => onPick(st.site.id)}>
+                  <span className="pm-trip-n">{i + 1}</span>
+                  <span className="pm-trip-main"><b>{t(st.arrive)} · {st.site.name}</b><small>{[st.site.city, st.site.operator].filter(Boolean).join(" · ")} · {st.kw} kW for this truck</small>
+                    <small>Arrive {pct(st.socArrive)}, charge {st.minutes} min (driver's break) → {pct(st.socLeave)} · +{st.kwh} kWh</small></span>
+                </button>
+              </li>
+            ))}
+            {plan.ok && <li className="end"><span className="pm-trip-n">B</span><span className="pm-trip-main"><b>{t(plan.arrive)} · {req.to.name}</b><small>Arrives with {pct(plan.socArrive)}{plan.stops.length === 0 ? ", no charging needed" : ""}</small></span></li>}
+          </ol>
+          {plan.notes.map((n) => <p key={n} className="pm-trip-msg">{n}</p>)}
+          <p className="pm-trip-hint">Distances and times are estimates from straight-line distance. Check bay sizes before you go.</p>
+          <button type="button" className="pm-btn" onClick={clear}>Clear trip</button>
+        </div>
+      )}
+    </section>
+  );
 }
 
 /** A number field that lets people type freely and only takes a value in range. */

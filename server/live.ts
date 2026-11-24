@@ -128,6 +128,10 @@ export async function guard(req: Request, rl = limiter, now = Date.now(), shared
     r = rl.hit(`plate:${ip}`, LIMITS.plate.max, LIMITS.plate.windowMs, now);
     if (!r.ok) return tooMany(r.retryAfter, false);
   }
+  if (/^\/api\/public\/trip-ask\/?$/.test(url.pathname)) {
+    r = rl.hit(`tripask:${ip}`, LIMITS.tripAsk.max, LIMITS.tripAsk.windowMs, now);
+    if (!r.ok) return tooMany(r.retryAfter, false);
+  }
   const isPublic = /^\/api\/(pass|invites|public)\//.test(url.pathname);
   if (isPublic) {
     r = rl.hit(`public:${ip}`, LIMITS.publicToken.max, LIMITS.publicToken.windowMs, now);
@@ -170,9 +174,9 @@ export async function handle(pc: PagesContext): Promise<Response> {
     const blocked = await guard(pc.request, limiter, Date.now(), sharedLimits(pc.env));
     if (blocked) return withSecurityHeaders(blocked);
     // Number-plate lookups: never cached at the edge (every plate has the same URL).
-    if (/^\/api\/public\/plate\/?$/.test(publicPath)) {
-      const e = pc.env as { DVLA_API_KEY?: string };
-      return withSecurityHeaders(await handlePublicMarket(pc.request, { mode: "live", now: () => new Date(), transport: (r) => fetch(r), env: { DVLA_API_KEY: e.DVLA_API_KEY } }));
+    if (/^\/api\/public\/(plate|trip-ask)\/?$/.test(publicPath)) {
+      const e = pc.env as { DVLA_API_KEY?: string; AI?: import("./tripask").AiBinding; TRIP_AI_MODEL?: string };
+      return withSecurityHeaders(await handlePublicMarket(pc.request, { mode: "live", now: () => new Date(), transport: (r) => fetch(r), env: { DVLA_API_KEY: e.DVLA_API_KEY, AI: e.AI, TRIP_AI_MODEL: e.TRIP_AI_MODEL } }));
     }
     const edge = (globalThis as unknown as { caches?: { default?: { match(r: Request): Promise<Response | undefined>; put(r: Request, res: Response): Promise<void> } } }).caches?.default;
     const key = new Request(pc.request.url, { method: "GET" });

@@ -385,6 +385,24 @@ test("public map: keyboard reaches search, the truck switch and a site; a phone 
   await ctx.close();
 });
 
+test("public map: a trip typed in plain English gets a charging plan", async () => {
+  const ctx = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1280, height: 800 } });
+  const { page, problems } = await openMap(ctx);
+  // The AI answer, as the server would give it.
+  await page.route("**/api/public/trip-ask", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ data: { from: "Leeds", to: "Southampton", depart: "06:00", battery_pct: 70, by: "ai" } }) }));
+  await page.getByRole("button", { name: "Explore the map" }).click({ timeout: 15_000 });
+  await page.getByLabel("Your trip, in your own words").fill("leeds down to soton for 6, 70 percent");
+  await page.getByRole("button", { name: "Plan", exact: true }).click();
+  const plan = page.getByRole("region", { name: "Plan where and when to charge" });
+  await plan.getByText("Leeds → Southampton").waitFor({ timeout: 15_000 });
+  await plan.getByText(/Leaves 06:00 with 70%.*understood by AI/).waitFor();
+  await axe(page, "public map (trip planned)");
+  await plan.getByRole("button", { name: "Clear trip" }).click();
+  assert.equal(await plan.getByText("Leeds → Southampton").count(), 0);
+  assert.deepEqual(problems, []);
+  await ctx.close();
+});
+
 test("public map: a number plate finds the truck, saves it in the browser, and sets up the map", async () => {
   const ctx = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1280, height: 800 } });
   const { page, problems } = await openMap(ctx);
