@@ -15,6 +15,8 @@ test("understands a trip typed in plain English", () => {
   assert.deepEqual(parseTripText("Leeds to Southampton, leaving 6am with 70%"), { from: "Leeds", to: "Southampton", depart: "06:00", battery_pct: 70 });
   assert.deepEqual(parseTripText("from Manchester to Bristol 40%"), { from: "Manchester", to: "Bristol", battery_pct: 40 });
   assert.deepEqual(parseTripText("Glasgow to London at 17:30"), { from: "Glasgow", to: "London", depart: "17:30" });
+  assert.deepEqual(parseTripText("need to get from leeds down to southampton, setting off half 6 in the morning, battery about 70 percent"), { from: "leeds", to: "southampton", depart: "06:30", battery_pct: 70 });
+  assert.deepEqual(parseTripText("I'm heading Felixstowe to Birmingham tomorrow"), { from: "Felixstowe", to: "Birmingham" });
   assert.equal(parseTripText("just some words"), null);
 });
 
@@ -29,7 +31,13 @@ test("asks the AI binding first, and falls back to the rules", async () => {
   const ai = { run: async () => ({ response: { from: "Leeds", to: "Southampton", depart: "06:00", battery_pct: 70 } }) };
   assert.deepEqual(await askTrip("leeds down to soton for 6, 70 percent", { AI: ai }), { ask: { from: "Leeds", to: "Southampton", depart: "06:00", battery_pct: 70 }, by: "ai" });
   const broken = { run: async () => { throw new Error("down"); } };
-  assert.deepEqual(await askTrip("Leeds to Hull 50%", { AI: broken }), { ask: { from: "Leeds", to: "Hull", battery_pct: 50 }, by: "rules" });
+  assert.deepEqual(await askTrip("Leeds to Hull 50%", { AI: broken }), { ask: { from: "Leeds", to: "Hull", battery_pct: 50 }, by: "rules", ai: "error" });
+  assert.deepEqual(await askTrip("Leeds to Hull 50%", {}), { ask: { from: "Leeds", to: "Hull", battery_pct: 50 }, by: "rules", ai: "unavailable" });
+  // JSON mode refused: the plain-text retry still works.
+  let calls = 0;
+  const picky = { run: async (_m: string, input: Record<string, unknown>) => { calls++; if (input.response_format) throw new Error("JSON Mode couldn't be met"); return { response: 'Sure: {"from":"York","to":"Hull","depart":"","battery_pct":-1}' }; } };
+  assert.deepEqual(await askTrip("york over to hull", { AI: picky }), { ask: { from: "York", to: "Hull" }, by: "ai" });
+  assert.equal(calls, 2);
   const res = await handleTripAsk(new Request("https://x/api/public/trip-ask", { method: "POST", body: JSON.stringify({ text: "nowhere really" }) }), {});
   assert.equal(res.status, 422);
 });
