@@ -38,6 +38,11 @@ test("asks the AI binding first, and falls back to the rules", async () => {
   const picky = { run: async (_m: string, input: Record<string, unknown>) => { calls++; if (input.response_format) throw new Error("JSON Mode couldn't be met"); return { response: 'Sure: {"from":"York","to":"Hull","depart":"","battery_pct":-1}' }; } };
   assert.deepEqual(await askTrip("york over to hull", { AI: picky }), { ask: { from: "York", to: "Hull" }, by: "ai" });
   assert.equal(calls, 2);
+  // A retired model: on to the next one; and the OpenAI-style answer shape.
+  const seen: string[] = [];
+  const retiring = { run: async (m: string) => { seen.push(m); if (m.includes("glm")) throw new Error("5028: model was deprecated"); return { choices: [{ message: { content: '{"from":"Hull","to":"York"}' } }] }; } };
+  assert.deepEqual(await askTrip("hull to york", { AI: retiring }), { ask: { from: "Hull", to: "York" }, by: "ai" });
+  assert.deepEqual(seen, ["@cf/zai-org/glm-4.7-flash", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"]);
   const res = await handleTripAsk(new Request("https://x/api/public/trip-ask", { method: "POST", body: JSON.stringify({ text: "nowhere really" }) }), {});
   assert.equal(res.status, 422);
 });

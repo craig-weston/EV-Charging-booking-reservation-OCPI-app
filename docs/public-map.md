@@ -38,7 +38,7 @@ The visitor's browser fetches map images, styles and fonts straight from `tiles.
 
 Visitors type a trip as they'd say it: "Leeds to Southampton, leaving 6am with 70%".
 
-- **Understanding the request:** `POST /api/public/trip-ask` (server/tripask.ts) asks Cloudflare Workers AI (`AI` binding in wrangler.jsonc, free daily allocation; model `@cf/meta/llama-3.1-8b-instruct` unless `TRIP_AI_MODEL` is set) for `{from, to, depart, battery_pct}` as JSON, and checks the answer. Without the binding, or if the answer doesn't check out, a rule-based parser (shared/trip-text.ts) answers. Limited to 10 a minute per IP.
+- **Understanding the request:** `POST /api/public/trip-ask` (server/tripask.ts) asks Cloudflare Workers AI (`AI` binding in wrangler.jsonc, free daily allocation; models `@cf/zai-org/glm-4.7-flash`, then `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, after `TRIP_AI_MODEL` if set) for `{from, to, depart, battery_pct}` as JSON, and checks the answer. Without the binding, or if the answer doesn't check out, a rule-based parser (shared/trip-text.ts) answers. Limited to 10 a minute per IP.
 - **The plan** (src/publicmap/trip.ts, in the browser): sites within 20 km of the line between the two places that the truck can plug into, fit and charge at 150 kW+. Each stop goes as far along as the battery (15% reserve) and the drivers' hours (45-minute break after 4½ hours) allow, preferring faster and truck-friendly sites. Every stop is at least the 45-minute break, so the charge happens in time the driver must stop anyway. It charges for what's left of the trip, up to 80%.
 - **Estimates:** distance is straight-line × 1.3 at 75 km/h. With `ORS_API_KEY` the planner could use real lorry routes.
 

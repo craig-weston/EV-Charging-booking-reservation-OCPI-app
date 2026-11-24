@@ -28,7 +28,7 @@ export interface Env {
   DVLA_API_KEY?: string;
   /** Workers AI binding (wrangler.jsonc "ai"): understands trips typed in plain English (server/tripask.ts). */
   AI?: import("./tripask").AiBinding;
-  /** Workers AI model for that, if not the default (server/tripask.ts DEFAULT_TRIP_MODEL). */
+  /** Workers AI model for that, if not the default (server/tripask.ts TRIP_MODELS). */
   TRIP_AI_MODEL?: string;
   /** The key before a rotation: still decrypts old values until Security & compliance → Re-encrypt has run. */
   DATA_ENCRYPTION_KEY_PREVIOUS?: string;
