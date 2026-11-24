@@ -16,14 +16,15 @@ const SCHEMA = {
   properties: {
     from: { type: "string", description: "Start town, city, port or postcode in Great Britain" },
     to: { type: "string", description: "Destination town, city, port or postcode in Great Britain" },
-    depart: { type: ["string", "null"], description: "Departure time as HH:MM, 24-hour, or null" },
-    battery_pct: { type: ["number", "null"], description: "Battery level at the start, percent, or null" },
+    depart: { type: "string", description: "Departure time as HH:MM, 24-hour, or an empty string" },
+    battery_pct: { type: "number", description: "Battery level at the start, percent, or -1 if not given" },
   },
   required: ["from", "to"],
 };
 const SYSTEM = "You read requests from lorry drivers and transport planners in Great Britain and extract the trip. "
   + "Reply only with JSON matching the schema. Use place names as written, without county or postcode unless that is all they gave. "
-  + "Convert times like 6am or half five in the morning to 24-hour HH:MM. If something isn't stated, use null.";
+  + "Convert times like 6am or half five in the morning to 24-hour HH:MM. If the time isn't stated use an empty string; if the battery isn't stated use -1. "
+  + "Example: {\"from\":\"Leeds\",\"to\":\"Southampton\",\"depart\":\"06:30\",\"battery_pct\":70}";
 
 /** A model answer that is safe to use: short place names, a real time, a real percentage. */
 export function cleanAsk(v: unknown): TripAsk | null {
@@ -39,23 +40,29 @@ export function cleanAsk(v: unknown): TripAsk | null {
   return out;
 }
 
-export async function askTrip(text: string, env: TripAskEnv): Promise<{ ask: TripAsk | null; by: "ai" | "rules" }> {
+/** The model's answer as an object, whether it came back as an object or as text around some JSON. */
+function answerOf(res: unknown): unknown {
+  let r = (res as { response?: unknown } | null)?.response;
+  if (typeof r === "string") { const m = r.match(/\{[\s\S]*\}/); try { r = m ? JSON.parse(m[0]) : null; } catch { r = null; } }
+  return r;
+}
+
+export async function askTrip(text: string, env: TripAskEnv): Promise<{ ask: TripAsk | null; by: "ai" | "rules"; ai?: string }> {
   const t = text.slice(0, MAX_TEXT);
+  let ai = "unavailable";
   if (env.AI) {
-    try {
-      const res = (await env.AI.run(env.TRIP_AI_MODEL || DEFAULT_TRIP_MODEL, {
-        messages: [{ role: "system", content: SYSTEM }, { role: "user", content: t }],
-        response_format: { type: "json_schema", json_schema: SCHEMA },
-        max_tokens: 120,
-        temperature: 0,
-      })) as { response?: unknown };
-      let r = res?.response;
-      if (typeof r === "string") { const m = r.match(/\{[\s\S]*\}/); r = m ? JSON.parse(m[0]) : null; }
-      const ask = cleanAsk(r);
-      if (ask) return { ask, by: "ai" };
-    } catch { /* fall through to the rules */ }
+    const model = env.TRIP_AI_MODEL || DEFAULT_TRIP_MODEL;
+    const messages = [{ role: "system", content: SYSTEM }, { role: "user", content: t }];
+    // JSON mode first; some models or moments refuse it, so then plain text with the same instructions.
+    for (const extra of [{ response_format: { type: "json_schema", json_schema: SCHEMA } }, {}]) {
+      try {
+        const ask = cleanAsk(answerOf(await env.AI.run(model, { messages, max_tokens: 150, temperature: 0, ...extra })));
+        if (ask) return { ask, by: "ai" };
+        ai = "unclear";
+      } catch (e) { ai = "error"; console.warn("trip-ask: Workers AI failed", String(e).slice(0, 200)); }
+    }
   }
-  return { ask: parseTripText(t), by: "rules" };
+  return { ask: parseTripText(t), by: "rules", ai };
 }
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -65,7 +72,7 @@ export async function handleTripAsk(req: Request, env: TripAskEnv): Promise<Resp
   let text = "";
   try { const b = (await req.json()) as { text?: unknown }; text = typeof b.text === "string" ? b.text.trim() : ""; } catch { /* empty */ }
   if (text.length < 5) return json(400, { error: { message: "Say where from and where to, for example: Leeds to Southampton, leaving 6am with 70%.", code: "BAD_REQUEST" } });
-  const { ask, by } = await askTrip(text, env);
+  const { ask, by, ai } = await askTrip(text, env);
   if (!ask) return json(422, { error: { message: "I couldn't tell where from and where to. Try: Leeds to Southampton, leaving 6am with 70%.", code: "UNCLEAR" } });
-  return json(200, { data: { ...ask, by } });
+  return json(200, { data: { ...ask, by, ...(by === "rules" && ai ? { ai } : {}) } });
 }
