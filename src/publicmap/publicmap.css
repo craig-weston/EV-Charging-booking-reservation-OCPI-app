@@ -501,6 +501,7 @@ body { overflow: hidden; background: #030812; }
 .pm-trip-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .pm-trip-form .pm-btn { flex: none; height: 44px; }
 .pm-trip-hint { margin: 8px 0 0; font-size: var(--fs-xs); color: var(--muted); line-height: 1.45; }
+.pm-trip-credit { display: block; margin-top: 4px; font-size: 11px; opacity: 0.85; }
 .pm-trip-msg { margin: 8px 0 0; font-size: var(--fs-sm); color: var(--ink-2); }
 .pm-trip-plan { margin-top: 12px; }
 .pm-trip-sum { margin: 0; display: grid; gap: 2px; }
