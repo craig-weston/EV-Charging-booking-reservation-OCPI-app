@@ -101,7 +101,7 @@ Then **Settings → Variables and Secrets**:
 | `ORS_API_KEY` | Secret | a free OpenRouteService key | Optional: real lorry routes in the trip planner ([trip planner](trip-planner.md)). |
 | `DVLA_API_KEY` | Secret | a free DVLA Vehicle Enquiry Service key | Optional: number-plate lookup on the public map and in Add vehicle ([number plates](number-plates.md)). |
 | `AI` | Binding (wrangler.jsonc) | Workers AI, free daily allocation | Understands trips typed in plain English on the public map ([public map](public-map.md)). Without it, a rule-based parser answers. |
-| `TRIP_AI_MODEL` | Variable | a Workers AI model id | Optional: a model to try first for trip understanding, before `@cf/zai-org/glm-4.7-flash` and `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. |
+| `TRIP_AI_MODEL` | Variable | a Workers AI model id | Optional: a model to try first for trip understanding, before `@cf/meta/llama-3.3-70b-instruct-fp8-fast` and `@cf/zai-org/glm-4.7-flash`. |
 | `TWILIO_ACCOUNT_SID` | Text | `AC…` | Optional: automatic driver texts / WhatsApp (see below). |
 | `TWILIO_AUTH_TOKEN` | Secret | | Server only. |
 | `TWILIO_FROM` | Text | `+447700900000` or a sender ID | SMS sender. Set it to offer text messages. |
