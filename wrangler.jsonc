@@ -19,6 +19,9 @@
     "run_worker_first": ["/api/*", "/ocpi/*", "/sim/*"]
   },
   "keep_vars": true,
+  // Workers AI (free daily allocation): understands trips typed in plain English on the public map
+  // (server/tripask.ts). Without it, a rule-based parser answers instead.
+  "ai": { "binding": "AI" },
   // Depot smart charging: re-plan and send schedules to chargers every 15 minutes (server/depot.ts).
   "triggers": { "crons": ["*/15 * * * *"] },
   // Rate limits shared by every isolate in a Cloudflare location (Workers Rate Limiting, wrangler

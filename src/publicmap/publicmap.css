@@ -492,3 +492,29 @@ body { overflow: hidden; background: #030812; }
 .pm-panel.has-site .pm-tcard { display: none; }
 @media (max-width: 859px) { .pm-panel:not(.open) .pm-tcard { display: none; } }
 @media (prefers-reduced-motion: reduce) { .pm-tcard, .pm-tcard-scan { animation: none; } .pm-tcard-scan { display: none; } }
+
+/* Trip planner: a trip in plain English, then numbered charging stops. */
+.pm-trip { flex: none; margin: 14px 18px 0; padding: 14px; border-radius: 14px; border: 1px solid rgba(0, 212, 255, 0.35); background: linear-gradient(160deg, rgba(0, 212, 255, 0.08), var(--surface-2)); }
+.pm-trip-title { margin: 0 0 10px; display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); }
+.pm-trip-form { display: flex; gap: 8px; }
+.pm-trip-input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: rgba(3, 8, 18, 0.6); color: var(--ink); font: inherit; font-size: var(--fs-md); }
+.pm-trip-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.pm-trip-form .pm-btn { flex: none; height: 44px; }
+.pm-trip-hint { margin: 8px 0 0; font-size: var(--fs-xs); color: var(--muted); line-height: 1.45; }
+.pm-trip-msg { margin: 8px 0 0; font-size: var(--fs-sm); color: var(--ink-2); }
+.pm-trip-plan { margin-top: 12px; }
+.pm-trip-sum { margin: 0; display: grid; gap: 2px; }
+.pm-trip-sum span { font-size: var(--fs-xs); color: var(--ink-2); }
+.pm-trip-stops { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.pm-trip-stops button, .pm-trip-stops li.end { display: flex; gap: 10px; align-items: flex-start; width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: rgba(3, 8, 18, 0.55); color: var(--ink); text-align: left; font: inherit; cursor: pointer; }
+.pm-trip-stops li.end { cursor: default; }
+.pm-trip-stops button:hover { border-color: rgba(56, 255, 199, 0.6); }
+.pm-trip-stops button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.pm-trip-n { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--mint); font-weight: 800; font-size: 13px; }
+.pm-trip-stops li.end .pm-trip-n { border-color: #fff; }
+.pm-trip-main { display: grid; gap: 2px; min-width: 0; }
+.pm-trip-main b { font-size: var(--fs-sm); }
+.pm-trip-main small { font-size: var(--fs-xs); color: var(--ink-2); }
+.pm-trip-plan > .pm-btn { margin-top: 10px; }
+.pm-panel.has-site .pm-trip { display: none; }
+@media (max-width: 859px) { .pm-panel:not(.open) .pm-trip { display: none; } }
