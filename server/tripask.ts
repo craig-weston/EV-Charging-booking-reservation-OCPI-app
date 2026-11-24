@@ -8,7 +8,8 @@ import { parseTripText, type TripAsk } from "../shared/trip-text";
 export interface AiBinding { run(model: string, input: Record<string, unknown>): Promise<unknown> }
 export interface TripAskEnv { AI?: AiBinding; TRIP_AI_MODEL?: string }
 
-export const DEFAULT_TRIP_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+/** Tried in order: models get retired (llama-3.1-8b-instruct was, in May 2026), so there's a spare. */
+export const TRIP_MODELS = ["@cf/zai-org/glm-4.7-flash", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"];
 const MAX_TEXT = 300;
 
 const SCHEMA = {
@@ -42,7 +43,8 @@ export function cleanAsk(v: unknown): TripAsk | null {
 
 /** The model's answer as an object, whether it came back as an object or as text around some JSON. */
 function answerOf(res: unknown): unknown {
-  let r = (res as { response?: unknown } | null)?.response;
+  const o = res as { response?: unknown; choices?: { message?: { content?: unknown } }[]; result?: { response?: unknown } } | null;
+  let r = o?.response ?? o?.choices?.[0]?.message?.content ?? o?.result?.response;
   if (typeof r === "string") { const m = r.match(/\{[\s\S]*\}/); try { r = m ? JSON.parse(m[0]) : null; } catch { r = null; } }
   return r;
 }
@@ -51,15 +53,21 @@ export async function askTrip(text: string, env: TripAskEnv): Promise<{ ask: Tri
   const t = text.slice(0, MAX_TEXT);
   let ai = "unavailable";
   if (env.AI) {
-    const model = env.TRIP_AI_MODEL || DEFAULT_TRIP_MODEL;
     const messages = [{ role: "system", content: SYSTEM }, { role: "user", content: t }];
-    // JSON mode first; some models or moments refuse it, so then plain text with the same instructions.
-    for (const extra of [{ response_format: { type: "json_schema", json_schema: SCHEMA } }, {}]) {
-      try {
-        const ask = cleanAsk(answerOf(await env.AI.run(model, { messages, max_tokens: 150, temperature: 0, ...extra })));
-        if (ask) return { ask, by: "ai" };
-        ai = "unclear";
-      } catch (e) { ai = "error"; console.warn("trip-ask: Workers AI failed", String(e).slice(0, 200)); }
+    const models = [...new Set([env.TRIP_AI_MODEL, ...TRIP_MODELS].filter((m): m is string => !!m))];
+    for (const model of models) {
+      // JSON mode first; some models or moments refuse it, so then plain text with the same instructions.
+      for (const extra of [{ response_format: { type: "json_schema", json_schema: SCHEMA } }, {}]) {
+        try {
+          const ask = cleanAsk(answerOf(await env.AI.run(model, { messages, max_tokens: 300, temperature: 0, ...extra })));
+          if (ask) return { ask, by: "ai" };
+          ai = "unclear";
+        } catch (e) {
+          ai = "error";
+          console.warn(`trip-ask: Workers AI ${model} failed`, String(e).slice(0, 200));
+          if (/deprecat|not found|5028|5007/i.test(String(e))) break; // this model is gone: try the next
+        }
+      }
     }
   }
   return { ask: parseTripText(t), by: "rules", ai };
