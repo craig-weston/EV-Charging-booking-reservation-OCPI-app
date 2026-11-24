@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planTrip, resolvePlace, departAt, haversineKm, alongLine, ROAD_FACTOR, AVG_KMH, BREAK_MIN } from "../src/publicmap/trip";
+import { planTrip, resolvePlace, departAt, haversineKm, alongLine, alongRoute, ROAD_FACTOR, AVG_KMH, BREAK_MIN } from "../src/publicmap/trip";
 import { parseTripText } from "../shared/trip-text";
 import { askTrip, cleanAsk, handleTripAsk } from "../server/tripask";
 import { specOf } from "../src/publicmap/logic";
@@ -91,4 +91,22 @@ test("a bigger battery needs no stop on a short trip", () => {
   const big = { ...specOf("rigid"), label: "X", plate: "X", battery_kwh: 600 };
   const p = planTrip({ from: LEEDS, to: { name: "Sheffield", lat: 53.38, lon: -1.47 }, depart: new Date(2026, 10, 25, 6, 0), socPct: 80 }, [], {}, big);
   assert.ok(p.ok && p.stops.length === 0);
+});
+
+test("with a real lorry route: road distance, road speed, and chargers near the road", () => {
+  // A dog-leg via the west: a site on it counts, one on the straight line doesn't.
+  const bend: [number, number] = [52.35, -2.6];
+  const route = { line: [[LEEDS.lat, LEEDS.lon], bend, [SOTON.lat, SOTON.lon]] as [number, number][], km: 420, minutes: 336 };
+  const along = alongRoute(route, { lat: 52.35, lon: -2.6 });
+  assert.ok(along.offKm < 0.5 && along.atKm > 150 && along.atKm < 270, JSON.stringify(along));
+  const onRoad = site({ id: "road", lat: 52.35, lon: -2.58, max_kw: 400 });
+  const onLine = site({ id: "line", lat: 52.35, lon: -1.47, max_kw: 400 });
+  const p = planTrip({ from: LEEDS, to: SOTON, depart: new Date(2026, 10, 25, 6, 0), socPct: 75, route }, [onRoad, onLine], {}, "artic");
+  assert.ok(p.ok && p.roads, p.problem);
+  assert.equal(p.km, 420);
+  assert.deepEqual(p.stops.map((s) => s.site.id), ["road"]);
+  assert.ok(Math.abs(p.driveMin - 336) < 20, String(p.driveMin));
+  const est = planTrip({ from: LEEDS, to: SOTON, depart: new Date(2026, 10, 25, 6, 0), socPct: 75 }, [onRoad, onLine], {}, "artic");
+  assert.equal(est.roads, false);
+  assert.deepEqual(est.stops.map((s) => s.site.id), ["line"]);
 });

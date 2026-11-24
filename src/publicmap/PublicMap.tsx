@@ -14,7 +14,7 @@ import {
 import { forgetTruck, lookupPlate, saveTruck, savedTrucks, type PlateDetails } from "../app/plates";
 import { isUkPlate, plateSummary, profileOf, type TruckProfile } from "../../shared/plates";
 import { normalizePlate } from "../../shared/util";
-import { departAt, parseTripText, planTrip, resolvePlace, type TripAsk, type TripPlan, type TripRequest } from "./trip";
+import { departAt, parseTripText, planTrip, resolvePlace, type RoadRoute, type TripAsk, type TripPlan, type TripRequest } from "./trip";
 import {
   BOLT, IconArtic, IconBack, IconBay, IconBolt, IconCheck, IconClock, IconCross, IconDriveThrough, IconFleet, IconHeight, IconWeight, IconLocate, IconMegawatt, IconPin, IconPlug, IconQuestion, IconRigid, IconRoute, IconSearch, IconShare,
   IconBasket, IconBed, IconCup, IconFood, IconFuel, IconParking, IconPlay, IconWifi,
@@ -236,13 +236,16 @@ export function PublicMap() {
     if (!m) return;
     if (!plan || !req) { m.getSource("trip")?.setData(EMPTY); return; }
     const pts: LngLat[] = [[req.from.lon, req.from.lat], ...plan.stops.map((st) => [st.site.lon, st.site.lat] as LngLat), [req.to.lon, req.to.lat]];
+    // A real lorry route is drawn solid along the road; the estimate is a dashed line through the stops.
+    const road: LngLat[] | null = plan.roads && req.route ? req.route.line.map(([la, lo]) => [lo, la] as LngLat) : null;
     m.getSource("trip")?.setData({ type: "FeatureCollection", features: [
-      { type: "Feature", properties: { kind: "line" }, geometry: { type: "LineString", coordinates: pts } },
+      { type: "Feature", properties: { kind: road ? "road" : "line" }, geometry: { type: "LineString", coordinates: road ?? pts } },
       { type: "Feature", properties: { kind: "end", label: "A" }, geometry: { type: "Point", coordinates: pts[0] } },
       ...plan.stops.map((st, i) => ({ type: "Feature", properties: { kind: "stop", label: String(i + 1) }, geometry: { type: "Point", coordinates: [st.site.lon, st.site.lat] } })),
       { type: "Feature", properties: { kind: "end", label: "B" }, geometry: { type: "Point", coordinates: pts[pts.length - 1] } },
     ] });
-    const lons = pts.map((q) => q[0]), lats = pts.map((q) => q[1]);
+    const all = road ? [...pts, ...road] : pts;
+    const lons = all.map((q) => q[0]), lats = all.map((q) => q[1]);
     m.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: 60, duration: reducedMotion() ? 0 : 900, maxZoom: 9 });
   }, [mapState]);
   const nearMe = () => {
@@ -479,10 +482,11 @@ function addLayers(m: MapLike) {
   m.addLayer({ id: "selected-glow", type: "circle", source: "selected", paint: { "circle-color": TIER_COLOR, "circle-radius": 22, "circle-blur": 1, "circle-opacity": 0.6 } });
   m.addLayer({ id: "selected-dot", type: "symbol", source: "selected", layout: { "icon-image": TIER_PIN, "icon-size": 1.3, "icon-allow-overlap": true, "icon-ignore-placement": true } });
   // A planned trip: a glowing line, then numbered stops (A and B at the ends).
-  m.addLayer({ id: "trip-glow", type: "line", source: "trip", filter: ["==", ["get", "kind"], "line"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": COLORS.truck, "line-width": 10, "line-opacity": 0.25, "line-blur": 6 } });
+  m.addLayer({ id: "trip-glow", type: "line", source: "trip", filter: ["in", ["get", "kind"], ["literal", ["line", "road"]]], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": COLORS.truck, "line-width": 10, "line-opacity": 0.25, "line-blur": 6 } });
   m.addLayer({ id: "trip-line", type: "line", source: "trip", filter: ["==", ["get", "kind"], "line"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": COLORS.truck, "line-width": 3, "line-dasharray": [2, 1.5] } });
-  m.addLayer({ id: "trip-dots", type: "circle", source: "trip", filter: ["!=", ["get", "kind"], "line"], paint: { "circle-color": "#06101f", "circle-radius": 13, "circle-stroke-color": ["case", ["==", ["get", "kind"], "stop"], COLORS.truck, "#ffffff"], "circle-stroke-width": 2.5 } });
-  m.addLayer({ id: "trip-labels", type: "symbol", source: "trip", filter: ["!=", ["get", "kind"], "line"], layout: { "text-field": ["get", "label"], "text-font": f.bold, "text-size": 13, "text-allow-overlap": true, "text-ignore-placement": true }, paint: { "text-color": "#ffffff" } });
+  m.addLayer({ id: "trip-road", type: "line", source: "trip", filter: ["==", ["get", "kind"], "road"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": COLORS.truck, "line-width": 4 } });
+  m.addLayer({ id: "trip-dots", type: "circle", source: "trip", filter: ["in", ["get", "kind"], ["literal", ["stop", "end"]]], paint: { "circle-color": "#06101f", "circle-radius": 13, "circle-stroke-color": ["case", ["==", ["get", "kind"], "stop"], COLORS.truck, "#ffffff"], "circle-stroke-width": 2.5 } });
+  m.addLayer({ id: "trip-labels", type: "symbol", source: "trip", filter: ["in", ["get", "kind"], ["literal", ["stop", "end"]]], layout: { "text-field": ["get", "label"], "text-font": f.bold, "text-size": 13, "text-allow-overlap": true, "text-ignore-placement": true }, paint: { "text-color": "#ffffff" } });
   m.addLayer({ id: "me-halo", type: "circle", source: "me", paint: { "circle-color": "#9b8cff", "circle-opacity": 0.22, "circle-radius": 20, "circle-blur": 0.6 } });
   m.addLayer({ id: "me-dot", type: "circle", source: "me", paint: { "circle-color": "#9b8cff", "circle-radius": 7, "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.5 } });
 }
@@ -794,6 +798,24 @@ function CountUp({ n }: { n: number }) {
   return <>{shown.toLocaleString("en-GB")}</>;
 }
 
+/**
+ * A real lorry route for this truck between two of the map's towns (server/routing.ts, needs
+ * ORS_API_KEY on the deployment), or null: then the planner uses its straight-line estimate.
+ */
+async function lorryRoute(from: string, to: string, truck: TruckLike): Promise<RoadRoute | null> {
+  const named = (n: string) => CITIES.some((c) => c.name === n);
+  if (!named(from) || !named(to) || from === to) return null;
+  const sp = specOf(truck);
+  const q = new URLSearchParams({ from, to, kind: "hgv", h: (sp.height_cm / 100).toFixed(1), l: (sp.length_cm / 100).toFixed(1), t: String(Math.round(sp.weight_kg / 1000)) });
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 9000);
+  try {
+    const r = await fetch(`/api/public/route?${q}`, { headers: { Accept: "application/json" }, signal: ctl.signal });
+    const j = (await r.json().catch(() => null)) as { data?: RoadRoute } | null;
+    return r.ok && j?.data && j.data.line?.length >= 2 && j.data.km > 0 ? { line: j.data.line, km: j.data.km, minutes: j.data.minutes } : null;
+  } catch { return null; } finally { clearTimeout(timer); }
+}
+
 /** Plan a trip in plain English: where to charge and when, for this truck, timed with drivers' breaks. */
 function TripPlanner({ sites, tallies, truck, onPlan, onPick }: { sites: OpenSite[]; tallies: Tallies; truck: TruckLike; onPlan(p: TripPlan | null, r: TripRequest | null): void; onPick(id: string): void }) {
   const [text, setText] = useState("");
@@ -823,8 +845,11 @@ function TripPlanner({ sites, tallies, truck, onPlan, onPick }: { sites: OpenSit
     if (!a) { setMsg("I couldn't tell where from and where to. Try: Leeds to Southampton, leaving 6am with 70%."); return; }
     const from = resolvePlace(a.from, CITIES, sites), to = resolvePlace(a.to, CITIES, sites);
     if (!from || !to) { setMsg(`I couldn't find ${!from ? a.from : a.to} on the map. Try a nearby town or city.`); return; }
+    setBusy(true);
+    const route = await lorryRoute(from.name, to.name, truck);
+    setBusy(false);
     setAsk(a);
-    setReq({ from, to, depart: departAt(a.depart), socPct: a.battery_pct ?? 80 });
+    setReq({ from, to, depart: departAt(a.depart), socPct: a.battery_pct ?? 80, route });
   };
   const clear = () => { setReq(null); setAsk(null); setMsg(null); };
 
@@ -855,7 +880,9 @@ function TripPlanner({ sites, tallies, truck, onPlan, onPick }: { sites: OpenSit
             {plan.ok && <li className="end"><span className="pm-trip-n">B</span><span className="pm-trip-main"><b>{t(plan.arrive)} · {req.to.name}</b><small>Arrives with {pct(plan.socArrive)}{plan.stops.length === 0 ? ", no charging needed" : ""}</small></span></li>}
           </ol>
           {plan.notes.map((n) => <p key={n} className="pm-trip-msg">{n}</p>)}
-          <p className="pm-trip-hint">Distances and times are estimates from straight-line distance. Check bay sizes before you go.</p>
+          <p className="pm-trip-hint">{plan.roads
+            ? <>Follows a lorry route for this truck's height, length and weight. Check bay sizes before you go. <span className="pm-trip-credit">Route © openrouteservice.org by HeiGIT, map data © OpenStreetMap contributors</span></>
+            : "Distances and times are estimates from straight-line distance. Check bay sizes before you go."}</p>
           <button type="button" className="pm-btn" onClick={clear}>Clear trip</button>
         </div>
       )}

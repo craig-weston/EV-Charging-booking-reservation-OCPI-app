@@ -1,8 +1,9 @@
 // Trip planning for one truck: where and when to charge between two places, timed with the
 // drivers' breaks the driver has to take anyway. Pure functions; the map draws the result.
 //
-// Distances are estimates: straight-line distance × ROAD_FACTOR, at an average HGV speed. With a
-// lorry-routing key (ORS_API_KEY) the map could use real routes instead.
+// With a real lorry route (OpenRouteService's HGV profile via /api/public/route, when the
+// deployment has ORS_API_KEY) distances, times and the charging corridor follow the road. Without
+// one they are estimates: straight-line distance × ROAD_FACTOR, at an average HGV speed.
 import type { OpenSite } from "../../shared/opendata/sites";
 import { canPlug, rateHere, specOf, suitsTrucks, tooSmall, type Place, type Tallies, type TruckLike } from "./logic";
 
@@ -20,7 +21,9 @@ export const BREAK_MIN = 45;
 export const CORRIDOR_KM = 20;
 const MIN_KW = 150;
 
-export interface TripRequest { from: Place; to: Place; depart: Date; socPct: number }
+/** A road route: [lat, lon] points, its length and its driving time. */
+export interface RoadRoute { line: [number, number][]; km: number; minutes: number }
+export interface TripRequest { from: Place; to: Place; depart: Date; socPct: number; route?: RoadRoute | null }
 export interface TripStop {
   site: OpenSite;
   arrive: Date;
@@ -47,6 +50,8 @@ export interface TripPlan {
   driveMin: number;
   /** Notes worth showing: "Needs an overnight rest: over 9 hours' driving". */
   notes: string[];
+  /** Distances and times follow a real lorry route, not the straight-line estimate. */
+  roads: boolean;
 }
 
 const R = 6371;
@@ -68,17 +73,50 @@ export function alongLine(a: Place, b: Place, p: { lat: number; lon: number }): 
   return { t, offKm: Math.hypot(px - cx, py - cy) };
 }
 
+/**
+ * Where a point sits against a road route: km along it (scaled to the route's own length, since the
+ * line is simplified) and km off it, at the nearest segment.
+ */
+export function alongRoute(route: RoadRoute, p: { lat: number; lon: number }): { atKm: number; offKm: number; t: number } {
+  const pts = route.line;
+  const lat0 = rad(pts[0][0]);
+  const xy = (q: [number, number]) => [rad(q[1]) * Math.cos(lat0) * R, rad(q[0]) * R];
+  const [px, py] = xy([p.lat, p.lon]);
+  let walked = 0, bestOff = Infinity, bestAt = 0;
+  let [ax, ay] = xy(pts[0]);
+  for (let i = 1; i < pts.length; i++) {
+    const [bx, by] = xy(pts[i]);
+    const dx = bx - ax, dy = by - ay, seg = Math.hypot(dx, dy);
+    const t = seg > 0 ? Math.min(1, Math.max(0, ((px - ax) * dx + (py - ay) * dy) / (seg * seg))) : 0;
+    const off = Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+    if (off < bestOff) { bestOff = off; bestAt = walked + t * seg; }
+    walked += seg; ax = bx; ay = by;
+  }
+  const scale = walked > 0 ? route.km / walked : 1;
+  return { atKm: bestAt * scale, offKm: bestOff, t: walked > 0 ? bestAt / walked : 0 };
+}
+
+/** The trip's length and average speed: the road route's when there is one, else the estimate. */
+function measure(req: TripRequest): { total: number; kmh: number; roads: boolean; locate(s: OpenSite): { atKm: number; offKm: number; t: number } } {
+  const r = req.route;
+  if (r && r.line.length >= 2 && r.km > 0 && r.minutes > 0) {
+    return { total: r.km, roads: true, kmh: Math.min(90, Math.max(40, r.km / (r.minutes / 60))), locate: (s) => alongRoute(r, s) };
+  }
+  const total = haversineKm(req.from, req.to) * ROAD_FACTOR;
+  return { total, roads: false, kmh: AVG_KMH, locate: (s) => { const a = alongLine(req.from, req.to, s); return { atKm: a.t * total, offKm: a.offKm, t: a.t }; } };
+}
+
 interface Candidate { site: OpenSite; atKm: number; detourKm: number; kw: number; trucks: boolean }
 
 /** Sites along the way this truck can plug into, fit and charge fast at, ordered by distance along the trip. */
 export function corridor(req: TripRequest, sites: OpenSite[], tallies: Tallies, truck: TruckLike): Candidate[] {
-  const lineKm = haversineKm(req.from, req.to);
+  const m = measure(req);
   const out: Candidate[] = [];
   for (const s of sites) {
     if (s.max_kw < MIN_KW || !canPlug(s, truck) || tooSmall(s, truck).length) continue;
-    const { t, offKm } = alongLine(req.from, req.to, s);
+    const { t, atKm, offKm } = m.locate(s);
     if (t <= 0.02 || t >= 0.98 || offKm > CORRIDOR_KM) continue;
-    out.push({ site: s, atKm: t * lineKm * ROAD_FACTOR, detourKm: 2 * offKm * ROAD_FACTOR, kw: rateHere(s, truck), trucks: suitsTrucks(s, tallies[s.id], truck) });
+    out.push({ site: s, atKm, detourKm: 2 * offKm * ROAD_FACTOR, kw: rateHere(s, truck), trucks: suitsTrucks(s, tallies[s.id], truck) });
   }
   return out.sort((a, b) => a.atKm - b.atKm);
 }
@@ -90,24 +128,26 @@ export function corridor(req: TripRequest, sites: OpenSite[], tallies: Tallies, 
  */
 export function planTrip(req: TripRequest, sites: OpenSite[], tallies: Tallies, truck: TruckLike): TripPlan {
   const sp = specOf(truck);
-  const total = haversineKm(req.from, req.to) * ROAD_FACTOR;
+  const m = measure(req);
+  const total = m.total, kmh = m.kmh;
   const bat = sp.battery_kwh, perKm = sp.kwhPerKm;
   const cands = corridor(req, sites, tallies, truck);
   const stops: TripStop[] = [];
   const notes: string[] = [];
   let pos = 0, soc = Math.max(0, Math.min(1, req.socPct / 100)), sinceBreak = 0, driveMin = 0;
   let clock = req.depart.getTime();
-  const fail = (problem: string): TripPlan => ({ ok: false, problem, stops, arrive: new Date(clock), socArrive: soc, km: pos, driveMin, notes });
+  const roads = m.roads;
+  const fail = (problem: string): TripPlan => ({ ok: false, problem, stops, arrive: new Date(clock), socArrive: soc, km: pos, driveMin, notes, roads });
 
   for (let guard = 0; guard < 8; guard++) {
     const remaining = total - pos;
     const rangeKm = Math.max(0, (soc - RESERVE) * bat) / perKm;
-    const hoursLeftKm = ((BREAK_AFTER_MIN - sinceBreak) / 60) * AVG_KMH;
+    const hoursLeftKm = ((BREAK_AFTER_MIN - sinceBreak) / 60) * kmh;
     if (rangeKm >= remaining && remaining <= hoursLeftKm) {
-      const min = (remaining / AVG_KMH) * 60;
+      const min = (remaining / kmh) * 60;
       clock += min * 60_000; driveMin += min; soc -= (remaining * perKm) / bat;
       if (driveMin > 540) notes.push("Over 9 hours' driving: plan an overnight rest, or a second driver.");
-      return { ok: true, stops, arrive: new Date(clock), socArrive: soc, km: total, driveMin, notes };
+      return { ok: true, stops, arrive: new Date(clock), socArrive: soc, km: total, driveMin, notes, roads };
     }
     const reach = Math.min(rangeKm, hoursLeftKm);
     const options = cands.filter((c) => c.atKm > pos + 10 && c.atKm + c.detourKm / 2 - pos <= reach && !stops.some((s) => s.site.id === c.site.id));
@@ -118,7 +158,7 @@ export function planTrip(req: TripRequest, sites: OpenSite[], tallies: Tallies, 
     // Go as far as is comfortable, then prefer power and truck-friendly sites.
     const best = options.reduce((a, b) => (score(b, pos, reach) > score(a, pos, reach) ? b : a));
     const legKm = best.atKm - pos + best.detourKm / 2;
-    const legMin = (legKm / AVG_KMH) * 60;
+    const legMin = (legKm / kmh) * 60;
     clock += legMin * 60_000; driveMin += legMin; sinceBreak += legMin;
     soc -= (legKm * perKm) / bat;
     const arrive = new Date(clock), socArrive = soc;
