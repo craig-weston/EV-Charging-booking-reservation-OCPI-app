@@ -1,4 +1,5 @@
 // Real lorry routes for the trip planner, from OpenRouteService's HGV profile (free key from
+// OpenRouteService moved its API from api.openrouteservice.org (now 410 Gone) to api.heigit.org in 2026; keys carry over.
 // openrouteservice.org). The route avoids roads the truck can't use: low bridges, weight and
 // length limits, and (for dangerous goods) roads closed to hazardous loads. Vans use the car profile.
 //
@@ -14,7 +15,7 @@ import type { MarketDeps } from "./market";
 import { CITIES } from "../src/map/ukmap";
 import { getLive } from "./livekeys";
 
-const ORS = "https://api.openrouteservice.org/v2/directions";
+const ORS = "https://api.heigit.org/openrouteservice/v2/directions";
 const KEEP_MS = 7 * 24 * 3_600_000;
 const TIMEOUT_MS = 12_000;
 export const ROUTE_ATTRIBUTION = "Route © openrouteservice.org by HeiGIT, map data © OpenStreetMap contributors";

@@ -56,7 +56,7 @@ test("OpenRouteService: the truck's size goes into the request; answers are cach
   assert.deepEqual(r.line[0], [51.5019, -0.1187]);
   assert.match(r.attribution, /openrouteservice/);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, "https://api.openrouteservice.org/v2/directions/driving-hgv/geojson");
+  assert.equal(calls[0].url, "https://api.heigit.org/openrouteservice/v2/directions/driving-hgv/geojson");
   assert.equal(calls[0].auth, "ors-key");
   assert.deepEqual(calls[0].body.coordinates, [[-0.1187, 51.5019], [-4.2527, 55.8764]], "longitude first");
   assert.deepEqual(calls[0].body.options, { vehicle_type: "hgv", profile_params: { restrictions: { height: 4.9, length: 16.5, weight: 44, hazmat: true } } });
